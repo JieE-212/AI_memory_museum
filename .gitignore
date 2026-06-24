@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+node_modules/
+npm-debug.log*
+*.log
+
+.agents/
+.codex/
+
+项目工程/data/
+项目工程/node_modules/
+项目工程/.env
+项目工程/.env.*
+!项目工程/.env.example
+项目工程/*.log

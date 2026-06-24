@@ -1,0 +1,534 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI 记忆博物馆</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-block">
+          <p class="eyebrow">Memory Museum</p>
+          <h1>AI 记忆博物馆</h1>
+          <p>把日记、照片描述和聊天片段整理成一座有温度的私人展馆。</p>
+        </div>
+        <nav class="hall-nav" id="hallNav"></nav>
+      </aside>
+
+      <main class="main-stage">
+        <section class="museum-hero">
+          <div class="hero-mementos" aria-hidden="true">
+            <span class="memento-photo"></span>
+            <span class="memento-ticket"></span>
+            <span class="memento-thread"></span>
+          </div>
+          <div>
+            <p class="eyebrow">私人展馆 / 简洁首页</p>
+            <h2>记录生活，回看日记和相册，把值得留下的片段整理成展品。</h2>
+            <p class="hero-note">首页只保留常用入口：写一段记忆、请 AI 整理、回看展品墙。批量导入、报告、同步和项目状态放在下面的入口里，需要时再打开。</p>
+          </div>
+          <div class="stats-row">
+            <div class="stat-tile"><span id="memoryCount">0</span><small>展品</small></div>
+            <div class="stat-tile"><span id="hallCount">0</span><small>展厅</small></div>
+            <div class="stat-tile"><span id="tagCount">0</span><small>标签</small></div>
+            <div class="stat-tile"><span id="emotionCount">0</span><small>情绪</small></div>
+            <div class="stat-tile"><span id="mediaCount">0</span><small>照片线索</small></div>
+            <div class="stat-tile"><span id="agentRunCount">0</span><small>AI整理</small></div>
+          </div>
+        </section>
+
+        <section class="home-gateway" id="homeGateway" aria-label="常用功能入口">
+          <div class="section-heading">
+            <p class="eyebrow">Start Here</p>
+            <h3>今天想做什么？</h3>
+            <p>常用功能留在首页，高级能力通过入口打开。每个复杂模块都有用法提示，不会让技术信息压住记录体验。</p>
+          </div>
+          <div class="gateway-grid">
+            <button type="button" class="gateway-card primary-gateway" data-home-scroll="memoryForm">
+              <strong>写一段记忆</strong>
+              <small>适合记录日记、照片背后的故事、聊天片段或生活瞬间。</small>
+            </button>
+            <button type="button" class="gateway-card" data-home-scroll="memoryGrid">
+              <strong>回看展品墙</strong>
+              <small>浏览最近保存的记忆展品，按展厅、情绪、标签继续筛选。</small>
+            </button>
+            <button type="button" class="gateway-card" data-home-scroll="guidePanel">
+              <strong>问 AI 讲解员</strong>
+              <small>让讲解员从你的展品中找线索，帮你回看主题和情绪。</small>
+            </button>
+            <button type="button" class="gateway-card" data-feature-target="phase19ImportSection">
+              <strong>批量导入旧资料</strong>
+              <small>粘贴旧日记、Markdown、CSV、JSON 或聊天记录，先预览再导入。</small>
+            </button>
+            <button type="button" class="gateway-card" data-feature-target="insightsSection">
+              <strong>时间线和回忆报告</strong>
+              <small>把已保存展品整理成时间线、主题展、报告草稿和长期整理建议。</small>
+            </button>
+            <button type="button" class="gateway-card" data-feature-target="privacySection">
+              <strong>数据与同步</strong>
+              <small>管理本地数据、备份、脱敏导出、同步包和删除控制。</small>
+            </button>
+            <button type="button" class="gateway-card" data-feature-target="workflowOrchestration">
+              <strong>高级工作流</strong>
+              <small>查看 Agent 如何整理、复核、暂停和衔接各个流程。</small>
+            </button>
+            <button type="button" class="gateway-card" data-feature-target="operationsSection">
+              <strong>项目状态和技术信息</strong>
+              <small>给开发和维护时使用，查看版本、接口、检查命令和运维记录。</small>
+            </button>
+          </div>
+        </section>
+
+        <section class="collection-section collection-section-primary" id="collectionSection">
+          <div class="collection-toolbar">
+            <div>
+              <p class="eyebrow">Collection</p>
+              <h3>最近展品墙</h3>
+              <p class="storage-status" id="storageStatus">正在连接数据库、专题资产、同步适配层和长期记忆助理...</p>
+            </div>
+            <div class="collection-tools">
+              <input id="searchInput" type="search" placeholder="搜索标题、内容、人物、标签、情绪或来源" />
+              <select id="sortSelect" aria-label="排序方式">
+                <option value="newest">最新优先</option>
+                <option value="oldest">最早优先</option>
+                <option value="title">标题排序</option>
+                <option value="importance">珍藏级别</option>
+                <option value="intensity">情绪强度</option>
+              </select>
+              <select id="emotionFilterSelect" aria-label="情绪筛选"></select>
+              <button type="button" class="ghost-button compact-button" id="clearFiltersButton">清空筛选</button>
+              <button type="button" class="ghost-button compact-button collection-advanced-tool" id="exportButton">导出</button>
+              <label class="ghost-button compact-button import-button collection-advanced-tool" for="importFile">导入</label>
+              <input class="visually-hidden" id="importFile" type="file" accept="application/json,.json" />
+              <button type="button" class="ghost-button compact-button collection-advanced-tool" id="syncDatabaseButton">同步数据库</button>
+              <button type="button" class="ghost-button compact-button collection-advanced-tool" id="migrateLocalButton">迁移本地</button>
+            </div>
+          </div>
+          <div class="memory-grid" id="memoryGrid"></div>
+        </section>
+
+        <section class="workspace-grid">
+          <form class="memory-form" id="memoryForm">
+            <div class="section-heading">
+              <p class="eyebrow">Add Memory</p>
+              <h3>添加记忆</h3>
+              <p class="form-mode-hint" id="formModeHint">写下原始记忆后，可以让多 Agent 工作流生成展品草稿。</p>
+            </div>
+
+            <label>
+              <span class="field-heading"><span>原始记忆</span><small id="rawCount">0 / 2000</small></span>
+              <textarea id="rawContent" rows="7" maxlength="2000" placeholder="例如：高三毕业那天晚上，我们几个人在操场坐到很晚，谁也没说以后还会不会见面。" required></textarea>
+            </label>
+
+            <div class="form-grid">
+              <label>标题<input id="titleInput" type="text" maxlength="80" placeholder="可手写，也可让 Agent 工作流生成" /></label>
+              <label>展厅<select id="hallSelect"></select></label>
+              <label>时间<input id="memoryDate" type="date" /></label>
+              <label>地点<input id="locationInput" type="text" maxlength="80" placeholder="学校、家、城市、某个房间" /></label>
+              <label>来源
+                <select id="sourceType">
+                  <option value="日记">日记</option>
+                  <option value="聊天片段">聊天片段</option>
+                  <option value="照片描述">照片描述</option>
+                  <option value="旅行片段">旅行片段</option>
+                  <option value="梦境">梦境</option>
+                  <option value="物品">物品</option>
+                  <option value="图片">图片</option>
+                  <option value="截图">截图</option>
+                  <option value="语音转写">语音转写</option>
+                  <option value="其他">其他</option>
+                </select>
+              </label>
+              <label>珍藏级别
+                <select id="importanceSelect">
+                  <option value="1">普通展品</option>
+                  <option value="2">值得一看</option>
+                  <option value="3">重要展品</option>
+                  <option value="4">珍贵展品</option>
+                  <option value="5">镇馆级</option>
+                </select>
+              </label>
+            </div>
+
+            <label>相关人物<input id="peopleInput" type="text" maxlength="160" placeholder="用逗号分隔，例如：小王, 室友, 妈妈" /></label>
+            <label>展品说明<textarea id="exhibitText" rows="4" maxlength="600" placeholder="这里会保存给参观者看的说明文字。"></textarea></label>
+            <label>封面图线索<input id="coverImageInput" type="text" maxlength="300" placeholder="图片路径、文件名或一句封面描述" /></label>
+            <label>图片/OCR/语音线索<textarea id="mediaNoteInput" rows="3" maxlength="800" placeholder="例如：照片里是毕业合照；截图文字提到凌晨的群聊；语音转写里出现了车站广播。"></textarea></label>
+            <label>附件清单<textarea id="attachmentsInput" rows="3" maxlength="900" placeholder="每行一个：文件名 | 类型 | 备注，例如：毕业合照.jpg | 图片 | 操场合照"></textarea></label>
+            <label>标签<input id="tagsInput" type="text" maxlength="160" placeholder="用逗号分隔，例如：毕业, 夜晚, 朋友" /></label>
+
+            <div class="emotion-picker">
+              <span>情绪</span>
+              <div class="emotion-options" id="emotionOptions"></div>
+            </div>
+
+            <div class="detail-row">
+              <label class="range-field">
+                情绪强度
+                <input id="emotionIntensity" type="range" min="1" max="5" value="3" />
+                <output id="emotionIntensityOutput">3 / 5</output>
+              </label>
+              <label class="favorite-field"><input id="favoriteInput" type="checkbox" />加入重点展品</label>
+            </div>
+
+            <div class="actions-row">
+              <button type="button" class="ghost-button" id="sampleButton">随机示例</button>
+              <button type="button" class="secondary-button" id="mockAiButton">Agent 整理</button>
+              <button type="submit" class="primary-button" id="saveButton">保存为展品</button>
+              <button type="button" class="ghost-button is-hidden" id="cancelEditButton">取消编辑</button>
+              <button type="button" class="ghost-button" id="resetButton">清空</button>
+            </div>
+            <p class="ai-status" id="aiStatus">第十八阶段：系统会把记忆整理成可保存资产，并生成长期整理建议和回顾线索。</p>
+            <div class="agent-workflow" id="agentWorkflow" aria-live="polite" aria-busy="false" role="status"></div>
+            <div class="agent-actions" id="agentActions">
+              <button type="button" class="ghost-button compact-button" id="useAgentSuggestionButton" disabled>使用 Agent 建议</button>
+              <button type="button" class="ghost-button compact-button" id="clearAgentWorkflowButton" disabled>收起工作流</button>
+            </div>
+            <p class="phase-note">保存后会把当前 Agent 工作流快照、确认动作和保存事件一起写入整理历史，之后可在展品详情中回看。</p>
+          </form>
+
+          <section class="guide-panel" id="guidePanel">
+            <div class="section-heading">
+              <p class="eyebrow">Guide Agent</p>
+              <h3>AI 讲解员预览</h3>
+            </div>
+            <aside class="draft-preview" id="draftPreview" aria-live="polite"></aside>
+            <div class="guide-copy" id="guideCopy"></div>
+            <form class="guide-ask" id="guideAskForm">
+              <input id="guideQuestionInput" type="search" maxlength="300" placeholder="问讲解员：这些记忆里反复出现了什么？" />
+              <button type="submit" class="secondary-button" id="guideAskButton">提问</button>
+            </form>
+            <div class="guide-questions">
+              <button type="button" data-question="tour">带我参观当前展厅</button>
+              <button type="button" data-question="mood">总结我的记忆情绪</button>
+              <button type="button" data-question="recent">推荐一件最近展品</button>
+              <button type="button" data-question="schema">查看结构化 JSON</button>
+            </div>
+          </section>
+        </section>
+
+        <section class="insights-section feature-panel" id="insightsSection" data-feature-panel>
+          <div class="section-heading">
+            <p class="eyebrow">Phase 10 Insights</p>
+            <h3>时间线、主题展和回忆报告</h3>
+            <p>基于已保存展品，自动整理记忆的时间分布、主题线索和报告草稿。</p>
+          </div>
+          <div class="feature-help">
+            <span>什么时候用：当你已经保存了一些展品，想回看某段时间、整理一个主题展，或生成年度/阶段回忆报告。</span>
+            <span>怎么用：先在首页保存记忆，再选择洞察范围；点击主题可回到展品墙筛选，报告草稿可以保存为专题资产。</span>
+            <span>数据影响：这里主要是分析和生成草稿，不会静默覆盖原始展品。</span>
+            <button type="button" class="ghost-button compact-button" data-feature-home>回到简洁首页</button>
+          </div>
+          <div class="insight-controls">
+            <label>洞察范围
+              <select id="insightScopeSelect" aria-label="洞察范围">
+                <option value="all">全馆展品</option>
+                <option value="hall">当前展厅</option>
+                <option value="filtered">当前筛选结果</option>
+              </select>
+            </label>
+            <span id="insightScopeMeta">基于全馆展品</span>
+          </div>
+          <div class="insights-grid">
+            <article class="insight-card timeline-card">
+              <div class="insight-card-heading">
+                <span>时间线</span>
+                <small id="timelineCount">0 个阶段</small>
+              </div>
+              <div class="timeline-list" id="timelineList"></div>
+            </article>
+            <article class="insight-card theme-card">
+              <div class="insight-card-heading">
+                <span>主题展</span>
+                <small id="themeCount">0 个主题</small>
+              </div>
+              <div class="theme-list" id="themeList"></div>
+            </article>
+            <article class="insight-card report-card">
+              <div class="insight-card-heading">
+                <span>回忆报告</span>
+                <small id="reportMeta">等待展品</small>
+              </div>
+              <div class="report-panel" id="reportPanel"></div>
+            </article>
+            <article class="insight-card asset-card">
+              <div class="insight-card-heading">
+                <span>专题资产</span>
+                <small id="assetSummaryMeta">等待资产</small>
+              </div>
+              <div class="saved-assets-panel" id="savedAssetsPanel"></div>
+            </article>
+          </div>
+          <div class="phase18-agent-panel" id="phase18AgentPanel"></div>
+        </section>
+
+        <section class="phase19-import-section feature-panel" id="phase19ImportSection" data-feature-panel>
+          <div class="section-heading">
+            <p class="eyebrow">Phase 19 Import</p>
+            <h3>外部资料导入</h3>
+            <p>把日记、Markdown、CSV、JSON 或聊天片段先拆成展品草稿，导入前可以预览字段和风险。</p>
+          </div>
+          <div class="feature-help">
+            <span>什么时候用：你有一批旧日记、聊天记录、表格或备忘录，想一次性整理成多个展品草稿。</span>
+            <span>怎么用：粘贴内容，选择格式或自动识别，先点“生成导入预览”，确认草稿和冲突后再导入。</span>
+            <span>数据影响：导入前只生成预览；点击导入后才写入展品库，且保留批次审计和撤销线索。</span>
+            <button type="button" class="ghost-button compact-button" data-feature-home>回到简洁首页</button>
+          </div>
+          <div class="phase19-import-lab">
+            <div class="phase19-import-controls">
+              <label>资料格式
+                <select id="phase19ImportFormat">
+                  <option value="auto">自动识别</option>
+                  <option value="text">纯文本/日记</option>
+                  <option value="markdown">Markdown</option>
+                  <option value="csv">CSV</option>
+                  <option value="json">JSON</option>
+                  <option value="chat">聊天记录</option>
+                </select>
+              </label>
+              <label>默认来源
+                <select id="phase19DefaultSource">
+                  <option value="日记">日记</option>
+                  <option value="聊天片段">聊天片段</option>
+                  <option value="照片描述">照片描述</option>
+                  <option value="旅行片段">旅行片段</option>
+                  <option value="梦境">梦境</option>
+                  <option value="其他">其他</option>
+                </select>
+              </label>
+              <label>默认展厅
+                <select id="phase19DefaultHall">
+                  <option value="auto">自动判断</option>
+                  <option value="daily">日常展厅</option>
+                  <option value="youth">青春展厅</option>
+                  <option value="family">家庭展厅</option>
+                  <option value="friends">朋友展厅</option>
+                  <option value="travel">旅行展厅</option>
+                  <option value="low">低谷展厅</option>
+                  <option value="strange">奇妙展厅</option>
+                </select>
+              </label>
+              <label>清洗策略
+                <select id="phase19CleanupMode">
+                  <option value="balanced">平衡清洗</option>
+                  <option value="preserve">尽量保留原文</option>
+                  <option value="compact">合并短片段</option>
+                </select>
+              </label>
+              <label>映射模板
+                <select id="phase19MappingTemplate">
+                  <option value="auto">自动模板</option>
+                  <option value="diary">日记整理</option>
+                  <option value="chat">聊天归档</option>
+                  <option value="album">相册批注</option>
+                  <option value="travel">旅行记录</option>
+                </select>
+              </label>
+              <label>模板标签
+                <input id="phase19TemplateTags" type="text" maxlength="80" placeholder="例如：旧相册、家庭" />
+              </label>
+              <label>默认人物
+                <input id="phase19TemplatePeople" type="text" maxlength="80" placeholder="例如：外婆、家人" />
+              </label>
+              <label>日期规则
+                <input id="phase19TemplateDateRule" type="text" maxlength="40" placeholder="例如：2021 冬天" />
+              </label>
+              <label>字段别名
+                <input id="phase19TemplateAliases" type="text" maxlength="180" placeholder="title=标题,name; rawContent=正文,content" />
+              </label>
+              <label>批次名称
+                <input id="phase19BatchName" type="text" maxlength="40" placeholder="例如：外婆旧相册" />
+              </label>
+              <label>审计检索
+                <input id="phase19AuditSearch" type="search" maxlength="60" placeholder="搜索批次/标题/问题" />
+              </label>
+              <label>批次筛选
+                <select id="phase19BatchFilter">
+                  <option value="all">全部批次</option>
+                  <option value="active">有效批次</option>
+                  <option value="needs-review">待补全</option>
+                  <option value="duplicate">含重复风险</option>
+                  <option value="failed">失败批次</option>
+                </select>
+              </label>
+              <button type="button" id="phase19SampleButton">放入示例</button>
+              <button type="button" id="phase19SaveTemplateButton">保存模板</button>
+              <button type="button" id="phase19PreviewButton">生成导入预览</button>
+              <button type="button" id="phase19ApplyButton">导入预览草稿</button>
+            </div>
+            <textarea id="phase19ImportText" maxlength="12000" placeholder="粘贴日记、Markdown、CSV、JSON 或聊天记录。"></textarea>
+            <div class="phase19-import-preview" id="phase19ImportPreview"></div>
+          </div>
+        </section>
+
+        <section class="workflow-orchestration feature-panel" id="workflowOrchestration" data-feature-panel>
+          <div class="section-heading">
+            <p class="eyebrow">Phase 11 Orchestration</p>
+            <h3>工作流编排</h3>
+            <p>把展品整理、回忆报告和讲解检索拆成稳定模板，保留暂停点、复核动作和引用依据。</p>
+          </div>
+          <div class="feature-help">
+            <span>什么时候用：你想了解 AI 整理一段记忆时经历了哪些步骤，或需要检查 Agent 流程是否稳定。</span>
+            <span>怎么用：选择工作流模板，查看节点、复核点、风险信号和下一步动作。</span>
+            <span>数据影响：这里是流程说明和诊断面板，不会直接改动展品内容。</span>
+            <button type="button" class="ghost-button compact-button" data-feature-home>回到简洁首页</button>
+          </div>
+          <div class="workflow-summary-strip">
+            <span id="workflowSummaryMeta">等待工作流状态</span>
+            <div class="workflow-capabilities" id="workflowCapabilityList"></div>
+          </div>
+          <div class="workflow-readiness-grid" id="workflowReadinessGrid"></div>
+          <div class="workflow-gap-list" id="workflowGapList"></div>
+          <div class="phase12-readiness-panel" id="phase12ReadinessPanel"></div>
+          <div class="workflow-detail-panel" id="workflowDetailPanel"></div>
+          <div class="workflow-template-list" id="workflowTemplateList"></div>
+        </section>
+
+        <section class="privacy-section feature-panel" id="privacySection" data-feature-panel>
+          <div class="section-heading">
+            <p class="eyebrow">Phase 12 Sovereignty</p>
+            <h3>数据主权</h3>
+            <p>管理本地馆主配置、数据位置、AI 调用范围、同步包和删除控制。</p>
+          </div>
+          <div class="feature-help">
+            <span>什么时候用：你要备份、导入旧 JSON、迁移本地数据、脱敏导出，或确认 AI 是否能使用原始记忆。</span>
+            <span>怎么用：先看隐私边界和数据位置，再执行同步、导出或删除。危险操作都会要求明确确认。</span>
+            <span>数据影响：这里包含真实数据维护动作，操作前请先确认当前数据库和备份状态。</span>
+            <button type="button" class="ghost-button compact-button" data-feature-home>回到简洁首页</button>
+          </div>
+          <div class="privacy-grid">
+            <article class="profile-card">
+              <div class="insight-card-heading">
+                <span>本地馆主</span>
+                <small>浏览器本地保存</small>
+              </div>
+              <label>显示名称<input id="profileNameInput" type="text" maxlength="40" /></label>
+              <label>设备备注<input id="profileDeviceInput" type="text" maxlength="60" /></label>
+              <label>同步偏好
+                <select id="profileSyncSelect">
+                  <option value="manual-json">手动 JSON 同步包</option>
+                  <option value="local-only">仅保留本机</option>
+                </select>
+              </label>
+              <label class="favorite-field"><input id="profileAiConsentInput" type="checkbox" />允许配置 AI 后发送原始记忆给模型</label>
+              <button type="button" class="secondary-button compact-button" id="saveProfileButton">保存配置</button>
+            </article>
+            <article class="privacy-card">
+              <div class="insight-card-heading">
+                <span>隐私边界</span>
+                <small id="privacySummary">等待策略</small>
+              </div>
+              <div class="ai-scope-panel" id="aiScopePanel"></div>
+              <div class="sensitivity-panel" id="sensitivityPanel"></div>
+            </article>
+          </div>
+          <div class="sovereignty-grid">
+            <article>
+              <strong>数据位置</strong>
+              <div id="dataLocationList"></div>
+            </article>
+            <article>
+              <strong>用户控制</strong>
+              <div id="userControlList"></div>
+              <button type="button" class="ghost-button compact-button" id="exportRedactedButton">导出脱敏包</button>
+              <button type="button" class="ghost-button compact-button danger-button" id="purgeDatabaseButton">清空数据库展品</button>
+            </article>
+          </div>
+          <div class="phase16-sync-panel" id="phase16SyncPanel"></div>
+          <div class="phase13-readiness-panel" id="phase13ReadinessPanel"></div>
+        </section>
+
+        <section class="operations-section feature-panel" id="operationsSection" data-feature-panel>
+          <div class="section-heading">
+            <p class="eyebrow">Phase 13 Operations</p>
+            <h3>部署与运维</h3>
+            <p>查看运行版本、部署模式、检查命令、关键接口和产品化后续工程任务。</p>
+          </div>
+          <div class="feature-help">
+            <span>什么时候用：开发、演示或排查问题时查看版本号、构建标签、接口状态、检查命令和发布记录。</span>
+            <span>怎么用：普通记录用户可以忽略；需要确认项目状态时，先看运行环境和检查命令。</span>
+            <span>数据影响：这里是只读信息面板，不会改动你的记忆展品。</span>
+            <button type="button" class="ghost-button compact-button" data-feature-home>回到简洁首页</button>
+          </div>
+          <div class="operations-summary-grid" id="operationsSummaryGrid"></div>
+          <div class="operations-grid">
+            <article>
+              <strong>运行环境</strong>
+              <div id="runtimePanel"></div>
+            </article>
+            <article>
+              <strong>部署模式</strong>
+              <div id="deploymentPanel"></div>
+            </article>
+            <article>
+              <strong>检查命令</strong>
+              <div id="checksPanel"></div>
+            </article>
+            <article>
+              <strong>后续工程任务</strong>
+              <div id="engineeringPanel"></div>
+            </article>
+            <article>
+              <strong>发布清单</strong>
+              <div id="releaseChecklistPanel"></div>
+            </article>
+            <article>
+              <strong>运行手册</strong>
+              <div id="runbookPanel"></div>
+            </article>
+            <article>
+              <strong>备份策略</strong>
+              <div id="backupPolicyPanel"></div>
+            </article>
+            <article>
+              <strong>风险登记</strong>
+              <div id="riskPanel"></div>
+            </article>
+            <article>
+              <strong>运行事件</strong>
+              <div id="operationEventsPanel"></div>
+            </article>
+            <article>
+              <strong>发布记录</strong>
+              <div id="releaseHistoryPanel"></div>
+            </article>
+            <article>
+              <strong>运维日志</strong>
+              <div id="logArchivePanel"></div>
+            </article>
+            <article>
+              <strong>演示包</strong>
+              <div id="demoKitPanel"></div>
+            </article>
+            <article>
+              <strong>阶段14准备</strong>
+              <div id="phase14Panel"></div>
+            </article>
+            <article>
+              <strong>模块边界</strong>
+              <div id="moduleBoundaryPanel"></div>
+            </article>
+            <article>
+              <strong>阶段15准备</strong>
+              <div id="phase15Panel"></div>
+            </article>
+            <article>
+              <strong>专题资产计划</strong>
+              <div id="phase15AssetPanel"></div>
+            </article>
+          </div>
+        </section>
+
+      </main>
+    </div>
+
+    <dialog class="memory-dialog" id="memoryDialog">
+      <button type="button" class="close-button" id="closeDialog">×</button>
+      <div id="dialogContent"></div>
+    </dialog>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
