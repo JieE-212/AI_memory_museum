@@ -25,8 +25,8 @@ const readme = read("项目工程/README.md");
 const whitepaper = read("项目文档/项目白皮书.md");
 const plan = read("项目文档/项目规划.md");
 
-assert("server preserves phase 18 after phase 19", server.includes("const PHASE = 19") && server.includes("buildPhase18LongTermAgent"));
-assert("package uses phase 18 readiness", packageJson.includes("phase18-readiness") && packageJson.includes("0.9.8"));
+assert("server preserves phase 18 after phase 20", server.includes("const PHASE = 20") && server.includes("buildPhase18LongTermAgent"));
+assert("package uses phase 18 readiness", packageJson.includes("phase18-readiness") && packageJson.includes("1.0.10"));
 assert("frontend builds phase 18 long-term agent", app.includes("buildPhase18LongTermAgent") && app.includes("phase18LongTermAgent") && app.includes("local-long-term-memory-assistant"));
 assert("frontend renders phase 18 panel", app.includes("renderPhase18AgentPanel") && html.includes("phase18AgentPanel") && css.includes("phase18-agent-panel"));
 assert("frontend supports phase 18 suggestions and relationships", app.includes("buildPhase18ProactiveSuggestions") && app.includes("buildPhase18RelationshipMap") && app.includes("buildPhase18PeriodicReviews"));
@@ -54,7 +54,7 @@ assert("frontend creates phase 18 digest tasks", app.includes("buildPhase18Agent
 assert("frontend opens phase 18 graph memories", app.includes("data-node-type") && app.includes("data-phase18-open"));
 assert("frontend explains phase 18 relationship evidence", app.includes("strength:") && app.includes("evidence:") && app.includes("证据"));
 assert("server export includes phase 18 agent", server.includes("buildPhase18LongTermAgent") && server.includes("phase18LongTermAgent: buildPhase18LongTermAgent") && server.includes("buildPhase18NoiseRulePreview") && server.includes("configurable-tier-feedback") && server.includes("buildPhase18TaskBatchPlan") && server.includes("buildPhase18AssetSyncStateForServer") && server.includes("buildPhase18AssetNavigationIndexForServer") && server.includes("buildPhase18AgentDigestForServer") && server.includes("agentDigest"));
-assert("smoke covers phase 18 version and export", apiSmoke.includes("version API reports phase 19") && apiSmoke.includes("export includes phase 18 long-term agent"));
+assert("smoke covers phase 18 version and export", apiSmoke.includes("version API reports phase 20") && apiSmoke.includes("export includes phase 18 long-term agent"));
 assert("README documents phase 18", readme.includes("第十八阶段") && readme.includes("长期记忆助理"));
 assert("whitepaper documents phase 18", whitepaper.includes("第十八阶段") && whitepaper.includes("长期记忆助理"));
 assert("plan documents phase 18", plan.includes("阶段 18") && plan.includes("phase18-agent-digest-thirteenth-edition"));

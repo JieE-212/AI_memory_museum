@@ -42,8 +42,8 @@ const plan = read("项目文档/项目规划.md");
 
 checkCssVariables(css);
 
-assert("server preserves phase 15 assets after phase 19", server.includes("const PHASE = 19") && server.includes("个人知识生态和外部导入版"));
-assert("package uses phase 15 readiness", packageJson.includes("phase15-readiness") && packageJson.includes("0.9.8"));
+assert("server preserves phase 15 assets after phase 20", server.includes("const PHASE = 20") && server.includes("可扩展产品平台和插件生态版"));
+assert("package uses phase 15 readiness", packageJson.includes("phase15-readiness") && packageJson.includes("1.0.10"));
 assert("database has phase 15 asset tables", database.includes("CREATE TABLE IF NOT EXISTS saved_exhibitions") && database.includes("CREATE TABLE IF NOT EXISTS report_drafts"));
 assert("database exposes asset methods", database.includes("listSavedExhibitions") && database.includes("saveSavedExhibition") && database.includes("listReportDrafts") && database.includes("saveReportDraft"));
 assert("server exposes asset APIs", server.includes('url.pathname === "/api/assets"') && server.includes('url.pathname === "/api/exhibitions"') && server.includes('url.pathname === "/api/report-drafts"'));

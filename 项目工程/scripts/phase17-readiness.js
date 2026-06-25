@@ -25,8 +25,8 @@ const readme = read("项目工程/README.md");
 const whitepaper = read("项目文档/项目白皮书.md");
 const plan = read("项目文档/项目规划.md");
 
-assert("server preserves phase 17 after phase 19", server.includes("const PHASE = 19") && server.includes("buildPhase17SyncAdapter"));
-assert("package uses phase 17 readiness", packageJson.includes("phase17-readiness") && packageJson.includes("0.9.8"));
+assert("server preserves phase 17 after phase 20", server.includes("const PHASE = 20") && server.includes("buildPhase17SyncAdapter"));
+assert("package uses phase 17 readiness", packageJson.includes("phase17-readiness") && packageJson.includes("1.0.10"));
 assert("frontend builds phase 17 sync adapter", app.includes("buildPhase17SyncAdapter") && app.includes("phase17SyncAdapter") && app.includes("adapter-layer-local-first"));
 assert("frontend manages phase 17 devices", app.includes("PHASE17_DEVICE_REGISTRY_KEY") && app.includes("registerPhase17CurrentDevice") && app.includes("deviceRegistry"));
 assert("frontend manages phase 17 queue", app.includes("PHASE17_SYNC_QUEUE_KEY") && app.includes("enqueuePhase17SyncTask") && app.includes("data-phase17-queue-sync"));
@@ -38,7 +38,7 @@ assert("frontend suggests phase 17 failure recovery", app.includes("buildPhase17
 assert("frontend bridges phase 17 to phase 18 assets", app.includes("buildPhase17Phase18SyncAdvisory") && css.includes("phase17-phase18-advisory"));
 assert("frontend renders phase 17 panel", app.includes("renderPhase17SyncAdapterPanel") && css.includes("phase17-adapter-panel") && html.includes("phase16SyncPanel"));
 assert("server export includes phase 17 adapter", server.includes("buildPhase17SyncAdapter") && server.includes("phase17SyncAdapter: buildPhase17SyncAdapter") && server.includes("phase18SyncAdvisory"));
-assert("smoke covers preserved phase 17 export", apiSmoke.includes("version API reports phase 19") && apiSmoke.includes("export includes phase 17 sync adapter"));
+assert("smoke covers preserved phase 17 export", apiSmoke.includes("version API reports phase 20") && apiSmoke.includes("export includes phase 17 sync adapter"));
 assert("README documents phase 17", readme.includes("第十七阶段") && readme.includes("真实多设备同步适配层"));
 assert("whitepaper documents phase 17", whitepaper.includes("第十七阶段") && whitepaper.includes("多设备同步适配层"));
 assert("plan documents phase 17", plan.includes("阶段 17") && plan.includes("phase17-sync-health-sixth-edition"));

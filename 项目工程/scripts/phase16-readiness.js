@@ -25,8 +25,8 @@ const readme = read("项目工程/README.md");
 const whitepaper = read("项目文档/项目白皮书.md");
 const plan = read("项目文档/项目规划.md");
 
-assert("server preserves phase 16 sync after phase 19", server.includes("const PHASE = 19") && server.includes("buildPhase16SyncManifest"));
-assert("package uses phase 16 readiness", packageJson.includes("phase16-readiness") && packageJson.includes("0.9.8"));
+assert("server preserves phase 16 sync after phase 20", server.includes("const PHASE = 20") && server.includes("buildPhase16SyncManifest"));
+assert("package uses phase 16 readiness", packageJson.includes("phase16-readiness") && packageJson.includes("1.0.10"));
 assert("frontend builds phase 16 sync manifest", app.includes("buildPhase16SyncManifest") && app.includes("phase16Sync") && app.includes("manual-json-local-first"));
 assert("frontend previews phase 16 imports", app.includes("buildPhase16ImportPlan") && app.includes("pendingSyncImportPlan") && app.includes("data-phase16-apply-import"));
 assert("frontend applies phase 16 local-first policy", app.includes("applyPhase16ImportPlan") && app.includes("复制为新展品") && app.includes("保留本地") && app.includes("data-phase16-cancel-import"));

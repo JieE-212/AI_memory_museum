@@ -25,8 +25,8 @@ const readme = read("项目工程/README.md");
 const whitepaper = read("项目文档/项目白皮书.md");
 const plan = read("项目文档/项目规划.md");
 
-assert("server reports phase 19", server.includes("const PHASE = 19") && server.includes("个人知识生态和外部导入版"));
-assert("package uses phase 19 readiness", packageJson.includes("phase19-readiness") && packageJson.includes("0.9.8"));
+assert("server preserves phase 19 after phase 20", server.includes("const PHASE = 20") && server.includes("buildPhase19ImportPlan"));
+assert("package uses phase 19 readiness", packageJson.includes("phase19-readiness") && packageJson.includes("1.0.10"));
 assert("frontend renders phase 19 import lab", html.includes("phase19ImportSection") && html.includes("phase19ImportText") && css.includes("phase19-import-section"));
 assert("frontend keeps a simplified home gateway", html.includes("homeGateway") && html.includes('data-home-scroll="memoryForm"') && html.includes('data-feature-target="phase19ImportSection"'));
 assert("frontend gates advanced panels from home", app.includes("featurePanelIds") && app.includes("setActiveFeaturePanel") && app.includes("[data-feature-target]") && app.includes("[data-feature-home]"));
@@ -66,9 +66,9 @@ assert("server previews phase 19 imports", server.includes('url.pathname === "/a
 assert("server returns phase 19 imported ids", server.includes("importedIds"));
 assert("server exports phase 19 plan", server.includes("buildPhase19ImportPlan") && server.includes("phase19ImportPlan"));
 assert("phase 18 assistant remains available", app.includes("buildPhase18LongTermAgent") && server.includes("buildPhase18LongTermAgent") && apiSmoke.includes("export includes phase 18 long-term agent"));
-assert("smoke covers phase 19 import preview", apiSmoke.includes("phase 19 import preview succeeds") && apiSmoke.includes("export includes phase 19 import plan"));
+assert("smoke covers phase 19 import preview", apiSmoke.includes("phase 19 import preview succeeds under phase 20") && apiSmoke.includes("export includes phase 19 import plan"));
 assert("README documents phase 19", readme.includes("第十九阶段") && readme.includes("外部资料导入"));
 assert("whitepaper documents phase 19", whitepaper.includes("第十九阶段") && whitepaper.includes("外部导入"));
-assert("plan documents phase 19", plan.includes("当前阶段：阶段 19") && plan.includes("phase19-import-audit-ninth-edition"));
+assert("plan documents phase 19", plan.includes("阶段 19 已完成") && plan.includes("phase19-import-audit-ninth-edition"));
 
 console.log("Phase 19 readiness checks passed.");

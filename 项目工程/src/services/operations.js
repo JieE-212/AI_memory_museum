@@ -45,6 +45,7 @@ function createOperationsService(deps) {
       phase14Readiness: buildPhase14Readiness(memories),
       phase15Readiness: buildPhase15Readiness(memories),
       phase15AssetPlan: buildPhase15AssetPlan(memories),
+      phase20PlatformPlan: buildPhase20PlatformPlan(memories),
       moduleBoundaryPlan: buildModuleBoundaryPlan(),
       releaseHistory: buildReleaseHistory(),
       apiSurface: [
@@ -123,6 +124,7 @@ function createOperationsService(deps) {
       { id: "phase17-readiness", label: "第十七阶段适配层检查", status: "ready", command: "node scripts/phase17-readiness.js" },
       { id: "phase18-readiness", label: "第十八阶段长期助理检查", status: "ready", command: "node scripts/phase18-readiness.js" },
       { id: "phase19-readiness", label: "第十九阶段外部导入检查", status: "ready", command: "node scripts/phase19-readiness.js" },
+      { id: "phase20-readiness", label: "第二十阶段平台与插件检查", status: "ready", command: "node scripts/phase20-readiness.js" },
       { id: "api-smoke", label: "核心 API smoke test", status: "ready", command: "npm.cmd run smoke" },
       { id: "operations-trace", label: "请求追踪与运行事件", status: "ready", detail: "API 响应带 X-Request-Id，/api/operations 可查看最近运行事件。" },
       { id: "persistent-ops-log", label: "持久化运行日志", status: "ready", detail: "最近 API 请求会追加到 JSONL 运维日志，可随 /api/operations/export 导出。" },
@@ -177,7 +179,17 @@ function createOperationsService(deps) {
 
   function buildReleaseHistory() {
     return [
-      { version: appVersion, label: buildLabel, phase, date: "2026-06-24", summary: "阶段 19 第九版补充复核状态流转、字段别名规则、导入报告视图和批次审计检索。" },
+      { version: "1.0.10", label: "phase20-template-preview-fixtures", phase, date: "2026-06-25", summary: "Phase 20 eleventh edition adds template preview fixtures, negative fixture blocking, preview workflows, and fixture export coverage while runtime execution stays disabled." },
+      { version: "1.0.9", label: "phase20-plugin-installation-workflow", phase, date: "2026-06-25", summary: "Phase 20 tenth edition adds a plugin installation workflow with manifest import, signature verification, permission review, contract tests, sandbox checks, and audit decisions while runtime execution stays disabled." },
+      { version: "1.0.8", label: "phase20-signed-plugin-manifest", phase, date: "2026-06-25", summary: "Phase 20 ninth edition adds signed manifest policy, digest fields, trust checks, and blocked unsigned plugin samples while runtime execution stays disabled." },
+      { version: "1.0.7", label: "phase20-no-code-template-pack", phase, date: "2026-06-25", summary: "Phase 20 eighth edition adds no-code template packs for importer, exporter, agent-tool, asset-template, and sync-adapter extension points while runtime execution stays disabled." },
+      { version: "1.0.6", label: "phase20-plugin-sandbox-boundary", phase, date: "2026-06-25", summary: "Phase 20 seventh edition defines plugin sandbox boundaries, blocked capabilities, data access limits, and runtime handoff gates while execution stays disabled." },
+      { version: "1.0.5", label: "phase20-extension-contract-tests", phase, date: "2026-06-25", summary: "Phase 20 sixth edition adds extension contract test suites, fixture expectations, failure policy, and readiness coverage while plugin runtime stays disabled." },
+      { version: "1.0.4", label: "phase20-built-in-plugin-registry", phase, date: "2026-06-25", summary: "阶段 20 第五版补充内置插件注册表、能力目录、输入输出契约和注册表检查项。" },
+      { version: "1.0.3", label: "phase20-plugin-audit-log", phase, date: "2026-06-25", summary: "阶段 20 第四版补充插件审计日志模型、审计事件 schema、运行阻断样例和导出字段。" },
+      { version: "1.0.2", label: "phase20-plugin-permission-review", phase, date: "2026-06-25", summary: "阶段 20 第三版补充插件权限复核策略、默认拒绝、人工确认、内置插件决策和审计事件类型。" },
+      { version: "1.0.1", label: "phase20-plugin-manifest-schema", phase, date: "2026-06-25", summary: "阶段 20 第二版补充插件 manifest schema、权限标签、扩展点契约和内置插件 manifest 摘要。" },
+      { version: appVersion, label: buildLabel, phase, date: "2026-06-25", summary: "阶段 20 第一版启动可扩展产品平台和插件生态边界，新增插件清单、扩展点、安全策略和 readiness 检查。" },
       { version: "0.9.7", label: "phase19-import-review-eighth-edition", phase: 19, date: "2026-06-24", summary: "阶段 19 第八版补充模板规则默认值、导入后整理队列、冲突复核台和批次审计导出。" },
       { version: "0.9.6", label: "phase19-import-conflict-seventh-edition", phase: 19, date: "2026-06-24", summary: "阶段 19 第七版补充自定义映射模板、重复项导入决策、导入前冲突预览和批次筛选对比。" },
       { version: "0.9.5", label: "phase19-import-template-sixth-edition", phase: 19, date: "2026-06-24", summary: "阶段 19 第六版补充字段映射模板、批次命名、重复项预判和跨批次对比。" },
@@ -282,6 +294,300 @@ function createOperationsService(deps) {
     ];
   }
 
+  function buildPhase20PlatformPlan(memories = []) {
+    const stats = getStats();
+    return {
+      phase: 20,
+      phaseName: "可扩展产品平台和插件生态版",
+      version: appVersion,
+      mode: "platform-boundary-first",
+      runtimePolicy: "manifest-only-no-third-party-code-execution",
+      currentScope: [
+        "plugin-manifest-registry",
+        "plugin-manifest-schema",
+        "permission-review",
+        "plugin-audit-log",
+        "capability-catalog",
+        "extension-point-map",
+        "security-boundary",
+        "built-in-plugin-inventory",
+        "built-in-plugin-registry",
+        "extension-contract-tests",
+        "plugin-sandbox-boundary",
+        "no-code-template-pack",
+        "signed-plugin-manifest",
+        "plugin-installation-workflow",
+        "template-preview-fixtures",
+        "phase20-readiness"
+      ],
+      extensionPoints: [
+        { id: "importer", label: "导入器", status: "planned", contract: "preview -> draft -> reviewed import", owner: "phase19ImportPlan" },
+        { id: "exporter", label: "导出器", status: "planned", contract: "collection -> package -> redaction policy", owner: "privacyPolicy" },
+        { id: "agent-tool", label: "Agent 工具", status: "planned", contract: "suggestion -> human review -> auditable action", owner: "phase18LongTermAgent" },
+        { id: "asset-template", label: "专题展模板", status: "planned", contract: "asset draft -> editable sections -> release package", owner: "phase15 assets" },
+        { id: "sync-adapter", label: "同步适配器", status: "planned", contract: "local-first package -> conflict preview -> manual apply", owner: "phase16/17 sync" }
+      ],
+      builtInPlugins: [
+        { id: "markdown-importer", type: "importer", status: "built-in", enabled: true, source: "phase19", manifest: { schemaVersion: "phase20.plugin.manifest.v1", permissions: ["memory.import.preview"], extensionPoint: "importer" } },
+        { id: "csv-importer", type: "importer", status: "built-in", enabled: true, source: "phase19", manifest: { schemaVersion: "phase20.plugin.manifest.v1", permissions: ["memory.import.preview"], extensionPoint: "importer" } },
+        { id: "chat-importer", type: "importer", status: "built-in", enabled: true, source: "phase19", manifest: { schemaVersion: "phase20.plugin.manifest.v1", permissions: ["memory.import.preview"], extensionPoint: "importer" } },
+        { id: "redacted-exporter", type: "exporter", status: "built-in", enabled: true, source: "phase12", manifest: { schemaVersion: "phase20.plugin.manifest.v1", permissions: ["memory.export.redacted"], extensionPoint: "exporter" } },
+        { id: "long-term-review-agent", type: "agent-tool", status: "built-in", enabled: true, source: "phase18", manifest: { schemaVersion: "phase20.plugin.manifest.v1", permissions: ["agent.suggest", "memory.read.summary"], extensionPoint: "agent-tool" } },
+        { id: "manual-json-sync", type: "sync-adapter", status: "built-in", enabled: true, source: "phase16", manifest: { schemaVersion: "phase20.plugin.manifest.v1", permissions: ["sync.package.preview"], extensionPoint: "sync-adapter" } }
+      ],
+      builtInPluginRegistry: {
+        schemaVersion: "phase20.builtIn.registry.v1",
+        status: "registry-ready-runtime-disabled",
+        owner: "local-platform",
+        total: 6,
+        enabled: 6,
+        categories: ["importer", "exporter", "agent-tool", "sync-adapter"],
+        entries: [
+          { id: "markdown-importer", type: "importer", owner: "phase19", status: "enabled", capability: "markdown-to-memory-drafts", input: "markdown text", output: "reviewable memory drafts", contract: "preview-only" },
+          { id: "csv-importer", type: "importer", owner: "phase19", status: "enabled", capability: "csv-to-memory-drafts", input: "csv text", output: "reviewable memory drafts", contract: "preview-only" },
+          { id: "chat-importer", type: "importer", owner: "phase19", status: "enabled", capability: "chat-to-memory-drafts", input: "chat transcript", output: "reviewable memory drafts", contract: "preview-only" },
+          { id: "redacted-exporter", type: "exporter", owner: "phase12", status: "enabled", capability: "redacted-memory-export", input: "memory collection", output: "redacted export package", contract: "redaction-required" },
+          { id: "long-term-review-agent", type: "agent-tool", owner: "phase18", status: "enabled", capability: "long-term-review-suggestions", input: "memory summaries", output: "reviewable suggestions", contract: "human-confirmation" },
+          { id: "manual-json-sync", type: "sync-adapter", owner: "phase16", status: "enabled", capability: "manual-json-sync-preview", input: "local-first sync package", output: "conflict preview", contract: "manual-apply-only" }
+        ],
+        registryChecks: ["unique-id", "known-extension-point", "manifest-attached", "permission-reviewed", "audit-sample-present"],
+        runtimeExecution: false
+      },
+      manifestSchema: {
+        schemaVersion: "phase20.plugin.manifest.v1",
+        status: "schema-ready-runtime-disabled",
+        requiredFields: ["id", "name", "version", "type", "extensionPoint", "permissions", "entryPolicy", "dataAccess", "audit"],
+        optionalFields: ["description", "sourcePhase", "capabilities", "compatibility", "uiHints", "disabledReason"],
+        permissionLabels: ["memory.import.preview", "memory.export.redacted", "memory.read.summary", "agent.suggest", "sync.package.preview"],
+        extensionContracts: ["importer", "exporter", "agent-tool", "asset-template", "sync-adapter"],
+        validationRules: [
+          "id must be stable kebab-case",
+          "extensionPoint must match a declared Phase 20 extension point",
+          "permissions must use approved labels",
+          "entryPolicy must be manifest-only",
+          "networkAccess and secretStorage must remain false in 1.0.10"
+        ]
+      },
+      manifestValidation: {
+        status: "ready",
+        runtimeExecution: false,
+        builtInManifestCount: 6,
+        sampleManifestIds: ["markdown-importer", "csv-importer", "chat-importer", "redacted-exporter", "long-term-review-agent", "manual-json-sync"],
+        blockedUntil: ["permission-review", "sandbox-boundary"]
+      },
+      permissionReview: {
+        status: "policy-ready",
+        defaultDecision: "deny-until-reviewed",
+        humanApprovalRequired: true,
+        reviewScope: ["manifest.permissions", "manifest.entryPolicy", "manifest.dataAccess", "manifest.audit"],
+        reviewChecklist: [
+          "确认插件只声明允许的权限标签",
+          "确认插件不打开第三方代码执行",
+          "确认插件不请求网络访问和密钥存储",
+          "确认高风险能力需要人工复核",
+          "确认被禁用的原因会写入审计"
+        ],
+        builtInDecisions: [
+          { id: "markdown-importer", decision: "approved", permissions: ["memory.import.preview"], confirmationRequired: false },
+          { id: "csv-importer", decision: "approved", permissions: ["memory.import.preview"], confirmationRequired: false },
+          { id: "chat-importer", decision: "approved", permissions: ["memory.import.preview"], confirmationRequired: false },
+          { id: "redacted-exporter", decision: "approved", permissions: ["memory.export.redacted"], confirmationRequired: false },
+          { id: "long-term-review-agent", decision: "reviewed", permissions: ["agent.suggest", "memory.read.summary"], confirmationRequired: true },
+          { id: "manual-json-sync", decision: "approved", permissions: ["sync.package.preview"], confirmationRequired: false }
+        ],
+        permissionLabels: [
+          { id: "memory.import.preview", review: "approved", scope: "导入预览" },
+          { id: "memory.export.redacted", review: "approved", scope: "脱敏导出" },
+          { id: "memory.read.summary", review: "reviewed", scope: "摘要读取" },
+          { id: "agent.suggest", review: "reviewed", scope: "Agent 建议" },
+          { id: "sync.package.preview", review: "approved", scope: "同步包预览" }
+        ],
+        blockedUntil: ["sandbox-boundary"],
+        auditEventTypes: ["manifest-loaded", "permission-reviewed", "decision-approved", "decision-blocked", "confirmation-recorded"]
+      },
+      pluginAuditLog: {
+        status: "audit-model-ready",
+        eventSchemaVersion: "phase20.plugin.audit.v1",
+        storageMode: "export-and-operations-summary",
+        runtimeExecution: false,
+        requiredFields: ["id", "pluginId", "eventType", "decision", "actor", "createdAt", "evidence"],
+        eventTypes: ["manifest-loaded", "permission-reviewed", "decision-approved", "decision-blocked", "confirmation-recorded", "runtime-blocked"],
+        sampleEvents: [
+          { id: "audit-markdown-importer-manifest", pluginId: "markdown-importer", eventType: "manifest-loaded", decision: "recorded", actor: "system", evidence: ["phase20.plugin.manifest.v1", "memory.import.preview"] },
+          { id: "audit-long-term-review-agent-permission", pluginId: "long-term-review-agent", eventType: "permission-reviewed", decision: "reviewed", actor: "human-review-required", evidence: ["agent.suggest", "memory.read.summary"] },
+          { id: "audit-third-party-runtime-blocked", pluginId: "third-party-placeholder", eventType: "runtime-blocked", decision: "blocked", actor: "system", evidence: ["thirdPartyExecution=false", "networkAccessForPlugins=false"] }
+        ],
+        exportFields: ["phase20PlatformPlan.pluginAuditLog", "phase20PlatformPlan.permissionReview.auditEventTypes"],
+        nextControls: ["tamper-evident-checksum", "audit-search", "reviewer-note"]
+      },
+      extensionContractTests: {
+        schemaVersion: "phase20.extension.contract-tests.v1",
+        status: "contract-tests-ready-runtime-disabled",
+        runtimeExecution: false,
+        coverage: ["importer", "exporter", "agent-tool", "asset-template", "sync-adapter"],
+        requiredAssertions: [
+          "declared-extension-point",
+          "manifest-schema-version",
+          "permission-labels-reviewed",
+          "no-network-access",
+          "no-secret-storage",
+          "human-review-or-preview-output",
+          "audit-event-emitted"
+        ],
+        contractSuites: [
+          { id: "importer-contract", extensionPoint: "importer", status: "ready", samplePlugin: "markdown-importer", inputFixture: "markdown text", expectedOutput: "reviewable memory drafts", blockingFailure: "reject-import-preview" },
+          { id: "exporter-contract", extensionPoint: "exporter", status: "ready", samplePlugin: "redacted-exporter", inputFixture: "memory collection", expectedOutput: "redacted export package", blockingFailure: "reject-export-package" },
+          { id: "agent-tool-contract", extensionPoint: "agent-tool", status: "ready", samplePlugin: "long-term-review-agent", inputFixture: "memory summaries", expectedOutput: "reviewable suggestions", blockingFailure: "require-human-confirmation" },
+          { id: "asset-template-contract", extensionPoint: "asset-template", status: "planned", samplePlugin: "asset-template-placeholder", inputFixture: "asset draft", expectedOutput: "editable sections", blockingFailure: "disable-template" },
+          { id: "sync-adapter-contract", extensionPoint: "sync-adapter", status: "ready", samplePlugin: "manual-json-sync", inputFixture: "local-first sync package", expectedOutput: "conflict preview", blockingFailure: "manual-apply-only" }
+        ],
+        failurePolicy: "block-plugin-and-record-audit-event",
+        exportFields: ["phase20PlatformPlan.extensionContractTests", "phase20PlatformPlan.extensionPoints"],
+        nextControls: ["fixture-library", "negative-permission-tests", "sandbox-boundary-tests"]
+      },
+      sandboxBoundary: {
+        schemaVersion: "phase20.plugin.sandbox-boundary.v1",
+        status: "boundary-defined-runtime-disabled",
+        runtimeExecution: false,
+        isolationMode: "no-third-party-code-execution",
+        trustZone: "built-in-manifest-only",
+        blockedCapabilities: ["dynamic-code-eval", "filesystem-write", "network-request", "secret-read", "background-process", "direct-database-access"],
+        allowedCapabilities: ["manifest-parse", "contract-fixture-check", "reviewable-draft-output", "redacted-export-preview", "audit-event-summary"],
+        dataBoundary: {
+          memoryAccess: "summary-or-explicit-draft-only",
+          assetAccess: "metadata-preview-only",
+          exportAccess: "redacted-package-only",
+          syncAccess: "manual-preview-only"
+        },
+        enforcementChecks: [
+          { id: "runtime-disabled", status: "ready", rule: "thirdPartyExecution=false" },
+          { id: "network-blocked", status: "ready", rule: "networkAccessForPlugins=false" },
+          { id: "secret-storage-blocked", status: "ready", rule: "secretStorage=false" },
+          { id: "filesystem-blocked", status: "planned", rule: "no plugin filesystem write boundary before runtime" },
+          { id: "database-blocked", status: "planned", rule: "plugins cannot receive direct sqlite handles" }
+        ],
+        handoffToRuntime: ["signed-manifest", "permission-review-approved", "contract-tests-passing", "audit-log-enabled", "sandbox-enforcer-implemented"],
+        exportFields: ["phase20PlatformPlan.sandboxBoundary", "phase20PlatformPlan.securityModel"],
+        nextControls: ["sandbox-enforcer", "signed-manifest-check", "resource-quota-policy"]
+      },
+      noCodeTemplatePack: {
+        schemaVersion: "phase20.no-code.template-pack.v1",
+        status: "template-pack-ready-runtime-disabled",
+        runtimeExecution: false,
+        owner: "local-platform",
+        templateCount: 5,
+        categories: ["importer", "exporter", "agent-tool", "asset-template", "sync-adapter"],
+        templates: [
+          { id: "memory-import-template", extensionPoint: "importer", status: "ready", input: "text-or-table", output: "reviewable memory drafts", controls: ["field-mapping", "dedupe-preview", "manual-apply"] },
+          { id: "redacted-export-template", extensionPoint: "exporter", status: "ready", input: "memory collection", output: "redacted export package", controls: ["redaction-policy", "preview-only", "manual-download"] },
+          { id: "review-agent-template", extensionPoint: "agent-tool", status: "ready", input: "memory summaries", output: "reviewable suggestions", controls: ["human-confirmation", "audit-event", "no-background-run"] },
+          { id: "exhibition-layout-template", extensionPoint: "asset-template", status: "ready", input: "asset draft", output: "editable exhibition sections", controls: ["section-preview", "citation-required", "manual-save"] },
+          { id: "sync-preview-template", extensionPoint: "sync-adapter", status: "ready", input: "local-first sync package", output: "conflict preview", controls: ["conflict-list", "per-item-decision", "manual-apply"] }
+        ],
+        guardrails: ["manifest-required", "permission-reviewed", "contract-tested", "sandbox-boundary-applied", "audit-summary-required"],
+        authoringWorkflow: ["choose-template", "fill-metadata", "preview-fixture", "review-permissions", "export-template-json"],
+        exportFields: ["phase20PlatformPlan.noCodeTemplatePack", "phase20PlatformPlan.extensionContractTests", "phase20PlatformPlan.sandboxBoundary"],
+        nextControls: ["template-json-schema", "template-preview-fixtures", "template-signature"]
+      },
+      templatePreviewFixtures: {
+        schemaVersion: "phase20.template.preview-fixtures.v1",
+        status: "fixtures-ready-runtime-disabled",
+        runtimeExecution: false,
+        fixtureCount: 5,
+        coverage: ["importer", "exporter", "agent-tool", "asset-template", "sync-adapter"],
+        previewWorkflow: ["load-template", "load-fixture", "render-preview", "run-contract-assertions", "record-audit-summary", "block-or-mark-ready"],
+        fixtures: [
+          { id: "memory-import-fixture", templateId: "memory-import-template", extensionPoint: "importer", status: "passing", inputFixture: "two-row memory table", expectedPreview: "reviewable memory drafts", requiredAssertions: ["field-mapping-applied", "dedupe-preview-visible", "manual-apply-only"] },
+          { id: "redacted-export-fixture", templateId: "redacted-export-template", extensionPoint: "exporter", status: "passing", inputFixture: "memory collection with sensitive fields", expectedPreview: "redacted export package", requiredAssertions: ["redaction-policy-applied", "download-preview-only", "audit-summary-present"] },
+          { id: "review-agent-fixture", templateId: "review-agent-template", extensionPoint: "agent-tool", status: "passing", inputFixture: "memory summaries with weak signals", expectedPreview: "reviewable suggestions", requiredAssertions: ["human-confirmation-required", "no-background-run", "audit-event-emitted"] },
+          { id: "exhibition-layout-fixture", templateId: "exhibition-layout-template", extensionPoint: "asset-template", status: "passing", inputFixture: "asset draft with citations", expectedPreview: "editable exhibition sections", requiredAssertions: ["citation-required", "manual-save-only", "section-preview-visible"] },
+          { id: "sync-preview-fixture", templateId: "sync-preview-template", extensionPoint: "sync-adapter", status: "passing", inputFixture: "local-first sync conflict package", expectedPreview: "conflict preview", requiredAssertions: ["per-item-decision-required", "manual-apply-only", "sync-audit-summary"] }
+        ],
+        negativeFixtures: [
+          { id: "network-request-negative", templateId: "sync-preview-template", status: "blocked", reason: "network-request", expectedDecision: "sandbox-boundary-violation" },
+          { id: "missing-citation-negative", templateId: "exhibition-layout-template", status: "blocked", reason: "citation-required", expectedDecision: "template-preview-blocked" },
+          { id: "auto-apply-negative", templateId: "memory-import-template", status: "blocked", reason: "manual-apply-only", expectedDecision: "contract-test-failed" }
+        ],
+        blockedWhen: ["fixture-missing", "expected-preview-mismatch", "required-assertion-failed", "negative-fixture-not-blocked", "audit-summary-missing"],
+        exportFields: ["phase20PlatformPlan.templatePreviewFixtures", "phase20PlatformPlan.noCodeTemplatePack", "phase20PlatformPlan.extensionContractTests"],
+        nextControls: ["fixture-authoring-ui", "fixture-result-history", "template-preview-diff"]
+      },
+      signedManifestPolicy: {
+        schemaVersion: "phase20.signed.manifest-policy.v1",
+        status: "signature-policy-ready-runtime-disabled",
+        runtimeExecution: false,
+        signatureRequired: true,
+        algorithm: "sha256-manifest-digest-placeholder",
+        signerTrust: "local-owner-or-built-in-only",
+        signedFields: ["id", "version", "extensionPoint", "permissions", "entryPolicy", "dataAccess", "audit", "sandboxBoundary", "templatePack"],
+        checksumFields: ["manifestSchema.schemaVersion", "permissionReview.defaultDecision", "extensionContractTests.schemaVersion", "sandboxBoundary.schemaVersion", "noCodeTemplatePack.schemaVersion"],
+        verificationSteps: ["parse-manifest", "normalize-fields", "calculate-digest", "compare-signature", "check-signer-trust", "record-audit-event"],
+        sampleSignatures: [
+          { pluginId: "markdown-importer", status: "built-in-trusted", digest: "sha256:phase20-markdown-importer-manifest" },
+          { pluginId: "redacted-exporter", status: "built-in-trusted", digest: "sha256:phase20-redacted-exporter-manifest" },
+          { pluginId: "third-party-placeholder", status: "blocked-unsigned", digest: "missing" }
+        ],
+        blockedWhen: ["signature-missing", "digest-mismatch", "untrusted-signer", "manifest-mutated-after-review", "permissions-changed-after-signature"],
+        exportFields: ["phase20PlatformPlan.signedManifestPolicy", "phase20PlatformPlan.manifestSchema", "phase20PlatformPlan.pluginAuditLog"],
+        nextControls: ["signature-ui", "manifest-lockfile", "reviewer-countersignature"]
+      },
+      pluginInstallationWorkflow: {
+        schemaVersion: "phase20.plugin.installation-workflow.v1",
+        status: "install-workflow-ready-runtime-disabled",
+        runtimeExecution: false,
+        defaultDecision: "block-or-pending-review",
+        installStates: ["manifest-imported", "signature-verified", "permissions-reviewed", "contract-tested", "sandbox-checked", "audit-recorded", "pending-human-review", "blocked"],
+        requiredGates: ["manifest-schema-valid", "signature-trusted", "permissions-approved", "contract-tests-passing", "sandbox-boundary-passing", "audit-event-recorded"],
+        workflowSteps: [
+          { id: "import-manifest", status: "ready", input: "plugin manifest json", output: "normalized manifest draft", blockingFailure: "invalid-manifest" },
+          { id: "verify-signature", status: "ready", input: "normalized manifest digest", output: "trusted-or-blocked signature result", blockingFailure: "signature-missing-or-mismatch" },
+          { id: "review-permissions", status: "ready", input: "declared permissions", output: "approved or pending human review", blockingFailure: "permission-unreviewed" },
+          { id: "run-contract-tests", status: "ready", input: "extension point fixture", output: "contract pass or block decision", blockingFailure: "contract-test-failed" },
+          { id: "check-sandbox-boundary", status: "ready", input: "declared capabilities", output: "sandbox pass or blocked capability list", blockingFailure: "sandbox-boundary-violation" },
+          { id: "record-install-audit", status: "ready", input: "gate decisions", output: "installation audit summary", blockingFailure: "audit-record-missing" }
+        ],
+        sampleDecisions: [
+          { pluginId: "markdown-importer", state: "installed-built-in", decision: "approved", evidence: ["built-in-trusted", "contract-tests-passing", "audit-recorded"] },
+          { pluginId: "review-agent-template", state: "pending-human-review", decision: "pending", evidence: ["agent.suggest", "confirmation-required"] },
+          { pluginId: "third-party-placeholder", state: "blocked", decision: "blocked", evidence: ["signature-missing", "runtimeExecution=false"] }
+        ],
+        blockedWhen: ["invalid-manifest", "signature-missing-or-mismatch", "permission-unreviewed", "contract-test-failed", "sandbox-boundary-violation", "audit-record-missing"],
+        exportFields: ["phase20PlatformPlan.pluginInstallationWorkflow", "phase20PlatformPlan.signedManifestPolicy", "phase20PlatformPlan.extensionContractTests", "phase20PlatformPlan.sandboxBoundary"],
+        nextControls: ["installation-queue-ui", "reviewer-approval-record", "plugin-lockfile"]
+      },
+      securityModel: {
+        defaultTrust: "built-in-only",
+        thirdPartyExecution: false,
+        networkAccessForPlugins: false,
+        secretStorage: false,
+        dataAccess: "explicit-export-or-reviewed-draft-only",
+        requiredControls: ["manifest-review", "permission-labels", "human-confirmation", "audit-log", "redaction-before-share"]
+      },
+      readiness: {
+        memoryCount: stats.total || memories.length,
+        importPlanReady: true,
+        manifestSchemaReady: true,
+        permissionReviewReady: true,
+        pluginAuditLogReady: true,
+        builtInRegistryReady: true,
+        extensionContractTestsReady: true,
+        sandboxBoundaryReady: true,
+        noCodeTemplatePackReady: true,
+        templatePreviewFixturesReady: true,
+        signedManifestPolicyReady: true,
+        pluginInstallationWorkflowReady: true,
+        exportBoundaryReady: true,
+        syncBoundaryReady: true,
+        pluginRuntimeReady: false,
+        recommendation: "第十一版已固定插件清单、扩展点、安全边界、模板预览 fixtures、签名策略和安装闸门；真实第三方插件运行时需要等权限、沙箱和审计闭环完成后再启用。"
+      },
+      nextMilestones: [
+        "phase20-plugin-review-workflow",
+        "phase20-plugin-lockfile"
+      ]
+    };
+  }
+
   function buildPhase14Readiness(memories = []) {
     const checks = [
       { id: "api-contract", label: "API 契约保护", status: "ready", detail: "api-smoke 已覆盖 health/version/operations/privacy/workflows/analyze/search/guide/insights。" },
@@ -374,6 +680,7 @@ function createOperationsService(deps) {
       phase14Readiness: buildPhase14Readiness(memories),
       phase15Readiness: buildPhase15Readiness(memories),
       phase15AssetPlan: buildPhase15AssetPlan(memories),
+      phase20PlatformPlan: buildPhase20PlatformPlan(memories),
       moduleBoundaryPlan: buildModuleBoundaryPlan(),
       recentEvents: operationEvents.slice(0, operationEventLimit)
     };
@@ -399,6 +706,7 @@ function createOperationsService(deps) {
       phase14Readiness: buildPhase14Readiness(memories),
       phase15Readiness: buildPhase15Readiness(memories),
       phase15AssetPlan: buildPhase15AssetPlan(memories),
+      phase20PlatformPlan: buildPhase20PlatformPlan(memories),
       moduleBoundaryPlan: buildModuleBoundaryPlan()
     };
   }
@@ -410,7 +718,7 @@ function createOperationsService(deps) {
     return {
       status: "operational",
       mode: process.env.NODE_ENV === "production" ? "production" : "local",
-      checks: ["syntax", "phase15-readiness", "phase16-readiness", "api-smoke"],
+      checks: ["syntax", "phase15-readiness", "phase16-readiness", "phase17-readiness", "phase18-readiness", "phase19-readiness", "phase20-readiness", "api-smoke"],
       release: {
         channel: releaseChannel,
         label: buildLabel,
@@ -443,11 +751,13 @@ function createOperationsService(deps) {
         phase16: true,
         phase17: true,
         phase18: true,
+        phase19: true,
+        phase20: true,
         modularizationReady: true,
         assetModelReady: true,
         deployableLocal: true,
         productionReady: false,
-        reason: "阶段 19 第九版已补充复核状态流转、字段别名规则、导入报告视图和批次审计检索。"
+        reason: "阶段 20 第十一版已补充平台边界、内置插件清单、扩展点、安全策略、模板预览 fixtures 和插件安装流程模型。"
       }
     };
   }
@@ -460,6 +770,7 @@ function createOperationsService(deps) {
     buildPhase14Readiness,
     buildPhase15Readiness,
     buildPhase15AssetPlan,
+    buildPhase20PlatformPlan,
     buildModuleBoundaryPlan
   };
 }

@@ -1,6 +1,6 @@
 # AI 记忆博物馆 - 项目工程
 
-当前是项目第十九阶段第九版：Node 后端 + AI 结构化生成 + SQLite 数据库持久化 + 混合 RAG 讲解员 + Agent 状态机 + Agent 运行历史 + 多模态附件线索 + 时间线、主题展、回忆报告 + 轻量工作流编排层 + 数据主权控制 + 产品化运维信息 + 可保存专题展 + 回忆报告草稿 + 第十六阶段本地优先同步闭环 + 第十七阶段真实多设备同步适配层 + 第十八阶段长期记忆助理 + 第十九阶段外部资料导入。第十九阶段第九版补上复核状态流转、模板字段别名规则、导入报告视图和批次审计检索，让外部资料导入从“可复核、可审计、可持续整理”推进到“可解释、可检索、可追踪状态”的资料整理入口。
+当前是项目第二十阶段第十一版：Node 后端 + AI 结构化生成 + SQLite 数据库持久化 + 混合 RAG 讲解员 + Agent 状态机 + Agent 运行历史 + 多模态附件线索 + 时间线、主题展、回忆报告 + 轻量工作流编排层 + 数据主权控制 + 产品化运维信息 + 可保存专题展 + 回忆报告草稿 + 第十六阶段本地优先同步闭环 + 第十七阶段真实多设备同步适配层 + 第十八阶段长期记忆助理 + 第十九阶段外部资料导入 + 第二十阶段可扩展产品平台和插件生态边界。第二十阶段第十一版在平台边界、内置插件注册表、扩展点、权限复核、审计日志、安全策略、扩展契约测试、沙箱边界、无代码模板包、签名 manifest 和插件安装流程模型之上，新增模板预览 fixtures、负向样例阻断、预览 workflow 和 readiness 检查，暂不执行第三方插件代码。
 
 ## 怎么运行
 
@@ -64,7 +64,7 @@ npm.cmd start
 npm.cmd run check
 ```
 
-当前检查包含 `app.js`、`server.js`、`database.js`、`src/services/operations.js`、`src/routes/health.js`、`src/routes/operations.js` 语法检查、第十五阶段 readiness 检查，以及会临时启动后端的 API smoke test。readiness 检查会覆盖专题资产表、报告草稿表、资产 API、导出字段、前端阶段期望、CSS 变量、README、白皮书和项目规划状态；API smoke test 会验证 `/api/health`、`/api/version`、`/api/operations`、`/api/assets`、`/api/exhibitions`、`/api/report-drafts`、`/api/privacy`、`/api/workflows`、`/api/analyze`、`/api/memories/purge`、`/api/search?mode=keyword|semantic|hybrid`、`/api/guide`、`/api/insights` 和展品整理历史关联接口。
+当前检查包含 `app.js`、`server.js`、`database.js`、`src/services/operations.js`、`src/routes/health.js`、`src/routes/operations.js` 语法检查、第十五到第二十阶段 readiness 检查，以及会临时启动后端的 API smoke test。readiness 检查会覆盖专题资产表、报告草稿表、资产 API、导出字段、前端阶段期望、CSS 变量、平台插件边界、README、白皮书和项目规划状态；API smoke test 会验证 `/api/health`、`/api/version`、`/api/operations`、`/api/assets`、`/api/exhibitions`、`/api/report-drafts`、`/api/privacy`、`/api/workflows`、`/api/analyze`、`/api/memories/purge`、`/api/search?mode=keyword|semantic|hybrid`、`/api/guide`、`/api/insights` 和展品整理历史关联接口。
 
 只跑接口 smoke test：
 
@@ -177,6 +177,7 @@ AI_TIMEOUT_MS=20000
 - `GET /api/workflows`：生成第十一阶段工作流蓝图，包含轻量编排引擎说明、能力声明、handoff 状态、质量闸门、数据来源、缺口建议、工作流模板和 `phase12Readiness`
 - `GET /api/privacy`：生成第十二阶段隐私和数据主权策略，包含数据位置、AI 调用范围、用户控制和同步包说明
 - `GET /api/assets`：返回第十五阶段专题资产集合、报告草稿和资产 readiness
+- `GET /api/version`、`GET /api/operations` 和 `GET /api/memories/export` 会携带 `phase20PlatformPlan`，说明插件生态的扩展点、内置插件、安全策略、模板预览 fixtures、签名 manifest、安装流程和后续里程碑
 - `POST /api/exhibitions`：保存专题展草稿，字段包含 `title`、`intro`、`memoryIds`、`coverMemoryId`、`guideText`、`tags` 和 `status`
 - `POST /api/exhibitions/from-theme`：根据 `theme`、`year`、`hall` 生成专题展草稿
 - `POST /api/report-drafts`：保存回忆报告草稿，字段包含 `title`、`scope`、`sections`、`references`、`sourceInsights` 和 `status`
@@ -205,4 +206,4 @@ AI_TIMEOUT_MS=20000
 - 阶段 19：个人知识生态和外部导入
 - 阶段 20：可扩展产品平台和插件生态
 
-近期继续推进阶段 18。第十二版已经完成关系图谱与专题展/报告的双向跳转；下一步优先做长期助理摘要和每日/每周复盘入口。
+当前已经进入阶段 20 第十一版。近期优先把平台与插件生态做成“可声明、可审计、可禁用、可复核”的边界层：先固定插件 manifest、权限标签、权限复核、审计日志、内置插件注册表、扩展点契约测试、沙箱边界、无代码模板包、模板预览 fixtures、签名 manifest、安装流程模型和检查脚本；真实第三方插件运行时需要等沙箱隔离、密钥管理和审计闭环稳定后再启用。

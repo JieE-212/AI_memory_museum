@@ -1,11 +1,11 @@
 {
   "name": "ai-memory-museum",
-  "version": "0.9.8",
+  "version": "1.0.10",
   "private": true,
-  "description": "AI 记忆博物馆第十九阶段第九版：复核状态流转和导入审计检索",
+  "description": "AI 记忆博物馆第二十阶段第一版：可扩展产品平台和插件生态边界",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check app.js && node --check server.js && node --check database.js && node --check src/services/operations.js && node --check src/routes/health.js && node --check src/routes/operations.js && node scripts/phase15-readiness.js && node scripts/phase16-readiness.js && node scripts/phase17-readiness.js && node scripts/phase18-readiness.js && node scripts/phase19-readiness.js && node scripts/api-smoke.js",
+    "check": "node --check app.js && node --check server.js && node --check database.js && node --check src/services/operations.js && node --check src/routes/health.js && node --check src/routes/operations.js && node scripts/phase15-readiness.js && node scripts/phase16-readiness.js && node scripts/phase17-readiness.js && node scripts/phase18-readiness.js && node scripts/phase19-readiness.js && node scripts/phase20-readiness.js && node scripts/api-smoke.js",
     "smoke": "node scripts/api-smoke.js"
   },
   "engines": {

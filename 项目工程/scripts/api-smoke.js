@@ -59,8 +59,8 @@ async function main() {
   try {
     const baseUrl = `http://127.0.0.1:${port}`;
     const health = await waitForHealth(baseUrl);
-    assert("health reports phase 19", health.ok === true && health.phase === 19);
-    assert("health reports phase 19 name", health.phaseName === "个人知识生态和外部导入版");
+    assert("health reports phase 20", health.ok === true && health.phase === 20);
+    assert("health reports phase 20 name", health.phaseName === "可扩展产品平台和插件生态版");
     assert("health exposes multimodal stat", typeof health.database?.stats?.multimodal === "number");
     assert("health exposes phase 10 handoff", typeof health.database?.phase10Handoff?.timelineReady === "number");
     assert("health exposes phase 11 handoff", health.database?.phase11Handoff?.templates >= 3 && health.orchestration?.engine?.dependency === "none");
@@ -70,37 +70,39 @@ async function main() {
 
     const versionResponse = await fetch(`${baseUrl}/api/version`);
     const versionPayload = await versionResponse.json();
-    assert("version API reports phase 19", versionResponse.ok && versionPayload.phase === 19 && versionPayload.phaseName === "个人知识生态和外部导入版");
+    assert("version API reports phase 20", versionResponse.ok && versionPayload.phase === 20 && versionPayload.phaseName === "可扩展产品平台和插件生态版");
     assert("version API returns request id header", Boolean(versionResponse.headers.get("x-request-id")));
     assert("version API exposes runtime", versionPayload.runtime?.node && versionPayload.deployment?.startCommand === "npm.cmd start");
     assert("version API exposes operations", versionPayload.operations?.backup?.redactedExport && versionPayload.checks?.full === "npm.cmd run check");
-    assert("version API exposes phase 19 release checklist", versionPayload.version === "0.9.8" && versionPayload.buildLabel === "phase19-import-audit-ninth-edition" && versionPayload.releaseChecklist?.some((item) => item.id === "phase19-readiness"));
+    assert("version API exposes phase 20 release checklist", versionPayload.version === "1.0.10" && versionPayload.buildLabel === "phase20-template-preview-fixtures" && versionPayload.releaseChecklist?.some((item) => item.id === "phase20-readiness"));
     assert("version API exposes runbook and risk register", versionPayload.runbook?.some((item) => item.id === "backup") && versionPayload.riskRegister?.some((item) => item.id === "privacy"));
     assert("version API exposes backup policy and deployment modes", versionPayload.backupPolicy?.redacted && versionPayload.deploymentModes?.some((item) => item.id === "demo"));
-    assert("version API exposes release history", versionPayload.releaseHistory?.some((item) => item.version === "0.9.8"));
+    assert("version API exposes release history", versionPayload.releaseHistory?.some((item) => item.version === "1.0.10") && versionPayload.phase20PlatformPlan?.permissionReview?.defaultDecision === "deny-until-reviewed" && versionPayload.phase20PlatformPlan?.pluginAuditLog?.eventSchemaVersion === "phase20.plugin.audit.v1" && versionPayload.phase20PlatformPlan?.extensionContractTests?.schemaVersion === "phase20.extension.contract-tests.v1" && versionPayload.phase20PlatformPlan?.sandboxBoundary?.schemaVersion === "phase20.plugin.sandbox-boundary.v1" && versionPayload.phase20PlatformPlan?.noCodeTemplatePack?.schemaVersion === "phase20.no-code.template-pack.v1" && versionPayload.phase20PlatformPlan?.templatePreviewFixtures?.schemaVersion === "phase20.template.preview-fixtures.v1" && versionPayload.phase20PlatformPlan?.signedManifestPolicy?.schemaVersion === "phase20.signed.manifest-policy.v1" && versionPayload.phase20PlatformPlan?.pluginInstallationWorkflow?.schemaVersion === "phase20.plugin.installation-workflow.v1");
     assert("version API exposes log archive and demo kit", versionPayload.logArchive?.exportEndpoint === "/api/operations/export" && versionPayload.demoKit?.checks?.some((item) => item.id === "sample-count"));
     assert("version API exposes phase 14 readiness", versionPayload.phase14Readiness?.ready === true && versionPayload.moduleBoundaryPlan?.some((item) => item.id === "operations"));
     assert("version API exposes phase 15 readiness", versionPayload.phase15Readiness?.ready === true && versionPayload.phase15AssetPlan?.some((item) => item.id === "saved-exhibitions"));
+    assert("version API exposes phase 20 platform plan", versionPayload.phase20PlatformPlan?.phase === 20 && versionPayload.phase20PlatformPlan?.builtInPlugins?.some((item) => item.id === "markdown-importer") && versionPayload.phase20PlatformPlan?.builtInPluginRegistry?.schemaVersion === "phase20.builtIn.registry.v1" && versionPayload.phase20PlatformPlan?.manifestSchema?.schemaVersion === "phase20.plugin.manifest.v1" && versionPayload.phase20PlatformPlan?.permissionReview?.humanApprovalRequired === true && versionPayload.phase20PlatformPlan?.pluginAuditLog?.sampleEvents?.some((item) => item.eventType === "runtime-blocked") && versionPayload.phase20PlatformPlan?.extensionContractTests?.contractSuites?.some((item) => item.extensionPoint === "sync-adapter") && versionPayload.phase20PlatformPlan?.sandboxBoundary?.blockedCapabilities?.includes("network-request") && versionPayload.phase20PlatformPlan?.noCodeTemplatePack?.templates?.some((item) => item.id === "exhibition-layout-template") && versionPayload.phase20PlatformPlan?.templatePreviewFixtures?.fixtures?.some((item) => item.id === "sync-preview-fixture") && versionPayload.phase20PlatformPlan?.pluginInstallationWorkflow?.requiredGates?.includes("signature-trusted"));
 
     const operationsResponse = await fetch(`${baseUrl}/api/operations`);
     const operationsPayload = await operationsResponse.json();
-    assert("operations API reports phase 19", operationsResponse.ok && operationsPayload.phase === 19 && operationsPayload.version === "0.9.8" && operationsPayload.buildLabel === "phase19-import-audit-ninth-edition");
+    assert("operations API reports phase 20", operationsResponse.ok && operationsPayload.phase === 20 && operationsPayload.version === "1.0.10" && operationsPayload.buildLabel === "phase20-template-preview-fixtures");
     assert("operations API exposes recent events", Array.isArray(operationsPayload.recentEvents) && operationsPayload.recentEvents.some((event) => event.path === "/api/version"));
-    assert("operations API exposes release history and runbook", operationsPayload.releaseHistory?.some((item) => item.version === "0.9.8") && operationsPayload.runbook?.some((item) => item.id === "check"));
+    assert("operations API exposes release history and runbook", operationsPayload.releaseHistory?.some((item) => item.version === "1.0.10") && operationsPayload.runbook?.some((item) => item.id === "check") && operationsPayload.phase20PlatformPlan?.permissionReview?.status === "policy-ready" && operationsPayload.phase20PlatformPlan?.pluginAuditLog?.status === "audit-model-ready" && operationsPayload.phase20PlatformPlan?.builtInPluginRegistry?.entries?.length >= 6 && operationsPayload.phase20PlatformPlan?.extensionContractTests?.requiredAssertions?.includes("audit-event-emitted") && operationsPayload.phase20PlatformPlan?.sandboxBoundary?.handoffToRuntime?.includes("sandbox-enforcer-implemented") && operationsPayload.phase20PlatformPlan?.noCodeTemplatePack?.guardrails?.includes("sandbox-boundary-applied") && operationsPayload.phase20PlatformPlan?.templatePreviewFixtures?.negativeFixtures?.some((item) => item.expectedDecision === "sandbox-boundary-violation") && operationsPayload.phase20PlatformPlan?.signedManifestPolicy?.blockedWhen?.includes("signature-missing") && operationsPayload.phase20PlatformPlan?.pluginInstallationWorkflow?.blockedWhen?.includes("sandbox-boundary-violation"));
     assert("operations API exposes persisted log archive and demo kit", operationsPayload.logArchive?.format === "jsonl" && operationsPayload.demoKit?.storyline?.length >= 3);
     assert("operations API exposes phase 14 plan", operationsPayload.phase14Readiness?.recommendedOrder?.includes("phase15-assets") && operationsPayload.moduleBoundaryPlan?.some((item) => item.id === "health"));
     assert("operations API exposes phase 15 plan", operationsPayload.phase15Readiness?.targetPhase === 15 && operationsPayload.phase15AssetPlan?.length >= 4);
 
     const operationsExportResponse = await fetch(`${baseUrl}/api/operations/export`);
     const operationsExportPayload = await operationsExportResponse.json();
-    assert("operations export succeeds", operationsExportResponse.ok && operationsExportPayload.phase === 19 && operationsExportPayload.version === "0.9.8" && operationsExportPayload.logArchive?.exportEndpoint === "/api/operations/export");
+    assert("operations export succeeds", operationsExportResponse.ok && operationsExportPayload.phase === 20 && operationsExportPayload.version === "1.0.10" && operationsExportPayload.logArchive?.exportEndpoint === "/api/operations/export");
     assert("operations export includes recent events and demo kit", operationsExportPayload.recentEvents?.some((event) => event.path === "/api/operations") && operationsExportPayload.demoKit?.checks?.length >= 5);
     assert("operations export includes phase 14 readiness", operationsExportPayload.phase14Readiness?.ready === true && operationsExportPayload.moduleBoundaryPlan?.some((item) => item.id === "routes"));
     assert("operations export includes phase 15 readiness", operationsExportPayload.phase15Readiness?.ready === true && operationsExportPayload.phase15AssetPlan?.some((item) => item.id === "report-drafts"));
+    assert("operations export includes phase 20 platform plan", operationsExportPayload.phase20PlatformPlan?.phase === 20 && operationsExportPayload.phase20PlatformPlan?.securityModel?.thirdPartyExecution === false && operationsExportPayload.phase20PlatformPlan?.manifestValidation?.runtimeExecution === false && operationsExportPayload.phase20PlatformPlan?.pluginAuditLog?.requiredFields?.includes("pluginId") && operationsExportPayload.phase20PlatformPlan?.builtInPluginRegistry?.registryChecks?.includes("unique-id") && operationsExportPayload.phase20PlatformPlan?.extensionContractTests?.failurePolicy === "block-plugin-and-record-audit-event" && operationsExportPayload.phase20PlatformPlan?.sandboxBoundary?.dataBoundary?.memoryAccess === "summary-or-explicit-draft-only" && operationsExportPayload.phase20PlatformPlan?.noCodeTemplatePack?.authoringWorkflow?.includes("export-template-json") && operationsExportPayload.phase20PlatformPlan?.templatePreviewFixtures?.previewWorkflow?.includes("run-contract-assertions") && operationsExportPayload.phase20PlatformPlan?.signedManifestPolicy?.verificationSteps?.includes("compare-signature") && operationsExportPayload.phase20PlatformPlan?.pluginInstallationWorkflow?.workflowSteps?.some((item) => item.id === "record-install-audit"));
 
     const workflowsResponse = await fetch(`${baseUrl}/api/workflows`);
     const workflowsPayload = await workflowsResponse.json();
-    assert("workflows API reports phase 19", workflowsResponse.ok && workflowsPayload.phase === 19);
+    assert("workflows API reports phase 20", workflowsResponse.ok && workflowsPayload.phase === 20);
     assert("workflows API returns templates", workflowsPayload.templates?.length >= 3 && workflowsPayload.templates.some((item) => item.id === "memory-curation"));
     assert("workflows API returns capabilities", workflowsPayload.capabilities?.humanReview === true && workflowsPayload.capabilities?.persistedRuns === true);
     assert("workflows API returns diagnostics", Array.isArray(workflowsPayload.qualityGates) && Array.isArray(workflowsPayload.dataSources) && Array.isArray(workflowsPayload.handoff?.recommendedNextActions));
@@ -108,7 +110,7 @@ async function main() {
 
     const privacyResponse = await fetch(`${baseUrl}/api/privacy`);
     const privacyPayload = await privacyResponse.json();
-    assert("privacy API reports phase 19", privacyResponse.ok && privacyPayload.phase === 19);
+    assert("privacy API reports phase 20", privacyResponse.ok && privacyPayload.phase === 20);
     assert("privacy API explains data locations", privacyPayload.dataLocations?.some((item) => item.id === "sqlite" && item.location));
     assert("privacy API explains AI scope", privacyPayload.aiDataScope?.configured === false && privacyPayload.aiDataScope?.note.includes("不会发起外部 AI 调用"));
     assert("privacy API exposes user controls", privacyPayload.userControls?.some((item) => item.id === "purge-all" && item.status === "available"));
@@ -126,7 +128,7 @@ async function main() {
       })
     });
     const importPreviewPayload = await importPreviewResponse.json();
-    assert("phase 19 import preview succeeds", importPreviewResponse.ok && importPreviewPayload.phase === 19 && importPreviewPayload.mode === "external-import-preview");
+    assert("phase 19 import preview succeeds under phase 20", importPreviewResponse.ok && importPreviewPayload.phase === 20 && importPreviewPayload.mode === "external-import-preview");
     assert("phase 19 import preview creates drafts", importPreviewPayload.detectedFormat === "markdown" && importPreviewPayload.draftCount >= 2 && importPreviewPayload.drafts?.every((item) => item.title && item.rawContent && item.selected === true && item.importTrace));
     const csvPreviewResponse = await fetch(`${baseUrl}/api/imports/preview`, {
       method: "POST",
@@ -156,8 +158,8 @@ async function main() {
     });
     const analyze = await analyzeResponse.json();
     assert("analyze request succeeds", analyzeResponse.ok);
-    assert("workflow is phase 19", analyze.workflow?.phase === 19 && analyze.workflow?.version === 2);
-    assert("workflow exposes run metadata", Boolean(analyze.workflow?.run?.id) && analyze.workflow.run.phase === 19 && analyze.workflow.run.persisted === true);
+    assert("workflow is phase 20", analyze.workflow?.phase === 20 && analyze.workflow?.version === 2);
+    assert("workflow exposes run metadata", Boolean(analyze.workflow?.run?.id) && analyze.workflow.run.phase === 20 && analyze.workflow.run.persisted === true);
     assert("workflow exposes run events", Array.isArray(analyze.workflow?.run?.events) && analyze.workflow.run.events.length > 0);
     assert("workflow exposes state machine", Array.isArray(analyze.workflow?.stateMachine?.statuses) && analyze.workflow.stateMachine.statuses.includes("needs_review"));
     assert("workflow exposes confirmation items", Array.isArray(analyze.workflow?.summary?.confirmationItems));
@@ -260,12 +262,13 @@ async function main() {
     assert("export includes phase 11 workflow blueprint", exportPayload.phase11WorkflowBlueprint?.phase >= 18 && exportPayload.phase11WorkflowBlueprint?.templates?.length >= 3);
     assert("export includes phase 11 diagnostics", exportPayload.phase11WorkflowBlueprint?.handoff?.reviewCoverage >= 0 && exportPayload.phase11WorkflowBlueprint?.qualityGates?.length >= 4);
     assert("export includes phase 12 readiness", exportPayload.phase11WorkflowBlueprint?.phase12Readiness?.targetPhase === 12);
-    assert("export includes phase 12 sovereignty", exportPayload.phase12Sovereignty?.exportPackage?.portable === true && exportPayload.privacyPolicy?.phase === 19);
+    assert("export includes phase 12 sovereignty", exportPayload.phase12Sovereignty?.exportPackage?.portable === true && exportPayload.privacyPolicy?.phase === 20);
     assert("export includes phase 16 sync manifest", exportPayload.phase16Sync?.phase === 16 && exportPayload.phase16Sync?.mode === "manual-json-local-first");
     assert("export includes phase 16 asset boundary", exportPayload.phase16Sync?.assetBoundary?.importPolicy === "phase16-v5-memory-first-assets-preview");
     assert("export includes phase 17 sync adapter", exportPayload.phase17SyncAdapter?.phase === 17 && exportPayload.phase17SyncAdapter?.mode === "adapter-layer-local-first" && exportPayload.phase17SyncAdapter?.adapters?.some((item) => item.id === "manual-json") && exportPayload.phase17SyncAdapter?.syncHealth?.score >= 0 && exportPayload.phase17SyncAdapter?.healthExplanation && exportPayload.phase17SyncAdapter?.failureRecovery && exportPayload.phase17SyncAdapter?.phase18SyncAdvisory);
     assert("export includes phase 18 long-term agent", exportPayload.phase18LongTermAgent?.phase === 18 && Array.isArray(exportPayload.phase18LongTermAgent?.suggestions) && exportPayload.phase18LongTermAgent?.suggestions?.some((item) => item.quality?.tier) && exportPayload.phase18LongTermAgent?.visibleSuggestions && exportPayload.phase18LongTermAgent?.suggestionNoise?.config && exportPayload.phase18LongTermAgent?.suggestionNoise?.preview && exportPayload.phase18LongTermAgent?.relationships?.graph && exportPayload.phase18LongTermAgent?.relationships?.assetNavigation && exportPayload.phase18LongTermAgent?.reviewDashboard && exportPayload.phase18LongTermAgent?.agentDigest?.mode === "daily-weekly-memory-assistant-digest" && exportPayload.phase18LongTermAgent?.repairDrafts?.batchReview && exportPayload.phase18LongTermAgent?.taskQueue?.batchReview && exportPayload.phase18LongTermAgent?.taskAudit && exportPayload.phase18LongTermAgent?.agentQuality && exportPayload.phase18LongTermAgent?.periodicAssetPlan && exportPayload.phase18LongTermAgent?.periodicReportPlan && exportPayload.phase18LongTermAgent?.assetSyncState);
     assert("export includes phase 19 import plan", exportPayload.phase19ImportPlan?.phase === 19 && exportPayload.phase19ImportPlan?.supportedFormats?.includes("markdown") && exportPayload.phase19ImportPlan?.cleanupFeatures?.includes("draft-selection") && exportPayload.phase19ImportPlan?.cleanupFeatures?.includes("batch-rollback") && exportPayload.phase19ImportPlan?.cleanupFeatures?.includes("item-rollback") && exportPayload.phase19ImportPlan?.cleanupFeatures?.includes("failed-item-retention") && exportPayload.phase19ImportPlan?.cleanupFeatures?.includes("quality-trend") && exportPayload.phase19ImportPlan?.cleanupFeatures?.includes("field-mapping-template") && exportPayload.phase19ImportPlan?.cleanupFeatures?.includes("custom-mapping-template") && exportPayload.phase19ImportPlan?.cleanupFeatures?.includes("template-rule-defaults") && exportPayload.phase19ImportPlan?.cleanupFeatures?.includes("field-alias-rules") && exportPayload.phase19ImportPlan?.cleanupFeatures?.includes("duplicate-precheck") && exportPayload.phase19ImportPlan?.cleanupFeatures?.includes("duplicate-decision") && exportPayload.phase19ImportPlan?.cleanupFeatures?.includes("conflict-preview") && exportPayload.phase19ImportPlan?.cleanupFeatures?.includes("conflict-review-desk") && exportPayload.phase19ImportPlan?.cleanupFeatures?.includes("review-status-flow") && exportPayload.phase19ImportPlan?.cleanupFeatures?.includes("cross-batch-compare") && exportPayload.phase19ImportPlan?.cleanupFeatures?.includes("batch-filter-compare") && exportPayload.phase19ImportPlan?.cleanupFeatures?.includes("audit-search") && exportPayload.phase19ImportPlan?.cleanupFeatures?.includes("import-report-view") && exportPayload.phase19ImportPlan?.cleanupFeatures?.includes("post-import-cleanup-queue") && exportPayload.phase19ImportPlan?.cleanupFeatures?.includes("batch-audit-export") && exportPayload.phase19ImportPlan?.importEndpoint === "/api/imports/preview");
+    assert("export includes phase 20 platform plan", exportPayload.phase20PlatformPlan?.phase === 20 && exportPayload.phase20PlatformPlan?.extensionPoints?.some((item) => item.id === "importer") && exportPayload.phase20PlatformPlan?.securityModel?.thirdPartyExecution === false && exportPayload.phase20PlatformPlan?.manifestSchema?.requiredFields?.includes("permissions") && exportPayload.phase20PlatformPlan?.manifestValidation?.builtInManifestCount >= 6 && exportPayload.phase20PlatformPlan?.permissionReview?.humanApprovalRequired === true && exportPayload.phase20PlatformPlan?.pluginAuditLog?.eventTypes?.includes("runtime-blocked") && exportPayload.phase20PlatformPlan?.builtInPluginRegistry?.entries?.some((item) => item.contract === "manual-apply-only") && exportPayload.phase20PlatformPlan?.extensionContractTests?.coverage?.includes("asset-template") && exportPayload.phase20PlatformPlan?.sandboxBoundary?.allowedCapabilities?.includes("contract-fixture-check") && exportPayload.phase20PlatformPlan?.noCodeTemplatePack?.templates?.some((item) => item.extensionPoint === "agent-tool") && exportPayload.phase20PlatformPlan?.templatePreviewFixtures?.blockedWhen?.includes("negative-fixture-not-blocked") && exportPayload.phase20PlatformPlan?.pluginInstallationWorkflow?.sampleDecisions?.some((item) => item.state === "blocked"));
     assert("export includes sensitivity summary", exportPayload.phase12Sovereignty?.sensitivity?.riskLevel && exportPayload.privacyPolicy?.sensitiveData?.categories?.length >= 1);
 
     const redactedExportResponse = await fetch(`${baseUrl}/api/memories/export?mode=redacted`);
@@ -276,7 +279,7 @@ async function main() {
 
     const insightsResponse = await fetch(`${baseUrl}/api/insights`);
     const insightsPayload = await insightsResponse.json();
-    assert("insights API returns timeline", insightsResponse.ok && insightsPayload.phase === 19 && insightsPayload.timeline?.length >= 1);
+    assert("insights API returns timeline", insightsResponse.ok && insightsPayload.phase === 20 && insightsPayload.timeline?.length >= 1);
     assert("insights API returns themes", insightsPayload.themes?.some((theme) => theme.count >= 1 && Array.isArray(theme.memories)));
     assert("insights API returns report", insightsPayload.report?.summary?.includes("这批记忆共") && insightsPayload.report?.highlights?.length >= 1);
     assert("insights report has narrative sections", insightsPayload.report?.sections?.length >= 3 && insightsPayload.report.sections.some((section) => section.title === "报告开头"));
@@ -398,7 +401,7 @@ async function main() {
 
     const assetsResponse = await fetch(`${baseUrl}/api/assets`);
     const assetsPayload = await assetsResponse.json();
-    assert("assets API returns phase 15 assets", assetsResponse.ok && assetsPayload.phase === 19 && assetsPayload.savedExhibitions?.length === 1 && assetsPayload.reportDrafts?.length === 1);
+    assert("assets API returns phase 15 assets", assetsResponse.ok && assetsPayload.phase === 20 && assetsPayload.savedExhibitions?.length === 1 && assetsPayload.reportDrafts?.length === 1);
 
     const assetExportResponse = await fetch(`${baseUrl}/api/memories/export`);
     const assetExportPayload = await assetExportResponse.json();
