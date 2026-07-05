@@ -47,6 +47,8 @@ Phase 30 live submission conversion preflight: active as `2.0.17 / phase30-live-
 
 Phase 30 human evidence conflict review: active as `2.0.18 / phase30-human-evidence-conflict-review`. It defines conflict taxonomy and human resolution requirements before live submission conversion; it is conflict-review-only and not a live submission.
 
+Phase 30 risk disposition followup ledger: active as `2.0.19 / phase30-risk-disposition-followup-ledger`. It tracks accepted-with-risk, deferred-with-owner, and blocked followups before live submission conversion; it is followup-ledger-only and not a live submission.
+
 Previous Phase 29 closure handoff baseline: 1.9.7 / phase29-closure-handoff-package remains preserved as the read-only closure handoff package baseline.
 
 Previous Phase 29 closure readiness baseline: 1.9.6 / phase29-governance-closure-readiness remains preserved as the read-only governance closure readiness baseline.
@@ -152,6 +154,8 @@ Phase 30 post review evidence summary package: active。当前已新增会后证
 Phase 30 live submission conversion preflight: active。当前已新增 live submission 转换预检包，用于检查会后汇总是否具备维护者显式转换条件；这只是 preflight-only，不会创建 live submission，也不代表 release approval。
 
 Phase 30 human evidence conflict review: active。当前已新增人工证据冲突审查包，用于定义冲突类型和人工解决要求；这只是 conflict-review-only，不会创建 live submission，也不代表 release approval。
+
+Phase 30 risk disposition followup ledger: active。当前已新增风险处置后续台账，用于跟踪 accepted-with-risk、deferred-with-owner 和 blocked 的后续动作；这只是 followup-ledger-only，不会创建 live submission，也不代表 release approval。
 
 Git path shape decision: active。人工已确认接受当前 `项目工程` 作为仓库根的扁平化形态；索引迁移提交已完成，当前仍不制作正式 release commit。
 
