@@ -33,6 +33,7 @@ const evidenceIntakeRegister = readText(workspaceRoot, "项目文档", "阶段30
 const evidenceSubmissionGate = readText(workspaceRoot, "项目文档", "阶段30人工证据提交门禁.md");
 const evidenceSubmissionTemplate = readText(workspaceRoot, "项目文档", "阶段30人工证据提交样例.json");
 const reviewerHandoff = readText(workspaceRoot, "项目文档", "阶段30人工Reviewer交接包.md");
+const reviewSessionPackage = readText(workspaceRoot, "项目文档", "阶段30人工审查会议包.md");
 const gitFlatteningDecision = readText(workspaceRoot, "项目文档", "仓库扁平化确认记录.md");
 const gitFlatteningPreflight = readText(workspaceRoot, "项目文档", "仓库索引迁移预检清单.md");
 const gitFlatteningMigrationPlan = readText(workspaceRoot, "项目文档", "仓库索引迁移执行方案.md");
@@ -47,6 +48,7 @@ assert("package exposes phase 30 evidence intake register", packageJson.scripts[
 assert("package exposes phase 30 evidence submission gate", packageJson.scripts["phase30:evidence-submission-gate"] === "node scripts/phase30-evidence-submission-gate.js");
 assert("package exposes phase 30 evidence submission template", packageJson.scripts["phase30:evidence-submission-template"] === "node scripts/phase30-evidence-submission-template.js");
 assert("package exposes phase 30 reviewer handoff", packageJson.scripts["phase30:reviewer-handoff"] === "node scripts/phase30-reviewer-handoff.js");
+assert("package exposes phase 30 review session package", packageJson.scripts["phase30:review-session-package"] === "node scripts/phase30-review-session-package.js");
 assert("package exposes git flattening preflight", packageJson.scripts["git:flattening-preflight"] === "node scripts/git-flattening-preflight.js");
 assert("package exposes git flattening migration plan", packageJson.scripts["git:flattening-migration-plan"] === "node scripts/git-flattening-migration-plan.js");
 assert("package exposes docs ownership check", packageJson.scripts["docs:ownership-check"] === "node scripts/docs-ownership-check.js");
@@ -58,12 +60,14 @@ assert("check pipeline includes phase 30 evidence intake register", packageJson.
 assert("check pipeline includes phase 30 evidence submission gate", packageJson.scripts.check.includes("node scripts/phase30-evidence-submission-gate.js"));
 assert("check pipeline includes phase 30 evidence submission template", packageJson.scripts.check.includes("node scripts/phase30-evidence-submission-template.js"));
 assert("check pipeline includes phase 30 reviewer handoff", packageJson.scripts.check.includes("node scripts/phase30-reviewer-handoff.js"));
+assert("check pipeline includes phase 30 review session package", packageJson.scripts.check.includes("node scripts/phase30-review-session-package.js"));
 assert("README declares phase 30 closure review", readme.includes("Phase 30 closure review package: active") && readme.includes("不是 release approval"));
 assert("README declares phase 30 candidate delivery materials", readme.includes("Phase 30 release candidate brief: active") && readme.includes("Phase 30 human review evidence worksheet: active"));
 assert("README declares phase 30 RC freeze and intake register", readme.includes("Phase 30 RC freeze checklist: active") && readme.includes("Phase 30 human evidence intake register: active"));
 assert("README declares phase 30 evidence submission gate", readme.includes("Phase 30 human evidence submission gate: active") && readme.includes("not release approval"));
 assert("README declares phase 30 evidence submission template", readme.includes("Phase 30 human evidence submission template: active") && readme.includes("template-only"));
 assert("README declares phase 30 reviewer handoff", readme.includes("Phase 30 human reviewer handoff package: active") && readme.includes("handoff-only"));
+assert("README declares phase 30 review session package", readme.includes("Phase 30 human review session package: active") && readme.includes("meeting-only"));
 assert("project plan declares phase 30 closure review", plan.includes("Phase 30 closure review package: active") && plan.includes("阶段30收口审查包.md"));
 assert("project plan links candidate delivery materials", plan.includes("Phase 30 release candidate brief: active") && plan.includes("阶段30候选交付说明.md") && plan.includes("阶段30人工复核证据填写表.md"));
 assert("project plan records accepted git path shape", plan.includes("Git path shape decision: active") && plan.includes("仓库扁平化确认记录.md") && plan.includes("索引迁移提交已完成"));
@@ -71,6 +75,7 @@ assert("project plan links RC freeze and intake register", plan.includes("阶段
 assert("project plan links evidence submission gate", plan.includes("阶段30人工证据提交门禁.md") && plan.includes("data/phase30-human-evidence-submission.json"));
 assert("project plan links evidence submission template", plan.includes("阶段30人工证据提交样例.json") && plan.includes("2.0.13 / phase30-human-evidence-submission-template"));
 assert("project plan links reviewer handoff", plan.includes("阶段30人工Reviewer交接包.md") && plan.includes("2.0.14 / phase30-human-reviewer-handoff-package"));
+assert("project plan links review session package", plan.includes("阶段30人工审查会议包.md") && plan.includes("2.0.15 / phase30-human-review-session-package"));
 assert("whitepaper explains closure review is not release approval", whitepaper.includes("Phase 30 closure review package: active") && whitepaper.includes("不代表发布批准"));
 assert("whitepaper explains candidate delivery is not release", whitepaper.includes("Phase 30 release candidate brief: active") && whitepaper.includes("rc-reviewable-but-not-releasable"));
 assert("whitepaper records accepted git path shape", whitepaper.includes("Git path shape decision: active") && whitepaper.includes("索引迁移已提交") && whitepaper.includes("不代表正式 release"));
@@ -78,6 +83,7 @@ assert("whitepaper explains evidence intake register is not approval", whitepape
 assert("whitepaper explains evidence submission gate is not approval", whitepaper.includes("Phase 30 human evidence submission gate: active") && whitepaper.includes("格式通过仍不代表 release approval"));
 assert("whitepaper explains evidence submission template is not live", whitepaper.includes("Phase 30 human evidence submission template: active") && whitepaper.includes("不是 live submission"));
 assert("whitepaper explains reviewer handoff is not signoff", whitepaper.includes("Phase 30 human reviewer handoff package: active") && whitepaper.includes("不代表签核完成"));
+assert("whitepaper explains review session package is not live", whitepaper.includes("Phase 30 human review session package: active") && whitepaper.includes("不代表 live submission"));
 assert("closure review package declares 2.0.7 identity", closureReview.includes("2.0.7 / phase30-closure-review-package") && closureReview.includes("Phase 30 closure review package: active"));
 assert("closure review package blocks release and runtime", closureReview.includes("releaseReady=false") && closureReview.includes("phase29ExitReady=false") && closureReview.includes("phase30EntryReady=false") && closureReview.includes("runtimeExecution=false") && closureReview.includes("thirdPartyExecution=false"));
 assert("closure review package keeps git migration human-owned", closureReview.includes("不执行 `git reset`") && closureReview.includes("不执行 `git add -A`") && closureReview.includes("mutate-git-index-without-human-confirmation"));
@@ -108,6 +114,9 @@ assert("evidence submission template remains offline only", evidenceSubmissionTe
 assert("reviewer handoff remains assignment only", reviewerHandoff.includes("2.0.14 / phase30-human-reviewer-handoff-package") && reviewerHandoff.includes("handoffOnly=true") && (reviewerHandoff.includes("not live submission") || reviewerHandoff.includes("不是 live submission")));
 assert("reviewer handoff covers all roles", reviewerHandoff.includes("release owner") && reviewerHandoff.includes("runtime owner") && reviewerHandoff.includes("security reviewer") && reviewerHandoff.includes("data steward") && reviewerHandoff.includes("audit reviewer"));
 assert("reviewer handoff covers all required slots", reviewerHandoff.includes("release-blocker-disposition") && reviewerHandoff.includes("runtime-owner-go-no-go") && reviewerHandoff.includes("private-memory-boundary-review") && reviewerHandoff.includes("audit-dry-run-review"));
+assert("review session package remains meeting only", reviewSessionPackage.includes("2.0.15 / phase30-human-review-session-package") && reviewSessionPackage.includes("meetingOnly=true") && reviewSessionPackage.includes("not live submission"));
+assert("review session package covers roles and agenda", reviewSessionPackage.includes("release owner") && reviewSessionPackage.includes("runtime owner") && reviewSessionPackage.includes("security reviewer") && reviewSessionPackage.includes("会议议程"));
+assert("review session package covers all required slots", reviewSessionPackage.includes("release-blocker-disposition") && reviewSessionPackage.includes("runtime-owner-go-no-go") && reviewSessionPackage.includes("private-memory-boundary-review") && reviewSessionPackage.includes("audit-dry-run-review"));
 assert("human evidence worksheet is pending template only", evidenceWorksheet.includes("2.0.8 / phase30-human-review-evidence-worksheet") && evidenceWorksheet.includes("Phase 30 human review evidence worksheet is not human signoff") && evidenceWorksheet.includes("pending"));
 assert("human evidence worksheet covers all required slots", evidenceWorksheet.includes("release-blocker-disposition") && evidenceWorksheet.includes("runtime-owner-go-no-go") && evidenceWorksheet.includes("private-memory-boundary-review") && evidenceWorksheet.includes("audit-dry-run-review"));
 assert("human evidence worksheet requires reviewer fields", evidenceWorksheet.includes("evidenceRef") && evidenceWorksheet.includes("reviewer") && evidenceWorksheet.includes("reviewedAt") && evidenceWorksheet.includes("decisionReason") && evidenceWorksheet.includes("residualRisk"));

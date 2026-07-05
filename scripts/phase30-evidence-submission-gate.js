@@ -87,6 +87,7 @@ const register = readText(docsRoot, "阶段30人工证据收集登记表.md");
 const gateDoc = readText(docsRoot, "阶段30人工证据提交门禁.md");
 const closureReview = readText(docsRoot, "阶段30收口审查包.md");
 const templateSample = readText(docsRoot, "阶段30人工证据提交样例.json");
+const reviewSessionPackage = readText(docsRoot, "阶段30人工审查会议包.md");
 
 assert("phase 30 evidence submission gate does not change active phase", server.includes("const PHASE = 29"));
 assert("phase 30 evidence submission gate does not change version", packageJson.version === "1.9.48");
@@ -100,9 +101,11 @@ assert("gate doc defines live submission path", gateDoc.includes("data/phase30-h
 assert("gate doc keeps approval blocked", gateDoc.includes("releaseReady=false") && gateDoc.includes("phase30EntryReady=false") && gateDoc.includes("runtimeExecution=false"));
 assert("gate doc declares no automatic approval", gateDoc.includes("noAutomaticApproval=true") && gateDoc.includes("format-valid-but-not-release-approval"));
 assert("gate doc references template sample", gateDoc.includes("阶段30人工证据提交样例.json") && gateDoc.includes("phase30:evidence-submission-template"));
+assert("gate doc references review session package", gateDoc.includes("阶段30人工审查会议包.md") && gateDoc.includes("phase30:review-session-package"));
 assert("register points to submission gate", register.includes("阶段30人工证据提交门禁.md") && register.includes("phase30:evidence-submission-gate"));
 assert("closure review points to submission gate", closureReview.includes("阶段30人工证据提交门禁.md") && closureReview.includes("phase30:evidence-submission-gate"));
 assert("template sample remains template only", templateSample.includes('"templateOnly": true') && templateSample.includes('"source": "template-only-not-human-submission"'));
+assert("review session package remains meeting only", reviewSessionPackage.includes("meetingOnly=true") && reviewSessionPackage.includes("not live submission"));
 
 if (fs.existsSync(submissionPath)) {
   validateSubmission(JSON.parse(fs.readFileSync(submissionPath, "utf8")));

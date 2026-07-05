@@ -41,6 +41,7 @@ Reviewer 应使用以下材料：
 - `阶段30人工证据收集登记表.md`
 - `阶段30人工证据提交门禁.md`
 - `阶段30人工证据提交样例.json`
+- `阶段30人工审查会议包.md`
 - `阶段30人工复核证据包.md`
 - `阶段30人工复核证据填写表.md`
 - `阶段30RC冻结清单.md`
@@ -88,3 +89,5 @@ Reviewer 应使用以下材料：
 本交接包完成时，只表示 reviewer 任务已拆分。它不代表任何 evidence slot 已经通过人工审查。
 
 下一阶段只能在真实 reviewer 提供证据后，进入 live submission 创建与门禁校验。
+
+会前材料检查：`phase30:review-session-package`。该会议包只组织人工会议，不是 live submission。

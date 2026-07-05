@@ -39,6 +39,8 @@ Phase 30 human evidence submission template: active as `2.0.13 / phase30-human-e
 
 Phase 30 human reviewer handoff package: active as `2.0.14 / phase30-human-reviewer-handoff-package`. It splits the 10 evidence slots by reviewer role for human assignment; it is handoff-only and not a live submission.
 
+Phase 30 human review session package: active as `2.0.15 / phase30-human-review-session-package`. It turns reviewer handoff into a meeting agenda and minutes template; it is meeting-only and not a live submission.
+
 Previous Phase 29 closure handoff baseline: 1.9.7 / phase29-closure-handoff-package remains preserved as the read-only closure handoff package baseline.
 
 Previous Phase 29 closure readiness baseline: 1.9.6 / phase29-governance-closure-readiness remains preserved as the read-only governance closure readiness baseline.
@@ -136,6 +138,8 @@ Phase 30 human evidence submission gate: active。当前已经建立未来真实
 Phase 30 human evidence submission template: active。当前已新增离线 JSON 样例，供 reviewer 填写时参考；它不位于 `data/`，不代表真实人工提交。
 
 Phase 30 human reviewer handoff package: active。当前已把 10 个 evidence slots 拆给 release owner、runtime owner、security reviewer、data steward 和 audit reviewer；这只是人工交接，不代表签核完成。
+
+Phase 30 human review session package: active。当前已新增人工审查会议包，用于组织 reviewer 会议议程和逐槽位会议记录；这只是 meeting-only，不代表 live submission。
 
 Git path shape decision: active。人工已确认接受当前 `项目工程` 作为仓库根的扁平化形态；索引迁移提交已完成，当前仍不制作正式 release commit。
 
