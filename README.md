@@ -27,6 +27,12 @@ Phase 30 release candidate brief: active as `2.0.8 / phase30-release-candidate-b
 
 Phase 30 human review evidence worksheet: active as `2.0.8 / phase30-human-review-evidence-worksheet`. It is an offline filling template and is not human signoff.
 
+Phase 30 RC freeze checklist: active as `2.0.9 / phase30-rc-freeze-checklist`. It freezes the current candidate review input as `rc-reviewable-but-not-releasable`; it is not release approval.
+
+Phase 30 human evidence intake plan: active as `2.0.10 / phase30-human-evidence-intake-plan`. It defines the required reviewer fields and collection order while all evidence slots remain `pending`.
+
+Phase 30 human evidence intake register: active as `2.0.11 / phase30-human-evidence-intake-register`. It turns the intake plan into a pending register with `pendingSlots=10`, `approvedSlots=0`, and no automatic approval.
+
 Previous Phase 29 closure handoff baseline: 1.9.7 / phase29-closure-handoff-package remains preserved as the read-only closure handoff package baseline.
 
 Previous Phase 29 closure readiness baseline: 1.9.6 / phase29-governance-closure-readiness remains preserved as the read-only governance closure readiness baseline.
@@ -117,7 +123,9 @@ Phase 30 release candidate brief: active。当前候选交付结论是 `rc-revie
 
 Phase 30 human review evidence worksheet: active。该填写表只用于线下补齐 evidenceRef、reviewer、reviewedAt、decisionReason 和 residualRisk，不代表人工签核已经完成。
 
-Git path shape decision: active。人工已确认接受当前 `项目工程` 作为仓库根的扁平化形态；索引迁移仍需后续人工授权提交，当前不制作正式 release commit。
+Phase 30 RC freeze checklist / human evidence intake plan / human evidence intake register: active。当前已经进入 RC 冻结和人工证据 intake 登记准备，但 10 个 evidence slots 仍是 `pending`，不能自动转为 release approval 或 runtime go。
+
+Git path shape decision: active。人工已确认接受当前 `项目工程` 作为仓库根的扁平化形态；索引迁移提交已完成，当前仍不制作正式 release commit。
 
 历史功能基线仍保留：Node 后端、SQLite 持久化、混合 RAG 讲解员、Agent 状态机、运行历史、多模态附件线索、时间线、主题展、回忆报告、轻量工作流编排层、数据主权控制、部署与运维信息、专题资产、报告草稿、本地优先同步、真实多设备同步适配、长期记忆助理、外部资料导入、插件生态边界和只读运行时治理模型。
 
