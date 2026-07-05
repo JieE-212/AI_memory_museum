@@ -31,6 +31,7 @@ const rcFreeze = readText(workspaceRoot, "项目文档", "阶段30RC冻结清单
 const evidenceIntakePlan = readText(workspaceRoot, "项目文档", "阶段30人工证据收集计划.md");
 const evidenceIntakeRegister = readText(workspaceRoot, "项目文档", "阶段30人工证据收集登记表.md");
 const evidenceSubmissionGate = readText(workspaceRoot, "项目文档", "阶段30人工证据提交门禁.md");
+const evidenceSubmissionTemplate = readText(workspaceRoot, "项目文档", "阶段30人工证据提交样例.json");
 const gitFlatteningDecision = readText(workspaceRoot, "项目文档", "仓库扁平化确认记录.md");
 const gitFlatteningPreflight = readText(workspaceRoot, "项目文档", "仓库索引迁移预检清单.md");
 const gitFlatteningMigrationPlan = readText(workspaceRoot, "项目文档", "仓库索引迁移执行方案.md");
@@ -43,6 +44,7 @@ assert("package exposes phase 30 RC freeze check", packageJson.scripts["phase30:
 assert("package exposes phase 30 evidence intake readiness", packageJson.scripts["phase30:evidence-intake-readiness"] === "node scripts/phase30-evidence-intake-readiness.js");
 assert("package exposes phase 30 evidence intake register", packageJson.scripts["phase30:evidence-intake-register"] === "node scripts/phase30-evidence-intake-register.js");
 assert("package exposes phase 30 evidence submission gate", packageJson.scripts["phase30:evidence-submission-gate"] === "node scripts/phase30-evidence-submission-gate.js");
+assert("package exposes phase 30 evidence submission template", packageJson.scripts["phase30:evidence-submission-template"] === "node scripts/phase30-evidence-submission-template.js");
 assert("package exposes git flattening preflight", packageJson.scripts["git:flattening-preflight"] === "node scripts/git-flattening-preflight.js");
 assert("package exposes git flattening migration plan", packageJson.scripts["git:flattening-migration-plan"] === "node scripts/git-flattening-migration-plan.js");
 assert("package exposes docs ownership check", packageJson.scripts["docs:ownership-check"] === "node scripts/docs-ownership-check.js");
@@ -52,20 +54,24 @@ assert("check pipeline includes phase 30 RC freeze", packageJson.scripts.check.i
 assert("check pipeline includes phase 30 evidence intake readiness", packageJson.scripts.check.includes("node scripts/phase30-evidence-intake-readiness.js"));
 assert("check pipeline includes phase 30 evidence intake register", packageJson.scripts.check.includes("node scripts/phase30-evidence-intake-register.js"));
 assert("check pipeline includes phase 30 evidence submission gate", packageJson.scripts.check.includes("node scripts/phase30-evidence-submission-gate.js"));
+assert("check pipeline includes phase 30 evidence submission template", packageJson.scripts.check.includes("node scripts/phase30-evidence-submission-template.js"));
 assert("README declares phase 30 closure review", readme.includes("Phase 30 closure review package: active") && readme.includes("不是 release approval"));
 assert("README declares phase 30 candidate delivery materials", readme.includes("Phase 30 release candidate brief: active") && readme.includes("Phase 30 human review evidence worksheet: active"));
 assert("README declares phase 30 RC freeze and intake register", readme.includes("Phase 30 RC freeze checklist: active") && readme.includes("Phase 30 human evidence intake register: active"));
 assert("README declares phase 30 evidence submission gate", readme.includes("Phase 30 human evidence submission gate: active") && readme.includes("not release approval"));
+assert("README declares phase 30 evidence submission template", readme.includes("Phase 30 human evidence submission template: active") && readme.includes("template-only"));
 assert("project plan declares phase 30 closure review", plan.includes("Phase 30 closure review package: active") && plan.includes("阶段30收口审查包.md"));
 assert("project plan links candidate delivery materials", plan.includes("Phase 30 release candidate brief: active") && plan.includes("阶段30候选交付说明.md") && plan.includes("阶段30人工复核证据填写表.md"));
 assert("project plan records accepted git path shape", plan.includes("Git path shape decision: active") && plan.includes("仓库扁平化确认记录.md") && plan.includes("索引迁移提交已完成"));
 assert("project plan links RC freeze and intake register", plan.includes("阶段30RC冻结清单.md") && plan.includes("阶段30人工证据收集计划.md") && plan.includes("阶段30人工证据收集登记表.md"));
 assert("project plan links evidence submission gate", plan.includes("阶段30人工证据提交门禁.md") && plan.includes("data/phase30-human-evidence-submission.json"));
+assert("project plan links evidence submission template", plan.includes("阶段30人工证据提交样例.json") && plan.includes("2.0.13 / phase30-human-evidence-submission-template"));
 assert("whitepaper explains closure review is not release approval", whitepaper.includes("Phase 30 closure review package: active") && whitepaper.includes("不代表发布批准"));
 assert("whitepaper explains candidate delivery is not release", whitepaper.includes("Phase 30 release candidate brief: active") && whitepaper.includes("rc-reviewable-but-not-releasable"));
 assert("whitepaper records accepted git path shape", whitepaper.includes("Git path shape decision: active") && whitepaper.includes("索引迁移已提交") && whitepaper.includes("不代表正式 release"));
 assert("whitepaper explains evidence intake register is not approval", whitepaper.includes("Phase 30 human evidence intake register: active") && whitepaper.includes("不代表任何 evidence slot 已通过"));
 assert("whitepaper explains evidence submission gate is not approval", whitepaper.includes("Phase 30 human evidence submission gate: active") && whitepaper.includes("格式通过仍不代表 release approval"));
+assert("whitepaper explains evidence submission template is not live", whitepaper.includes("Phase 30 human evidence submission template: active") && whitepaper.includes("不是 live submission"));
 assert("closure review package declares 2.0.7 identity", closureReview.includes("2.0.7 / phase30-closure-review-package") && closureReview.includes("Phase 30 closure review package: active"));
 assert("closure review package blocks release and runtime", closureReview.includes("releaseReady=false") && closureReview.includes("phase29ExitReady=false") && closureReview.includes("phase30EntryReady=false") && closureReview.includes("runtimeExecution=false") && closureReview.includes("thirdPartyExecution=false"));
 assert("closure review package keeps git migration human-owned", closureReview.includes("不执行 `git reset`") && closureReview.includes("不执行 `git add -A`") && closureReview.includes("mutate-git-index-without-human-confirmation"));
@@ -92,6 +98,7 @@ assert("evidence intake register keeps all slots pending", evidenceIntakeRegiste
 assert("evidence intake register forbids automatic approval", evidenceIntakeRegister.includes("no automatic approval") && evidenceIntakeRegister.includes("mark-releaseReady-true") && evidenceIntakeRegister.includes("enable-runtimeExecution"));
 assert("evidence submission gate is ready but not submitted", evidenceSubmissionGate.includes("2.0.12 / phase30-human-evidence-submission-gate") && evidenceSubmissionGate.includes("submissionStatus=not-submitted") && evidenceSubmissionGate.includes("format-gate-ready-but-evidence-not-submitted"));
 assert("evidence submission gate forbids approval conversion", evidenceSubmissionGate.includes("convert-format-valid-to-release-approval") && evidenceSubmissionGate.includes("convert-format-valid-to-runtime-go"));
+assert("evidence submission template remains offline only", evidenceSubmissionTemplate.includes("2.0.13 / phase30-human-evidence-submission-template") && evidenceSubmissionTemplate.includes("template-only-not-human-submission") && evidenceSubmissionTemplate.includes("REPLACE_WITH_REAL_REVIEWER"));
 assert("human evidence worksheet is pending template only", evidenceWorksheet.includes("2.0.8 / phase30-human-review-evidence-worksheet") && evidenceWorksheet.includes("Phase 30 human review evidence worksheet is not human signoff") && evidenceWorksheet.includes("pending"));
 assert("human evidence worksheet covers all required slots", evidenceWorksheet.includes("release-blocker-disposition") && evidenceWorksheet.includes("runtime-owner-go-no-go") && evidenceWorksheet.includes("private-memory-boundary-review") && evidenceWorksheet.includes("audit-dry-run-review"));
 assert("human evidence worksheet requires reviewer fields", evidenceWorksheet.includes("evidenceRef") && evidenceWorksheet.includes("reviewer") && evidenceWorksheet.includes("reviewedAt") && evidenceWorksheet.includes("decisionReason") && evidenceWorksheet.includes("residualRisk"));

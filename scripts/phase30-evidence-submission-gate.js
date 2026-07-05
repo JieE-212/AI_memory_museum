@@ -86,18 +86,23 @@ const readme = readText(projectRoot, "README.md");
 const register = readText(docsRoot, "阶段30人工证据收集登记表.md");
 const gateDoc = readText(docsRoot, "阶段30人工证据提交门禁.md");
 const closureReview = readText(docsRoot, "阶段30收口审查包.md");
+const templateSample = readText(docsRoot, "阶段30人工证据提交样例.json");
 
 assert("phase 30 evidence submission gate does not change active phase", server.includes("const PHASE = 29"));
 assert("phase 30 evidence submission gate does not change version", packageJson.version === "1.9.48");
 assert("package exposes phase 30 evidence submission gate", packageJson.scripts["phase30:evidence-submission-gate"] === "node scripts/phase30-evidence-submission-gate.js");
+assert("package exposes phase 30 evidence submission template", packageJson.scripts["phase30:evidence-submission-template"] === "node scripts/phase30-evidence-submission-template.js");
 assert("check pipeline includes phase 30 evidence submission gate", packageJson.scripts.check.includes("node scripts/phase30-evidence-submission-gate.js"));
+assert("check pipeline includes phase 30 evidence submission template", packageJson.scripts.check.includes("node scripts/phase30-evidence-submission-template.js"));
 assert("README declares phase 30 evidence submission gate", readme.includes("Phase 30 human evidence submission gate: active") && readme.includes("2.0.12 / phase30-human-evidence-submission-gate"));
 assert("gate doc declares identity", gateDoc.includes("2.0.12 / phase30-human-evidence-submission-gate") && gateDoc.includes("Phase 30 human evidence submission gate: active"));
 assert("gate doc defines live submission path", gateDoc.includes("data/phase30-human-evidence-submission.json"));
 assert("gate doc keeps approval blocked", gateDoc.includes("releaseReady=false") && gateDoc.includes("phase30EntryReady=false") && gateDoc.includes("runtimeExecution=false"));
 assert("gate doc declares no automatic approval", gateDoc.includes("noAutomaticApproval=true") && gateDoc.includes("format-valid-but-not-release-approval"));
+assert("gate doc references template sample", gateDoc.includes("阶段30人工证据提交样例.json") && gateDoc.includes("phase30:evidence-submission-template"));
 assert("register points to submission gate", register.includes("阶段30人工证据提交门禁.md") && register.includes("phase30:evidence-submission-gate"));
 assert("closure review points to submission gate", closureReview.includes("阶段30人工证据提交门禁.md") && closureReview.includes("phase30:evidence-submission-gate"));
+assert("template sample remains template only", templateSample.includes('"templateOnly": true') && templateSample.includes('"source": "template-only-not-human-submission"'));
 
 if (fs.existsSync(submissionPath)) {
   validateSubmission(JSON.parse(fs.readFileSync(submissionPath, "utf8")));

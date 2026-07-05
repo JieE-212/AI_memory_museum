@@ -39,13 +39,16 @@ const rcFreeze = readText(docsRoot, "阶段30RC冻结清单.md");
 const evidencePack = readText(docsRoot, "阶段30人工复核证据包.md");
 const evidenceWorksheet = readText(docsRoot, "阶段30人工复核证据填写表.md");
 const submissionGate = readText(docsRoot, "阶段30人工证据提交门禁.md");
+const submissionTemplate = readText(docsRoot, "阶段30人工证据提交样例.json");
 
 assert("phase 30 evidence intake register does not change active phase", server.includes("const PHASE = 29"));
 assert("phase 30 evidence intake register does not change version", packageJson.version === "1.9.48");
 assert("package exposes phase 30 evidence intake register", packageJson.scripts["phase30:evidence-intake-register"] === "node scripts/phase30-evidence-intake-register.js");
 assert("package exposes phase 30 evidence submission gate", packageJson.scripts["phase30:evidence-submission-gate"] === "node scripts/phase30-evidence-submission-gate.js");
+assert("package exposes phase 30 evidence submission template", packageJson.scripts["phase30:evidence-submission-template"] === "node scripts/phase30-evidence-submission-template.js");
 assert("check pipeline includes phase 30 evidence intake register", packageJson.scripts.check.includes("node scripts/phase30-evidence-intake-register.js"));
 assert("check pipeline includes phase 30 evidence submission gate", packageJson.scripts.check.includes("node scripts/phase30-evidence-submission-gate.js"));
+assert("check pipeline includes phase 30 evidence submission template", packageJson.scripts.check.includes("node scripts/phase30-evidence-submission-template.js"));
 assert("README declares phase 30 evidence intake register", readme.includes("Phase 30 human evidence intake register: active") && readme.includes("2.0.11 / phase30-human-evidence-intake-register"));
 assert("register declares identity", register.includes("2.0.11 / phase30-human-evidence-intake-register") && register.includes("Phase 30 human evidence intake register: active"));
 assert("register keeps all slots pending", register.includes("registerDisposition=pending") && register.includes("pendingSlots=10") && register.includes("approvedSlots=0"));
@@ -55,9 +58,11 @@ assert("register defines reviewer intake fields", ["evidenceRef", "reviewer", "r
 assert("register forbids automatic approval", register.includes("no automatic approval") && register.includes("convert-check-pass-to-human-evidence") && register.includes("mark-releaseReady-true"));
 assert("register references intake plan and worksheet", register.includes("阶段30人工证据收集计划.md") && register.includes("阶段30人工复核证据填写表.md"));
 assert("register references submission gate", register.includes("阶段30人工证据提交门禁.md") && register.includes("phase30:evidence-submission-gate"));
+assert("register references submission template", register.includes("阶段30人工证据提交样例.json") && register.includes("phase30:evidence-submission-template"));
 assert("intake plan points to register", intakePlan.includes("阶段30人工证据收集登记表.md") && intakePlan.includes("2.0.11 / phase30-human-evidence-intake-register"));
 assert("RC freeze points to register", rcFreeze.includes("阶段30人工证据收集登记表.md") && rcFreeze.includes("phase30:evidence-intake-register"));
 assert("submission gate keeps live submission absent by default", submissionGate.includes("2.0.12 / phase30-human-evidence-submission-gate") && submissionGate.includes("submissionStatus=not-submitted"));
+assert("submission template remains template only", submissionTemplate.includes("2.0.13 / phase30-human-evidence-submission-template") && submissionTemplate.includes("template-only-not-human-submission"));
 assert("evidence pack remains pending", evidencePack.includes("pendingSlots=10") && evidencePack.includes("approvedSlots=0"));
 assert("evidence worksheet remains pending template", evidenceWorksheet.includes("pending") && evidenceWorksheet.includes("Phase 30 human review evidence worksheet is not human signoff"));
 assert("operations ledger still keeps evidence pending", operations.includes("pendingSlots") && operations.includes("evidenceRef: \"missing\"") && operations.includes("reviewer: \"unassigned\""));
