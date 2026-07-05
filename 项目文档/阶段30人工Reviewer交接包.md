@@ -42,6 +42,7 @@ Reviewer 应使用以下材料：
 - `阶段30人工证据提交门禁.md`
 - `阶段30人工证据提交样例.json`
 - `阶段30人工审查会议包.md`
+- `阶段30会后证据汇总包.md`
 - `阶段30人工复核证据包.md`
 - `阶段30人工复核证据填写表.md`
 - `阶段30RC冻结清单.md`
@@ -69,8 +70,9 @@ Reviewer 应使用以下材料：
 1. reviewer 在线下复制 `阶段30人工证据提交样例.json`。
 2. reviewer 只替换自己负责槽位中的 `REPLACE_WITH_...` 与 `YYYY-MM-DD`。
 3. reviewer 把外部 evidenceRef 指向会议纪要、审查记录、测试报告、工单或签核单。
-4. 维护者汇总所有 reviewer 结果后，才可明确创建 `data/phase30-human-evidence-submission.json`。
-5. 创建 live submission 后运行 `phase30:evidence-submission-gate`。
+4. 维护者先用 `阶段30会后证据汇总包.md` 汇总所有 reviewer 结果，并运行 `phase30:post-review-evidence-summary`。
+5. 维护者明确确认转换后，才可创建 `data/phase30-human-evidence-submission.json`。
+6. 创建 live submission 后运行 `phase30:evidence-submission-gate`。
 
 ## 6. 禁止事项
 
