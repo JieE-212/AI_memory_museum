@@ -36,6 +36,7 @@ const reviewerHandoff = readText(workspaceRoot, "项目文档", "阶段30人工R
 const reviewSessionPackage = readText(workspaceRoot, "项目文档", "阶段30人工审查会议包.md");
 const postReviewEvidenceSummary = readText(workspaceRoot, "项目文档", "阶段30会后证据汇总包.md");
 const liveSubmissionConversionPreflight = readText(workspaceRoot, "项目文档", "阶段30LiveSubmission转换预检包.md");
+const humanEvidenceConflictReview = readText(workspaceRoot, "项目文档", "阶段30人工证据冲突审查包.md");
 const gitFlatteningDecision = readText(workspaceRoot, "项目文档", "仓库扁平化确认记录.md");
 const gitFlatteningPreflight = readText(workspaceRoot, "项目文档", "仓库索引迁移预检清单.md");
 const gitFlatteningMigrationPlan = readText(workspaceRoot, "项目文档", "仓库索引迁移执行方案.md");
@@ -53,6 +54,7 @@ assert("package exposes phase 30 reviewer handoff", packageJson.scripts["phase30
 assert("package exposes phase 30 review session package", packageJson.scripts["phase30:review-session-package"] === "node scripts/phase30-review-session-package.js");
 assert("package exposes phase 30 post review evidence summary", packageJson.scripts["phase30:post-review-evidence-summary"] === "node scripts/phase30-post-review-evidence-summary.js");
 assert("package exposes phase 30 live submission conversion preflight", packageJson.scripts["phase30:live-submission-conversion-preflight"] === "node scripts/phase30-live-submission-conversion-preflight.js");
+assert("package exposes phase 30 human evidence conflict review", packageJson.scripts["phase30:human-evidence-conflict-review"] === "node scripts/phase30-human-evidence-conflict-review.js");
 assert("package exposes git flattening preflight", packageJson.scripts["git:flattening-preflight"] === "node scripts/git-flattening-preflight.js");
 assert("package exposes git flattening migration plan", packageJson.scripts["git:flattening-migration-plan"] === "node scripts/git-flattening-migration-plan.js");
 assert("package exposes docs ownership check", packageJson.scripts["docs:ownership-check"] === "node scripts/docs-ownership-check.js");
@@ -67,6 +69,7 @@ assert("check pipeline includes phase 30 reviewer handoff", packageJson.scripts.
 assert("check pipeline includes phase 30 review session package", packageJson.scripts.check.includes("node scripts/phase30-review-session-package.js"));
 assert("check pipeline includes phase 30 post review evidence summary", packageJson.scripts.check.includes("node scripts/phase30-post-review-evidence-summary.js"));
 assert("check pipeline includes phase 30 live submission conversion preflight", packageJson.scripts.check.includes("node scripts/phase30-live-submission-conversion-preflight.js"));
+assert("check pipeline includes phase 30 human evidence conflict review", packageJson.scripts.check.includes("node scripts/phase30-human-evidence-conflict-review.js"));
 assert("README declares phase 30 closure review", readme.includes("Phase 30 closure review package: active") && readme.includes("不是 release approval"));
 assert("README declares phase 30 candidate delivery materials", readme.includes("Phase 30 release candidate brief: active") && readme.includes("Phase 30 human review evidence worksheet: active"));
 assert("README declares phase 30 RC freeze and intake register", readme.includes("Phase 30 RC freeze checklist: active") && readme.includes("Phase 30 human evidence intake register: active"));
@@ -76,6 +79,7 @@ assert("README declares phase 30 reviewer handoff", readme.includes("Phase 30 hu
 assert("README declares phase 30 review session package", readme.includes("Phase 30 human review session package: active") && readme.includes("meeting-only"));
 assert("README declares phase 30 post review evidence summary", readme.includes("Phase 30 post review evidence summary package: active") && readme.includes("summary-only"));
 assert("README declares phase 30 live submission conversion preflight", readme.includes("Phase 30 live submission conversion preflight: active") && readme.includes("preflight-only"));
+assert("README declares phase 30 human evidence conflict review", readme.includes("Phase 30 human evidence conflict review: active") && readme.includes("conflict-review-only"));
 assert("project plan declares phase 30 closure review", plan.includes("Phase 30 closure review package: active") && plan.includes("阶段30收口审查包.md"));
 assert("project plan links candidate delivery materials", plan.includes("Phase 30 release candidate brief: active") && plan.includes("阶段30候选交付说明.md") && plan.includes("阶段30人工复核证据填写表.md"));
 assert("project plan records accepted git path shape", plan.includes("Git path shape decision: active") && plan.includes("仓库扁平化确认记录.md") && plan.includes("索引迁移提交已完成"));
@@ -86,6 +90,7 @@ assert("project plan links reviewer handoff", plan.includes("阶段30人工Revie
 assert("project plan links review session package", plan.includes("阶段30人工审查会议包.md") && plan.includes("2.0.15 / phase30-human-review-session-package"));
 assert("project plan links post review evidence summary", plan.includes("阶段30会后证据汇总包.md") && plan.includes("2.0.16 / phase30-post-review-evidence-summary-package"));
 assert("project plan links live submission conversion preflight", plan.includes("阶段30LiveSubmission转换预检包.md") && plan.includes("2.0.17 / phase30-live-submission-conversion-preflight"));
+assert("project plan links human evidence conflict review", plan.includes("阶段30人工证据冲突审查包.md") && plan.includes("2.0.18 / phase30-human-evidence-conflict-review"));
 assert("whitepaper explains closure review is not release approval", whitepaper.includes("Phase 30 closure review package: active") && whitepaper.includes("不代表发布批准"));
 assert("whitepaper explains candidate delivery is not release", whitepaper.includes("Phase 30 release candidate brief: active") && whitepaper.includes("rc-reviewable-but-not-releasable"));
 assert("whitepaper records accepted git path shape", whitepaper.includes("Git path shape decision: active") && whitepaper.includes("索引迁移已提交") && whitepaper.includes("不代表正式 release"));
@@ -96,6 +101,7 @@ assert("whitepaper explains reviewer handoff is not signoff", whitepaper.include
 assert("whitepaper explains review session package is not live", whitepaper.includes("Phase 30 human review session package: active") && whitepaper.includes("不代表 live submission"));
 assert("whitepaper explains post review summary is not live", whitepaper.includes("Phase 30 post review evidence summary package: active") && whitepaper.includes("summary-only"));
 assert("whitepaper explains live submission conversion preflight is not live", whitepaper.includes("Phase 30 live submission conversion preflight: active") && whitepaper.includes("preflight-only"));
+assert("whitepaper explains human evidence conflict review is not live", whitepaper.includes("Phase 30 human evidence conflict review: active") && whitepaper.includes("conflict-review-only"));
 assert("closure review package declares 2.0.7 identity", closureReview.includes("2.0.7 / phase30-closure-review-package") && closureReview.includes("Phase 30 closure review package: active"));
 assert("closure review package blocks release and runtime", closureReview.includes("releaseReady=false") && closureReview.includes("phase29ExitReady=false") && closureReview.includes("phase30EntryReady=false") && closureReview.includes("runtimeExecution=false") && closureReview.includes("thirdPartyExecution=false"));
 assert("closure review package keeps git migration human-owned", closureReview.includes("不执行 `git reset`") && closureReview.includes("不执行 `git add -A`") && closureReview.includes("mutate-git-index-without-human-confirmation"));
@@ -135,6 +141,9 @@ assert("post review evidence summary covers all required slots", postReviewEvide
 assert("live submission conversion preflight remains preflight only", liveSubmissionConversionPreflight.includes("2.0.17 / phase30-live-submission-conversion-preflight") && liveSubmissionConversionPreflight.includes("preflightOnly=true") && liveSubmissionConversionPreflight.includes("This package is not live submission"));
 assert("live submission conversion preflight keeps conversion blocked", liveSubmissionConversionPreflight.includes("conversionStatus=blocked-until-human-evidence-and-maintainer-approval") && liveSubmissionConversionPreflight.includes("conversion-blocked"));
 assert("live submission conversion preflight covers all required slots", liveSubmissionConversionPreflight.includes("release-blocker-disposition") && liveSubmissionConversionPreflight.includes("runtime-owner-go-no-go") && liveSubmissionConversionPreflight.includes("private-memory-boundary-review") && liveSubmissionConversionPreflight.includes("audit-dry-run-review"));
+assert("human evidence conflict review remains conflict review only", humanEvidenceConflictReview.includes("2.0.18 / phase30-human-evidence-conflict-review") && humanEvidenceConflictReview.includes("conflictReviewOnly=true") && humanEvidenceConflictReview.includes("This package is not live submission"));
+assert("human evidence conflict review keeps resolution blocked", humanEvidenceConflictReview.includes("conflictResolutionStatus=blocked-until-human-resolution") && humanEvidenceConflictReview.includes("conflictResolvedSlots=0"));
+assert("human evidence conflict review covers all required slots", humanEvidenceConflictReview.includes("release-blocker-disposition") && humanEvidenceConflictReview.includes("runtime-owner-go-no-go") && humanEvidenceConflictReview.includes("private-memory-boundary-review") && humanEvidenceConflictReview.includes("audit-dry-run-review"));
 assert("human evidence worksheet is pending template only", evidenceWorksheet.includes("2.0.8 / phase30-human-review-evidence-worksheet") && evidenceWorksheet.includes("Phase 30 human review evidence worksheet is not human signoff") && evidenceWorksheet.includes("pending"));
 assert("human evidence worksheet covers all required slots", evidenceWorksheet.includes("release-blocker-disposition") && evidenceWorksheet.includes("runtime-owner-go-no-go") && evidenceWorksheet.includes("private-memory-boundary-review") && evidenceWorksheet.includes("audit-dry-run-review"));
 assert("human evidence worksheet requires reviewer fields", evidenceWorksheet.includes("evidenceRef") && evidenceWorksheet.includes("reviewer") && evidenceWorksheet.includes("reviewedAt") && evidenceWorksheet.includes("decisionReason") && evidenceWorksheet.includes("residualRisk"));

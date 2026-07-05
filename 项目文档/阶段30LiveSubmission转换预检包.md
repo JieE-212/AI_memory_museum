@@ -33,6 +33,7 @@ This package is not live submission.
 转换预检只能读取和确认以下材料是否齐备：
 
 - `阶段30会后证据汇总包.md`
+- `阶段30人工证据冲突审查包.md`
 - `阶段30人工证据提交门禁.md`
 - `阶段30人工证据提交样例.json`
 - `阶段30人工Reviewer交接包.md`
@@ -50,6 +51,7 @@ This package is not live submission.
 3. 没有 `REPLACE_WITH_...`、`YYYY-MM-DD`、`pending`、`missing`、`unassigned` 或空字符串进入待转换材料。
 4. 维护者明确确认 `maintainerConversionApproval=granted`。
 5. 转换后仍运行 `phase30:evidence-submission-gate`，且格式通过仍不代表 release approval。
+6. 转换前必须运行 `phase30:human-evidence-conflict-review`，确认没有 unresolved conflict。
 
 ## 4. 槽位预检表
 
@@ -76,6 +78,7 @@ This package is not live submission.
 - 当前没有外部真实 reviewer 证据引用清单。
 - 当前 10 个 evidence slots 仍保持 `pending`。
 - 当前没有 `maintainerConversionApproval=granted`。
+- 当前没有人工冲突解决记录。
 
 允许的预检结论只有：
 
