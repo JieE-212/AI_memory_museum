@@ -33,6 +33,8 @@ Phase 30 human evidence intake plan: active as `2.0.10 / phase30-human-evidence-
 
 Phase 30 human evidence intake register: active as `2.0.11 / phase30-human-evidence-intake-register`. It turns the intake plan into a pending register with `pendingSlots=10`, `approvedSlots=0`, and no automatic approval.
 
+Phase 30 human evidence submission gate: active as `2.0.12 / phase30-human-evidence-submission-gate`. It validates a future `data/phase30-human-evidence-submission.json` only for format and guardrails; no live submission exists by default and it is not release approval.
+
 Previous Phase 29 closure handoff baseline: 1.9.7 / phase29-closure-handoff-package remains preserved as the read-only closure handoff package baseline.
 
 Previous Phase 29 closure readiness baseline: 1.9.6 / phase29-governance-closure-readiness remains preserved as the read-only governance closure readiness baseline.
@@ -124,6 +126,8 @@ Phase 30 release candidate brief: active。当前候选交付结论是 `rc-revie
 Phase 30 human review evidence worksheet: active。该填写表只用于线下补齐 evidenceRef、reviewer、reviewedAt、decisionReason 和 residualRisk，不代表人工签核已经完成。
 
 Phase 30 RC freeze checklist / human evidence intake plan / human evidence intake register: active。当前已经进入 RC 冻结和人工证据 intake 登记准备，但 10 个 evidence slots 仍是 `pending`，不能自动转为 release approval 或 runtime go。
+
+Phase 30 human evidence submission gate: active。当前已经建立未来真实人工证据 JSON 的格式门禁；默认没有 live submission 文件，门禁通过也不等于 release approval。
 
 Git path shape decision: active。人工已确认接受当前 `项目工程` 作为仓库根的扁平化形态；索引迁移提交已完成，当前仍不制作正式 release commit。
 
