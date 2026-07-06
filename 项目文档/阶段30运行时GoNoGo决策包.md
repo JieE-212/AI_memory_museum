@@ -54,6 +54,7 @@ runtime owner 只能在以下输入都可审阅后记录 Go/No-Go：
 - `阶段30人工复核证据包.md`
 - `阶段30风险处置后续台账.md`
 - `阶段30入口准备红线.md`
+- `阶段30第三方执行审批边界.md`
 - 外部真实 Phase 30 entry、runtime owner 审阅记录、rollback strategy、security reviewer 和 audit reviewer 证据
 
 如果 Phase 30 entry 未被独立记录为有效进入，本包只能保持 `runtimeGoNoGoStatus=no-go-blocked`。
@@ -95,6 +96,7 @@ runtime owner 只能在以下输入都可审阅后记录 Go/No-Go：
 - `gateCascadeAllowed=false`
 - `phase30-entry-to-runtime-go` remains blocked
 - `runtime-go-to-third-party-execution` remains blocked
+- `phase30:third-party-execution-approval-boundary` must review plugin-scoped execution separately
 - Phase 30 entry 不自动触发 runtime go/no-go
 - runtime go/no-go 不自动触发 third-party execution
 - runtime go/no-go 不自动执行真实插件代码
