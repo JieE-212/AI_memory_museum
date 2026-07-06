@@ -51,6 +51,8 @@ Phase 30 risk disposition followup ledger: active as `2.0.19 / phase30-risk-disp
 
 Phase 30 release decision readiness envelope: active as `2.0.20 / phase30-release-decision-readiness-envelope`. It summarizes the evidence governance chain for release owner review; it is readiness-envelope-only and not release approval.
 
+Phase 30 entry readiness redline: active as `2.0.21 / phase30-entry-readiness-redline`. It separates release approval, Phase 29 exit, Phase 30 entry, runtime go/no-go, and third-party execution into independent gates; it is entry-readiness-redline-only and does not approve or cascade any gate.
+
 Previous Phase 29 closure handoff baseline: 1.9.7 / phase29-closure-handoff-package remains preserved as the read-only closure handoff package baseline.
 
 Previous Phase 29 closure readiness baseline: 1.9.6 / phase29-governance-closure-readiness remains preserved as the read-only governance closure readiness baseline.
@@ -160,6 +162,8 @@ Phase 30 human evidence conflict review: active。当前已新增人工证据冲
 Phase 30 risk disposition followup ledger: active。当前已新增风险处置后续台账，用于跟踪 accepted-with-risk、deferred-with-owner 和 blocked 的后续动作；这只是 followup-ledger-only，不会创建 live submission，也不代表 release approval。
 
 Phase 30 release decision readiness envelope: active。当前已新增发布决策准备信封，用于把证据治理链汇总给 release owner 审阅；这只是 readiness-envelope-only，不代表 release approval。
+
+Phase 30 entry readiness redline: active。当前已新增入口准备红线，用于把 release approval、Phase 29 exit、Phase 30 entry、runtime go/no-go 和 third-party execution 拆成独立 gate；这只是 entry-readiness-redline-only，不代表任何 gate 已经通过。
 
 Git path shape decision: active。人工已确认接受当前 `项目工程` 作为仓库根的扁平化形态；索引迁移提交已完成，当前仍不制作正式 release commit。
 
