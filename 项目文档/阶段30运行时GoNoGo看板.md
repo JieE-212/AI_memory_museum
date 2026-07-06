@@ -146,6 +146,8 @@ Phase 30 first-round planning closure 已拆分为独立文件：`阶段30第一
 
 Phase 30 human review evidence pack 已拆分为独立文件：`阶段30人工复核证据包.md`。该文件把看板中的人工复核队列拆成证据槽位；Human evidence remains pending，默认 `no-go-blocked` 继续成立。
 
+Phase 30 runtime go/no-go decision packet 已拆分为独立文件：`阶段30运行时GoNoGo决策包.md`，并通过 `phase30:runtime-go-no-go-decision-packet` 校验。该决策包只定义 runtime owner 的独立 Go/No-Go 记录格式，不代表 runtime execution approval，也不会自动触发 third-party execution。
+
 ## 9. 完成标准
 
 `2.0.4 / phase30-runtime-go-no-go-board` 完成时，应满足：
