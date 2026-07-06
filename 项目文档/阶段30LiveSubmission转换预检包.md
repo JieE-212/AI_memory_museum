@@ -35,6 +35,7 @@ This package is not live submission.
 - `阶段30会后证据汇总包.md`
 - `阶段30人工证据冲突审查包.md`
 - `阶段30风险处置后续台账.md`
+- `阶段30发布决策准备信封.md`
 - `阶段30人工证据提交门禁.md`
 - `阶段30人工证据提交样例.json`
 - `阶段30人工Reviewer交接包.md`
@@ -42,6 +43,7 @@ This package is not live submission.
 - 外部真实 reviewer 证据引用清单
 
 `阶段30风险处置后续台账.md` 是 followup-ledger-only，不是 live submission。
+`阶段30发布决策准备信封.md` 是 readiness-envelope-only，不是 release approval，也不是 live submission。
 
 如果没有外部真实 reviewer 证据引用清单，预检结论必须保持 `conversion-blocked`。
 
@@ -56,6 +58,7 @@ This package is not live submission.
 5. 转换后仍运行 `phase30:evidence-submission-gate`，且格式通过仍不代表 release approval。
 6. 转换前必须运行 `phase30:human-evidence-conflict-review`，确认没有 unresolved conflict。
 7. 转换前必须运行 `phase30:risk-disposition-followup-ledger`，确认风险接受、延期和阻断项都有后续责任与恢复条件。
+8. 转换前必须运行 `phase30:release-decision-readiness-envelope`，确认 release owner 审阅输入仍不等于 release approval。
 
 ## 4. 槽位预检表
 
