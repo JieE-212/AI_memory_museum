@@ -14,6 +14,7 @@ const PHASE18_NOISE_RULE_KEY = "memory-museum-phase18-noise-rules";
 const PHASE19_IMPORT_PREVIEW_KEY = "memory-museum-phase19-import-preview";
 const PHASE19_IMPORT_BATCHES_KEY = "memory-museum-phase19-import-batches";
 const PHASE19_CUSTOM_TEMPLATES_KEY = "memory-museum-phase19-custom-templates";
+const DEMO_COLLECTION_KEY = "memory-museum-demo-collection";
 const SCHEMA_VERSION = 2;
 const API_MEMORIES = "/api/memories";
 const API_WORKFLOWS = "/api/workflows";
@@ -235,6 +236,7 @@ const elements = {
   cancelEditButton: $("#cancelEditButton"),
   saveButton: $("#saveButton"),
   formModeHint: $("#formModeHint"),
+  userPathStatus: $("#userPathStatus"),
   memoryGrid: $("#memoryGrid"),
   memoryCount: $("#memoryCount"),
   hallCount: $("#hallCount"),
@@ -334,6 +336,8 @@ const elements = {
   phase27GovernancePanel: $("#phase27GovernancePanel"),
   phase28ClearanceReviewPanel: $("#phase28ClearanceReviewPanel"),
   phase29ReleaseGovernancePanel: $("#phase29ReleaseGovernancePanel"),
+  maintainerGateStatus: $("#maintainerGateStatus"),
+  candidateDeliveryOverview: $("#candidateDeliveryOverview"),
   draftPreview: $("#draftPreview"),
   guideCopy: $("#guideCopy"),
   agentWorkflow: $("#agentWorkflow"),
@@ -355,6 +359,11 @@ const elements = {
   favoriteInput: $("#favoriteInput"),
   exportButton: $("#exportButton"),
   importFile: $("#importFile"),
+  collectionSection: $("#collectionSection"),
+  collectionSyncNotice: $("#collectionSyncNotice"),
+  collectionImportGuide: $("#collectionImportGuide"),
+  phase19ImportBoundary: $("#phase19ImportBoundary"),
+  privacyImportBoundary: $("#privacyImportBoundary"),
   memoryDialog: $("#memoryDialog"),
   dialogContent: $("#dialogContent"),
   closeDialog: $("#closeDialog")
@@ -3669,6 +3678,7 @@ function previewPhase19Import() {
     mappingTemplate: elements.phase19MappingTemplate?.value || "auto"
   });
   renderPhase19ImportPreview(phase19ImportPreview);
+  renderImportPathGuides();
   setStorageStatus(`已生成第十九阶段导入预览：${phase19ImportPreview.draftCount} 件草稿。`, phase19ImportPreview.draftCount ? "success" : "warning");
 }
 
@@ -3703,6 +3713,7 @@ async function applyPhase19ImportPreview() {
     batchRecord.followupTaskIds = followupTasks.map((task) => task.id);
     recordPhase19ImportBatch(batchRecord);
     persistMemories(memories);
+    markDemoCollection(false);
     phase19ImportPreview = null;
     localStorage.removeItem(PHASE19_IMPORT_PREVIEW_KEY);
     render();
@@ -3710,6 +3721,7 @@ async function applyPhase19ImportPreview() {
   } catch (error) {
     recordPhase19ImportBatch(createPhase19FailedImportBatch(drafts, error));
     renderPhase19ImportPreview(phase19ImportPreview);
+    renderImportPathGuides();
     setStorageStatus(`第十九阶段导入失败：${error.message}`, "warning");
   }
 }
@@ -3747,6 +3759,30 @@ function formatAttachmentTypeSummary(attachments = [], maxItems = 3) {
     .join(" / ");
 }
 
+function isSeedDemoCollection(items = memories) {
+  if (!Array.isArray(items) || items.length !== seedMemories.length) return false;
+  const seedByTitle = new Map(seedMemories.map((memory) => [memory.title, memory.rawContent]));
+  return items.every((memory) => seedByTitle.get(memory.title) === memory.rawContent);
+}
+
+function markDemoCollection(value) {
+  try {
+    if (value) localStorage.setItem(DEMO_COLLECTION_KEY, "seeded");
+    else localStorage.removeItem(DEMO_COLLECTION_KEY);
+  } catch {
+    // Ignore unavailable localStorage; the visible migration state still works from memory.
+  }
+}
+
+function isLocalDemoCollection(items = memories) {
+  const seedLike = isSeedDemoCollection(items);
+  try {
+    return seedLike && localStorage.getItem(DEMO_COLLECTION_KEY) === "seeded";
+  } catch {
+    return seedLike;
+  }
+}
+
 function loadMemories() {
   let stored = null;
   try {
@@ -3758,6 +3794,7 @@ function loadMemories() {
   if (!stored) {
     const seeded = seedMemories.map(normalizeMemory);
     persistMemories(seeded);
+    markDemoCollection(true);
     return seeded;
   }
 
@@ -3766,16 +3803,21 @@ function loadMemories() {
     if (!Array.isArray(parsed)) throw new Error("Stored memories must be an array.");
     const normalized = parsed.map(normalizeMemory);
     persistMemories(normalized);
+    markDemoCollection(isSeedDemoCollection(normalized));
     return normalized;
   } catch {
     const seeded = seedMemories.map(normalizeMemory);
     persistMemories(seeded);
+    markDemoCollection(true);
     return seeded;
   }
 }
 
 function saveMemories(nextMemories = memories) {
-  if (persistMemories(nextMemories)) return true;
+  if (persistMemories(nextMemories)) {
+    markDemoCollection(isSeedDemoCollection(nextMemories));
+    return true;
+  }
 
   alert("保存失败：浏览器本地存储空间可能已满。可以先导出备份，再删除一些展品。");
   return false;
@@ -14878,7 +14920,31 @@ function updateGuideAskState() {
   elements.guideAskButton.disabled = isGuideAsking || !hasQuestion;
 }
 
+function renderUserPathStatus() {
+  if (!elements.userPathStatus) return;
+  const rawLength = elements.rawContent.value.trim().length;
+  const title = elements.titleInput.value.trim();
+  const tags = splitList(elements.tagsInput.value);
+  const hasMedia = Boolean(elements.coverImageInput.value.trim() || elements.mediaNoteInput.value.trim() || normalizeAttachments(elements.attachmentsInput.value).length);
+  const saveReady = rawLength >= 8;
+  const storageLabel = databaseNeedsMigration
+    ? "保存前会先写入 SQLite"
+    : databaseAvailable ? "保存到 SQLite" : "保存到浏览器本地备份";
+  const draftLabel = title ? "标题已填写" : rawLength ? "标题可自动生成" : "等待原始记忆";
+  const agentLabel = latestAgentWorkflow ? "Agent 已整理" : "Agent 可选";
+  const metaLabel = tags.length || hasMedia ? "线索已补充" : "只写正文也可以";
+
+  elements.userPathStatus.dataset.ready = saveReady ? "ready" : "draft";
+  elements.userPathStatus.innerHTML = `
+    <span><b>${escapeHtml(saveReady ? "可保存" : "继续写")}</b><small>${escapeHtml(saveReady ? `${rawLength} 字正文` : "正文至少需要一小段")}</small></span>
+    <span><b>${escapeHtml(storageLabel)}</b><small>${escapeHtml(databaseAvailable ? "本地优先" : "离线可用")}</small></span>
+    <span><b>${escapeHtml(draftLabel)}</b><small>${escapeHtml(agentLabel)}</small></span>
+    <span><b>${escapeHtml(metaLabel)}</b><small>${escapeHtml(hasMedia ? "含照片/附件线索" : "可稍后补充")}</small></span>
+  `;
+}
+
 function renderDraftPreview() {
+  renderUserPathStatus();
   const raw = elements.rawContent.value.trim();
   const title = elements.titleInput.value.trim() || (raw ? mockAnalyzeMemory(raw).title : "等待一段记忆");
   const hallName = getHallName(elements.hallSelect.value || "daily");
@@ -14943,6 +15009,131 @@ function setStorageStatus(message, type = "neutral") {
   elements.storageStatus.dataset.status = type;
 }
 
+function renderCollectionSyncNotice() {
+  if (!elements.collectionSyncNotice) return;
+  const shouldShow = databaseAvailable && databaseNeedsMigration && memories.length > 0;
+  elements.collectionSection?.toggleAttribute("data-needs-migration", shouldShow);
+  if (!shouldShow) {
+    elements.collectionSyncNotice.hidden = true;
+    elements.collectionSyncNotice.innerHTML = "";
+    return;
+  }
+
+  const demo = isLocalDemoCollection();
+  const title = demo ? "当前展品墙展示的是浏览器示例" : "有本地备份尚未写入 SQLite";
+  const detail = demo
+    ? "SQLite 数据库已经连接但还没有真实展品。示例只用于首次体验；点击写入 SQLite 后，它们才会成为数据库展品。"
+    : "页面中有只保存在浏览器里的展品。点击写入 SQLite 后，后端检索、导出和 Agent 历史会以数据库为准。";
+  const countLabel = demo ? `${memories.length} 件示例` : `${memories.length} 件本地展品`;
+
+  elements.collectionSyncNotice.hidden = false;
+  elements.collectionSyncNotice.innerHTML = `
+    <div>
+      <strong>${escapeHtml(title)}</strong>
+      <small>${escapeHtml(detail)}</small>
+    </div>
+    <span>${escapeHtml(countLabel)}</span>
+    <button type="button" data-migrate-local-inline>写入 SQLite</button>
+  `;
+  elements.collectionSyncNotice.querySelector("[data-migrate-local-inline]")?.addEventListener("click", migrateLocalToDatabase);
+}
+
+function buildImportPathGuideItems() {
+  const phase19Status = phase19ImportPreview?.drafts?.length ? "review" : "idle";
+  const phase19Value = phase19Status === "review" ? `${phase19ImportPreview.drafts.length} 件草稿待确认` : "先生成导入预览";
+  const syncStatus = pendingSyncImportPlan ? "review" : "idle";
+  const syncValue = pendingSyncImportPlan ? `${summarizePhase16ImportPlan(pendingSyncImportPlan).write} 件待确认写入` : "选择 JSON 后生成同步预览";
+  const sqliteStatus = databaseAvailable ? databaseNeedsMigration ? "review" : "ready" : "offline";
+  const sqliteValue = databaseAvailable ? databaseNeedsMigration ? "本地备份待写入" : "SQLite 已就绪" : "后端未连接";
+  const sqliteDetail = databaseAvailable
+    ? databaseNeedsMigration
+      ? "只在浏览器里的示例或本地展品，需要点击写入 SQLite 才会进入数据库检索、导出和 Agent 历史。"
+      : "当前展品墙已以 SQLite 为主，本地只保留备份。"
+    : "后端未连接时仍可本地记录；连接后再决定是否写入 SQLite。";
+
+  return [
+    {
+      id: "external",
+      label: "外部资料",
+      value: phase19Value,
+      status: phase19Status,
+      detail: "日记、Markdown、CSV、聊天记录先拆成草稿；确认后才写入展品库。",
+      action: "批量导入旧资料",
+      target: "phase19ImportSection"
+    },
+    {
+      id: "json",
+      label: "JSON 备份",
+      value: syncValue,
+      status: syncStatus,
+      detail: "备份恢复会先生成同步预览，冲突逐项选择，不会静默覆盖。",
+      action: "数据与同步",
+      target: "privacySection"
+    },
+    {
+      id: "sqlite",
+      label: "写入 SQLite",
+      value: sqliteValue,
+      status: sqliteStatus,
+      detail: sqliteDetail,
+      action: databaseAvailable && databaseNeedsMigration ? "写入 SQLite" : "",
+      migrate: databaseAvailable && databaseNeedsMigration
+    },
+    {
+      id: "refresh",
+      label: "同步数据库",
+      value: databaseAvailable ? "刷新读取" : "连接后可用",
+      status: databaseAvailable ? "ready" : "offline",
+      detail: "同步数据库只是从 SQLite 重新读取并合并本地待写入展品，不等于导入文件。",
+      action: "同步数据库",
+      refresh: true
+    }
+  ];
+}
+
+function renderImportPathGuide(target, variant = "collection") {
+  if (!target) return;
+  const items = buildImportPathGuideItems();
+  const title = variant === "phase19"
+    ? "导入边界：这里处理外部资料，不处理备份恢复"
+    : variant === "privacy"
+      ? "备份恢复边界：JSON 文件先预览，再确认写入"
+      : "导入路径导览";
+  const detail = variant === "collection"
+    ? "普通用户只需要区分四件事：外部资料先预览，JSON 备份先进同步预览，本地示例再写入 SQLite，同步数据库只是刷新读取。"
+    : "同一套导入边界会同步显示在展品墙、外部资料导入和数据与同步页。";
+
+  target.innerHTML = `
+    <div class="import-path-heading">
+      <div>
+        <strong>${escapeHtml(title)}</strong>
+        <small>${escapeHtml(detail)}</small>
+      </div>
+      ${variant === "privacy" ? `<label class="import-path-file-button" for="importFile">选择 JSON 备份</label>` : ""}
+    </div>
+    <div class="import-path-grid">
+      ${items.map((item) => `
+        <span data-import-path="${escapeHtml(item.id)}" data-path-status="${escapeHtml(item.status)}">
+          <b>${escapeHtml(item.value)}</b>
+          <small>${escapeHtml(item.label)}</small>
+          <em>${escapeHtml(item.detail)}</em>
+          ${item.target ? `<button type="button" data-feature-target="${escapeHtml(item.target)}">${escapeHtml(item.action)}</button>` : ""}
+          ${item.migrate ? `<button type="button" data-migrate-local-inline>写入 SQLite</button>` : ""}
+          ${item.refresh ? `<button type="button" data-sync-database-inline>同步数据库</button>` : ""}
+        </span>
+      `).join("")}
+    </div>
+  `;
+  target.querySelector("[data-migrate-local-inline]")?.addEventListener("click", migrateLocalToDatabase);
+  target.querySelector("[data-sync-database-inline]")?.addEventListener("click", syncDatabase);
+}
+
+function renderImportPathGuides() {
+  renderImportPathGuide(elements.collectionImportGuide, "collection");
+  renderImportPathGuide(elements.phase19ImportBoundary, "phase19");
+  renderImportPathGuide(elements.privacyImportBoundary, "privacy");
+}
+
 function setPersistencePending(isPending) {
   isPersisting = isPending;
   elements.saveButton.disabled = isPending || isAnalyzing;
@@ -14952,7 +15143,7 @@ function setPersistencePending(isPending) {
   elements.saveProfileButton.disabled = isPending;
   elements.purgeDatabaseButton.disabled = isPending;
   elements.syncDatabaseButton.textContent = isPending ? "处理中..." : "同步数据库";
-  elements.migrateLocalButton.textContent = isPending ? "处理中..." : "迁移本地";
+  elements.migrateLocalButton.textContent = isPending ? "处理中..." : "写入 SQLite";
 }
 
 async function requestJson(url, options = {}) {
@@ -16326,7 +16517,8 @@ async function loadMemoriesFromDatabase({ silent = false } = {}) {
 
   if (remoteMemories.length === 0 && memories.length > 0) {
     databaseNeedsMigration = true;
-    setStorageStatus(`数据库已连接但暂为空：当前显示 ${memories.length} 件本地备份，可点击“迁移本地”写入 SQLite。`, "warning");
+    const sourceLabel = isLocalDemoCollection() ? "浏览器示例展品" : "浏览器本地备份";
+    setStorageStatus(`数据库已连接但暂为空：当前显示 ${memories.length} 件${sourceLabel}，可点击“写入 SQLite”完成初始化。`, "warning");
     render();
     return remoteMemories;
   }
@@ -16335,7 +16527,8 @@ async function loadMemoriesFromDatabase({ silent = false } = {}) {
     databaseNeedsMigration = true;
     memories = [...localOnlyMemories, ...remoteMemories];
     persistMemories(memories);
-    setStorageStatus(`数据库已连接：发现 ${localOnlyMemories.length} 件只在本地备份中的展品，当前已合并显示，可点击“迁移本地”补写入 SQLite。`, "warning");
+    markDemoCollection(isSeedDemoCollection(localOnlyMemories));
+    setStorageStatus(`数据库已连接：发现 ${localOnlyMemories.length} 件只在本地备份中的展品，当前已合并显示，可点击“写入 SQLite”补写入数据库。`, "warning");
     render();
     return remoteMemories;
   }
@@ -16343,6 +16536,7 @@ async function loadMemoriesFromDatabase({ silent = false } = {}) {
   databaseNeedsMigration = false;
   memories = remoteMemories;
   persistMemories(remoteMemories);
+  markDemoCollection(false);
   setStorageStatus(`数据库已连接：SQLite 中有 ${remoteMemories.length} 件展品，本地保留备份。`, "success");
   render();
   return remoteMemories;
@@ -16429,6 +16623,7 @@ async function migrateCurrentLocalBackup({ quiet = false } = {}) {
   databaseNeedsMigration = false;
   memories = result.memories;
   persistMemories(memories);
+  markDemoCollection(false);
   return result;
 }
 
@@ -16557,7 +16752,9 @@ function renderGuide(text) {
   const averageIntensity = currentMemories.length
     ? (currentMemories.reduce((sum, memory) => sum + (memory.emotionIntensity || 1), 0) / currentMemories.length).toFixed(1)
     : "0";
-  const storageName = databaseAvailable ? "SQLite 数据库" : "浏览器本地备份";
+  const storageName = databaseNeedsMigration
+    ? isLocalDemoCollection() ? "浏览器示例，尚未写入 SQLite" : "浏览器本地备份，尚未完全写入 SQLite"
+    : databaseAvailable ? "SQLite 数据库" : "浏览器本地备份";
   const runCount = currentMemories.filter((memory) => memory.agentRunId).length;
   const phase10 = buildPhase10Handoff(currentMemories);
   const phase10Text = `第十阶段交接线索：${phase10.timelineReady} 件可进入时间线，${phase10.themeReady} 件具备主题展线索，${phase10.multimodalEvidence} 件带多模态证据。`;
@@ -17299,9 +17496,114 @@ function renderPhase13Readiness(readiness) {
   `;
 }
 
+function buildMaintainerGateStatus(info = getVersionInfo()) {
+  const plan = info.operationsConsole?.phase29ReleaseGovernancePlanning
+    || info.phase29ReleaseGovernancePlanning
+    || buildLocalPhase29ReleaseGovernancePlanning();
+  const manifestSummary = plan.phase29ReleaseExitFinalArchiveManifestPreview?.summary || {};
+  const readinessSummary = plan.phase30ReadinessMapPreview?.summary || {};
+  const ledger = info.operationsConsole?.phase30HumanReviewExecutionLedger || info.phase30HumanReviewExecutionLedger || {};
+  const ledgerSummary = ledger.summary || {};
+  const requiredSlots = Number(ledgerSummary.requiredSlots ?? 10);
+  const approvedSlots = Number(ledgerSummary.approvedSlots ?? 0);
+  const pendingSlots = Number(ledgerSummary.pendingSlots ?? Math.max(requiredSlots - approvedSlots, 0));
+  const releaseReady = (manifestSummary.releaseReady ?? readinessSummary.releaseReady) === true;
+  const phase30EntryReady = (manifestSummary.phase30EntryReady ?? readinessSummary.phase30EntryReady) === true;
+  const runtimeExecution = (manifestSummary.runtimeExecution ?? readinessSummary.runtimeExecution) === true;
+  const thirdPartyExecution = (manifestSummary.thirdPartyExecution ?? readinessSummary.thirdPartyExecution) === true;
+  return {
+    source: operationsSource === "server" ? "后端版本模型" : "本地回退模型",
+    summary: `releaseReady=${releaseReady} / phase30EntryReady=${phase30EntryReady} / runtimeExecution=${runtimeExecution} / thirdPartyExecution=${thirdPartyExecution}`,
+    gates: [
+      { label: "发布审批", value: releaseReady ? "已放行" : "阻断", status: releaseReady ? "ready" : "blocked" },
+      { label: "Phase 30 入口", value: phase30EntryReady ? "已放行" : "阻断", status: phase30EntryReady ? "ready" : "blocked" },
+      { label: "运行时", value: runtimeExecution ? "已启用" : "禁用", status: runtimeExecution ? "ready" : "disabled" },
+      { label: "第三方执行", value: thirdPartyExecution ? "已启用" : "禁用", status: thirdPartyExecution ? "ready" : "disabled" },
+      { label: "人工证据", value: `${approvedSlots}/${requiredSlots}`, status: pendingSlots > 0 ? "blocked" : "ready" }
+    ]
+  };
+}
+
+function renderMaintainerGateStatus(info = getVersionInfo()) {
+  if (!elements.maintainerGateStatus) return;
+  const status = buildMaintainerGateStatus(info);
+  elements.maintainerGateStatus.innerHTML = `
+    <div>
+      <strong>治理红线</strong>
+      <small>${escapeHtml(status.source)}；${escapeHtml(status.summary)}。没有真实人工证据时只读，不自动放行。</small>
+    </div>
+    <div class="maintainer-gate-grid">
+      ${status.gates.map((item) => `
+        <span data-gate-status="${escapeHtml(item.status)}">
+          <b>${escapeHtml(item.value)}</b>
+          <small>${escapeHtml(item.label)}</small>
+        </span>
+      `).join("")}
+    </div>
+  `;
+}
+
+function buildCandidateDeliveryOverview(info = getVersionInfo()) {
+  const gateStatus = buildMaintainerGateStatus(info);
+  const evidenceGate = gateStatus.gates[4];
+  const governanceBlocked = gateStatus.gates.some((item) => item.status === "blocked" || item.status === "disabled");
+  const sqliteState = databaseAvailable
+    ? databaseNeedsMigration
+      ? isLocalDemoCollection()
+        ? "SQLite 已连接，当前仍是浏览器示例，待写入数据库"
+        : "SQLite 已连接，本地备份待补写入数据库"
+      : "SQLite 已连接，数据库状态可作为当前展品来源"
+    : "后端未连接时使用浏览器本地备份";
+  const deliveryItems = [
+    { label: "普通体验", value: "可本地预览", status: "ready", detail: "记录、展品墙、AI 讲解和导入入口已经收敛到普通路径。" },
+    { label: "SQLite 初始化", value: databaseAvailable && !databaseNeedsMigration ? "已就绪" : "需确认", status: databaseAvailable && !databaseNeedsMigration ? "ready" : "review", detail: sqliteState },
+    { label: "治理状态", value: governanceBlocked ? "不可发布" : "可候选复核", status: governanceBlocked ? "blocked" : "ready", detail: gateStatus.summary },
+    { label: "人工证据", value: evidenceGate?.value || "0/10", status: evidenceGate?.status || "blocked", detail: "没有真实 reviewer 输出时不创建 live submission。" }
+  ];
+  return {
+    headline: governanceBlocked ? "当前候选交付：可体验、可复核、不可发布" : "当前候选交付：等待维护者最终复核",
+    detail: "这是一份只读交付总览，用来交接当前候选状态；它不会改变 releaseReady、Phase 30 entry、runtime 或第三方执行门禁。",
+    deliveryItems,
+    commands: [
+      "npm.cmd run check",
+      "npm.cmd run phase30:evidence-closure-status"
+    ],
+    guardrail: "不要创建 data/phase30-human-evidence-submission.json，除非已有真实 reviewer 证据和维护者显式转换授权。"
+  };
+}
+
+function renderCandidateDeliveryOverview(info = getVersionInfo()) {
+  if (!elements.candidateDeliveryOverview) return;
+  const overview = buildCandidateDeliveryOverview(info);
+  elements.candidateDeliveryOverview.innerHTML = `
+    <div class="candidate-delivery-heading">
+      <div>
+        <strong>${escapeHtml(overview.headline)}</strong>
+        <small>${escapeHtml(overview.detail)}</small>
+      </div>
+      <button type="button" data-feature-target="operationsSection">查看项目状态</button>
+    </div>
+    <div class="candidate-delivery-grid">
+      ${overview.deliveryItems.map((item) => `
+        <span data-delivery-status="${escapeHtml(item.status)}">
+          <b>${escapeHtml(item.value)}</b>
+          <small>${escapeHtml(item.label)}</small>
+          <em>${escapeHtml(item.detail)}</em>
+        </span>
+      `).join("")}
+    </div>
+    <div class="candidate-command-strip">
+      ${overview.commands.map((command) => `<code>${escapeHtml(command)}</code>`).join("")}
+    </div>
+    <p>${escapeHtml(overview.guardrail)}</p>
+  `;
+}
+
 function renderOperationsPanel() {
   if (!elements.operationsSection) return;
   const info = getVersionInfo();
+  renderMaintainerGateStatus(info);
+  renderCandidateDeliveryOverview(info);
   const ops = info.operations || {};
   const sourceLabel = operationsSource === "server" ? "后端版本" : "本地回退";
   elements.operationsSummaryGrid.innerHTML = `
@@ -20373,6 +20675,8 @@ function render() {
   renderOperationsPanel();
   renderPhase20PlatformPanel();
   renderAssetCollectionPanel();
+  renderCollectionSyncNotice();
+  renderImportPathGuides();
   renderMemories();
   renderGuide();
 }
@@ -21303,6 +21607,7 @@ async function handleSubmit(event) {
 
     memories = nextMemories;
     persistMemories(nextMemories);
+    markDemoCollection(false);
     setStorageStatus(`数据库已保存：${saved.title} 已写入 SQLite。`, "success");
     await syncWorkflowBlueprint({ quiet: true });
     await syncPrivacyPolicy({ quiet: true });
@@ -21324,6 +21629,7 @@ async function handleSubmit(event) {
       return;
     }
     memories = nextMemories;
+    markDemoCollection(false);
     backendWorkflowBlueprint = null;
     workflowBlueprintSource = "local";
     privacyPolicy = null;
@@ -21380,17 +21686,41 @@ async function openMemory(id) {
   const archiveNumber = getArchiveNumber(memory);
   const attachments = normalizeAttachments(memory.attachments);
   const attachmentTypeSummary = formatAttachmentTypeSummary(attachments, 6);
+  const detailItems = [
+    ["来源", memory.sourceType],
+    ["珍藏级别", getImportanceLabel(memory.importance)],
+    ["情绪强度", `${memory.emotionIntensity} / 5${memory.favorite ? "，重点展品" : ""}`],
+    ["时间", memory.date || "未记录"],
+    ["地点", memory.location || "未记录"],
+    ["相关人物", people],
+    ["入馆日期", `${created}${updated ? `，最后编辑：${updated}` : ""}`]
+  ];
 
   elements.dialogContent.innerHTML = `
     <div class="dialog-body">
-      <p class="eyebrow">${escapeHtml(getHallName(memory.hall))} / ${escapeHtml(archiveNumber)}</p>
-      <h3>${escapeHtml(memory.title)}</h3>
-      <div class="tag-row">${tags}</div>
-      <p><strong>展品说明：</strong>${escapeHtml(memory.exhibitText)}</p>
-      <p><strong>原始记忆：</strong>${escapeHtml(memory.rawContent)}</p>
-      <p><strong>来源：</strong>${escapeHtml(memory.sourceType)}；<strong>珍藏级别：</strong>${escapeHtml(getImportanceLabel(memory.importance))}；<strong>情绪强度：</strong>${escapeHtml(memory.emotionIntensity)} / 5${memory.favorite ? "；重点展品" : ""}</p>
-      <p><strong>封面图线索：</strong>${escapeHtml(memory.coverImage || "未记录")}</p>
-      <p><strong>图片/OCR/语音线索：</strong>${escapeHtml(memory.mediaNote || "未记录")}</p>
+      <div class="dialog-hero">
+        <p class="eyebrow">${escapeHtml(getHallName(memory.hall))} / ${escapeHtml(archiveNumber)}</p>
+        <h3>${escapeHtml(memory.title)}</h3>
+        <div class="tag-row">${tags}</div>
+        <p>${escapeHtml(memory.exhibitText)}</p>
+      </div>
+      <div class="memory-detail-grid">
+        ${detailItems.map(([label, value]) => `
+          <span>
+            <small>${escapeHtml(label)}</small>
+            <b>${escapeHtml(value)}</b>
+          </span>
+        `).join("")}
+      </div>
+      <div class="memory-story-block">
+        <strong>原始记忆</strong>
+        <p>${escapeHtml(memory.rawContent)}</p>
+      </div>
+      <div class="memory-story-block">
+        <strong>照片和媒体线索</strong>
+        <p><b>封面图：</b>${escapeHtml(memory.coverImage || "未记录")}</p>
+        <p><b>图片/OCR/语音：</b>${escapeHtml(memory.mediaNote || "未记录")}</p>
+      </div>
       <div class="attachment-list">
         <strong>附件清单：</strong>
         ${attachmentTypeSummary ? `<div class="attachment-type-summary">类型分布：${escapeHtml(attachmentTypeSummary)}</div>` : ""}
@@ -21399,10 +21729,6 @@ async function openMemory(id) {
           : "<span>未记录附件</span>"}
         <small>${attachments.length ? "当前保存的是附件清单和线索，原文件上传将在后续迭代接入。" : "可以在编辑展品时补充图片、截图、语音转写或其他附件线索。"}</small>
       </div>
-      <p><strong>时间：</strong>${escapeHtml(memory.date || "未记录")}</p>
-      <p><strong>地点：</strong>${escapeHtml(memory.location || "未记录")}</p>
-      <p><strong>相关人物：</strong>${escapeHtml(people)}</p>
-      <p><strong>入馆日期：</strong>${escapeHtml(created)}${updated ? `，最后编辑：${escapeHtml(updated)}` : ""}</p>
       <div id="dialog-agent-run" class="dialog-agent-run">
         ${memory.agentRunId
           ? `<p><strong>整理历史：</strong>正在读取 Agent run ${escapeHtml(memory.agentRunId.slice(0, 8))}...</p>`
@@ -22354,6 +22680,7 @@ async function applyPhase16ImportPlan() {
     });
     pendingSyncImportPlan = null;
     renderPhase16SyncPanel();
+    renderImportPathGuides();
     return;
   }
   if (!confirmPhase16ImportRisk(plan, summary)) return;
@@ -22380,6 +22707,7 @@ async function applyPhase16ImportPlan() {
       });
       memories = [...byId.values()].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       persistMemories(memories);
+      markDemoCollection(false);
       setStorageStatus(`已导入到浏览器本地备份：新增 ${summary.create}，覆盖 ${summary.update}，复制 ${summary.copy}，不写入 ${summary.skip + summary.keepLocal}${signatureText}。`, "success");
     }
     recordPhase16SyncAuditEvent({
@@ -22400,6 +22728,7 @@ async function applyPhase16ImportPlan() {
   } finally {
     setPersistencePending(false);
     renderPhase16SyncPanel();
+    renderImportPathGuides();
   }
 }
 
@@ -22430,6 +22759,7 @@ async function handlePurgeDatabase() {
     const result = await purgeDatabaseMemories();
     memories = [];
     persistMemories([]);
+    markDemoCollection(false);
     databaseAvailable = true;
     databaseNeedsMigration = false;
     backendWorkflowBlueprint = null;
@@ -22464,6 +22794,7 @@ function importMemories(file) {
         summary: decisionSummary
       });
       renderPhase16SyncPanel();
+      renderImportPathGuides();
       elements.phase16SyncPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
       setStorageStatus(`已生成同步预览：新增 ${decisionSummary.create}，覆盖 ${decisionSummary.update}，复制 ${decisionSummary.copy}，不写入 ${decisionSummary.skip + decisionSummary.keepLocal}；质量 ${pendingSyncImportPlan.quality.status}。确认后才会写入。`, "success");
       renderGuide("第十六阶段同步预览已生成。请在“数据主权”面板确认导入或取消预览。");
@@ -22484,7 +22815,7 @@ async function syncDatabase() {
     await syncPrivacyPolicy({ quiet: true });
     await syncVersionInfo({ quiet: true });
     renderGuide(databaseNeedsMigration
-      ? "数据库已经连接，但仍有只在浏览器本地备份中的展品。当前页面已合并显示两边数据；点击“迁移本地”可以把这些展品补写入 SQLite。"
+      ? "数据库已经连接，但仍有只在浏览器本地备份中的展品。当前页面已合并显示两边数据；点击“写入 SQLite”可以把这些展品补写入数据库。"
       : "已经从 SQLite 重新同步展品墙。");
   } catch (error) {
     databaseAvailable = false;

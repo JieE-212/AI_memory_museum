@@ -43,9 +43,9 @@
           <div class="section-heading">
             <p class="eyebrow">Start Here</p>
             <h3>今天想做什么？</h3>
-            <p>常用功能留在首页，高级能力通过入口打开。每个复杂模块都有用法提示，不会让技术信息压住记录体验。</p>
+            <p>先记录、回看和整理。维护、治理和插件信息默认收起，需要时再展开。</p>
           </div>
-          <div class="gateway-grid">
+          <div class="gateway-grid user-gateway-grid">
             <button type="button" class="gateway-card primary-gateway" data-home-scroll="memoryForm">
               <strong>写一段记忆</strong>
               <small>适合记录日记、照片背后的故事、聊天片段或生活瞬间。</small>
@@ -70,19 +70,29 @@
               <strong>数据与同步</strong>
               <small>管理本地数据、备份、脱敏导出、同步包和删除控制。</small>
             </button>
-            <button type="button" class="gateway-card" data-feature-target="workflowOrchestration">
-              <strong>高级工作流</strong>
-              <small>查看 Agent 如何整理、复核、暂停和衔接各个流程。</small>
-            </button>
-            <button type="button" class="gateway-card" data-feature-target="operationsSection">
-              <strong>项目状态和技术信息</strong>
-              <small>给开发和维护时使用，查看版本、接口、检查命令和运维记录。</small>
-            </button>
-            <button type="button" class="gateway-card" data-feature-target="phase20PlatformSection">
-              <strong>平台与插件生态</strong>
-              <small>查看第 20 阶段的平台边界、内置插件、扩展点和安全策略。</small>
-            </button>
           </div>
+          <details class="maintainer-gateway">
+            <summary>
+              <span>维护者入口</span>
+              <small>工作流、项目状态、平台插件和治理边界</small>
+            </summary>
+            <div class="maintainer-gate-status" id="maintainerGateStatus"></div>
+            <div class="candidate-delivery-overview" id="candidateDeliveryOverview"></div>
+            <div class="gateway-grid maintainer-gateway-grid">
+              <button type="button" class="gateway-card" data-feature-target="workflowOrchestration">
+                <strong>高级工作流</strong>
+                <small>查看 Agent 如何整理、复核、暂停和衔接各个流程。</small>
+              </button>
+              <button type="button" class="gateway-card" data-feature-target="operationsSection">
+                <strong>项目状态和技术信息</strong>
+                <small>给开发和维护时使用，查看版本、接口、检查命令和运维记录。</small>
+              </button>
+              <button type="button" class="gateway-card" data-feature-target="phase20PlatformSection">
+                <strong>平台与插件生态</strong>
+                <small>查看第 20 阶段的平台边界、内置插件、扩展点和安全策略。</small>
+              </button>
+            </div>
+          </details>
         </section>
 
         <section class="collection-section collection-section-primary" id="collectionSection">
@@ -107,9 +117,11 @@
               <label class="ghost-button compact-button import-button collection-advanced-tool" for="importFile">导入</label>
               <input class="visually-hidden" id="importFile" type="file" accept="application/json,.json" />
               <button type="button" class="ghost-button compact-button collection-advanced-tool" id="syncDatabaseButton">同步数据库</button>
-              <button type="button" class="ghost-button compact-button collection-advanced-tool" id="migrateLocalButton">迁移本地</button>
+              <button type="button" class="ghost-button compact-button collection-advanced-tool" id="migrateLocalButton">写入 SQLite</button>
             </div>
           </div>
+          <div class="import-path-guide" id="collectionImportGuide"></div>
+          <div class="collection-sync-notice" id="collectionSyncNotice" hidden></div>
           <div class="memory-grid" id="memoryGrid"></div>
         </section>
 
@@ -120,13 +132,19 @@
               <h3>添加记忆</h3>
               <p class="form-mode-hint" id="formModeHint">写下原始记忆后，可以让多 Agent 工作流生成展品草稿。</p>
             </div>
+            <div class="user-path-status" id="userPathStatus" aria-live="polite"></div>
 
             <label>
               <span class="field-heading"><span>原始记忆</span><small id="rawCount">0 / 2000</small></span>
               <textarea id="rawContent" rows="7" maxlength="2000" placeholder="例如：高三毕业那天晚上，我们几个人在操场坐到很晚，谁也没说以后还会不会见面。" required></textarea>
             </label>
 
-            <div class="form-grid">
+            <details class="form-collapse ordinary-form-essential" open>
+              <summary>
+                <span>展品信息</span>
+                <small>标题、展厅、时间、来源和标签</small>
+              </summary>
+              <div class="form-grid">
               <label>标题<input id="titleInput" type="text" maxlength="80" placeholder="可手写，也可让 Agent 工作流生成" /></label>
               <label>展厅<select id="hallSelect"></select></label>
               <label>时间<input id="memoryDate" type="date" /></label>
@@ -154,14 +172,21 @@
                   <option value="5">镇馆级</option>
                 </select>
               </label>
-            </div>
+              </div>
+              <label>相关人物<input id="peopleInput" type="text" maxlength="160" placeholder="用逗号分隔，例如：小王, 室友, 妈妈" /></label>
+              <label>展品说明<textarea id="exhibitText" rows="4" maxlength="600" placeholder="这里会保存给参观者看的说明文字。"></textarea></label>
+              <label>标签<input id="tagsInput" type="text" maxlength="160" placeholder="用逗号分隔，例如：毕业, 夜晚, 朋友" /></label>
+            </details>
 
-            <label>相关人物<input id="peopleInput" type="text" maxlength="160" placeholder="用逗号分隔，例如：小王, 室友, 妈妈" /></label>
-            <label>展品说明<textarea id="exhibitText" rows="4" maxlength="600" placeholder="这里会保存给参观者看的说明文字。"></textarea></label>
-            <label>封面图线索<input id="coverImageInput" type="text" maxlength="300" placeholder="图片路径、文件名或一句封面描述" /></label>
-            <label>图片/OCR/语音线索<textarea id="mediaNoteInput" rows="3" maxlength="800" placeholder="例如：照片里是毕业合照；截图文字提到凌晨的群聊；语音转写里出现了车站广播。"></textarea></label>
-            <label>附件清单<textarea id="attachmentsInput" rows="3" maxlength="900" placeholder="每行一个：文件名 | 类型 | 备注，例如：毕业合照.jpg | 图片 | 操场合照"></textarea></label>
-            <label>标签<input id="tagsInput" type="text" maxlength="160" placeholder="用逗号分隔，例如：毕业, 夜晚, 朋友" /></label>
+            <details class="form-collapse ordinary-form-media">
+              <summary>
+                <span>照片和附件线索</span>
+                <small>需要时再补充</small>
+              </summary>
+              <label>封面图线索<input id="coverImageInput" type="text" maxlength="300" placeholder="图片路径、文件名或一句封面描述" /></label>
+              <label>图片/OCR/语音线索<textarea id="mediaNoteInput" rows="3" maxlength="800" placeholder="例如：照片里是毕业合照；截图文字提到凌晨的群聊；语音转写里出现了车站广播。"></textarea></label>
+              <label>附件清单<textarea id="attachmentsInput" rows="3" maxlength="900" placeholder="每行一个：文件名 | 类型 | 备注，例如：毕业合照.jpg | 图片 | 操场合照"></textarea></label>
+            </details>
 
             <div class="emotion-picker">
               <span>情绪</span>
@@ -280,6 +305,7 @@
             <span>数据影响：导入前只生成预览；点击导入后才写入展品库，且保留批次审计和撤销线索。</span>
             <button type="button" class="ghost-button compact-button" data-feature-home>回到简洁首页</button>
           </div>
+          <div class="import-path-guide import-path-guide-compact" id="phase19ImportBoundary"></div>
           <div class="phase19-import-lab">
             <div class="phase19-import-controls">
               <label>资料格式
@@ -402,6 +428,7 @@
             <span>数据影响：这里包含真实数据维护动作，操作前请先确认当前数据库和备份状态。</span>
             <button type="button" class="ghost-button compact-button" data-feature-home>回到简洁首页</button>
           </div>
+          <div class="import-path-guide import-path-guide-compact" id="privacyImportBoundary"></div>
           <div class="privacy-grid">
             <article class="profile-card">
               <div class="insight-card-heading">
