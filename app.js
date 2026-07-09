@@ -856,7 +856,7 @@ function buildPhase17FailureRecovery(queue = loadPhase17SyncQueue()) {
   };
 }
 
-function buildPhase17Phase18SyncAdvisory() {
+function buildPhase17Phase18SyncAdvisoryLegacy() {
   const collection = getAssetCollection();
   const exhibitions = Array.isArray(collection.savedExhibitions) ? collection.savedExhibitions : [];
   const reports = Array.isArray(collection.reportDrafts) ? collection.reportDrafts : [];
@@ -1569,7 +1569,7 @@ function buildPhase18AgentQuality(feedback = [], taskMetrics = {}, repairDrafts 
   };
 }
 
-function buildPhase18SuggestionNoisePolicy(suggestions = [], feedback = []) {
+function buildPhase18SuggestionNoisePolicyLegacy(suggestions = [], feedback = []) {
   const dismissedTargets = new Set(feedback.filter((item) => item.action === "dismissed").map((item) => item.targetId));
   const quiet = suggestions.filter((item) => item.quality?.tier === "C" || dismissedTargets.has(item.id));
   const visible = suggestions.filter((item) => !quiet.some((quietItem) => quietItem.id === item.id));
