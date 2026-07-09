@@ -11606,7 +11606,7 @@ function buildPhase18SuggestionQuality(type, priority, matches = []) {
   };
 }
 
-function buildPhase18SuggestionNoisePolicy(suggestions = []) {
+function buildPhase18SuggestionNoisePolicyLegacy(suggestions = []) {
   const quiet = suggestions.filter((item) => item.quality?.tier === "C");
   const visible = suggestions.filter((item) => item.quality?.tier !== "C").sort((a, b) => (b.quality?.score || 0) - (a.quality?.score || 0));
   return {
