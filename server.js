@@ -14291,8 +14291,8 @@ function parseBoolean(value) {
 
 function serveStatic(urlPath, response) {
   const safePath = urlPath === "/" ? "/index.html" : decodeURIComponent(urlPath);
-  const filePath = path.normalize(path.join(ROOT_DIR, safePath));
-  if (filePath !== ROOT_DIR && !filePath.startsWith(`${ROOT_DIR}${path.sep}`)) {
+  const filePath = resolveStaticFilePath(safePath);
+  if (!filePath) {
     return sendJson(response, 403, { error: "Forbidden." });
   }
 
@@ -14303,6 +14303,15 @@ function serveStatic(urlPath, response) {
     response.writeHead(200, { "Content-Type": getContentType(filePath) });
     response.end(content);
   });
+}
+
+function resolveStaticFilePath(safePath) {
+  const rootPath = path.normalize(path.join(ROOT_DIR, safePath));
+  const publicPath = path.normalize(path.join(ROOT_DIR, "public", safePath));
+  const candidates = [rootPath, publicPath].filter((filePath) => (
+    filePath === ROOT_DIR || filePath.startsWith(`${ROOT_DIR}${path.sep}`)
+  ));
+  return candidates.find((filePath) => fs.existsSync(filePath)) || candidates[0] || null;
 }
 
 function getContentType(filePath) {
