@@ -13,6 +13,7 @@ const ROOT_DIR = __dirname;
 loadEnvFile(path.join(ROOT_DIR, ".env"));
 
 const PORT = Number(process.env.PORT) || 3000;
+const IS_VERCEL = Boolean(process.env.VERCEL);
 const INTERVIEW_DEMO = parseEnvFlag(process.env.INTERVIEW_DEMO) || parseEnvFlag(process.env.DEMO_MODE);
 const DB_PATH = process.env.DB_PATH || (
   INTERVIEW_DEMO
@@ -193,7 +194,7 @@ try {
   process.exit(1);
 }
 
-const server = http.createServer(async (request, response) => {
+async function handleRequest(request, response) {
   try {
     const url = new URL(request.url, `http://${request.headers.host}`);
     startRequestTrace(request, response, url);
@@ -525,12 +526,18 @@ const server = http.createServer(async (request, response) => {
     response.operationError = error;
     return sendError(response, error);
   }
-});
+}
 
-server.listen(PORT, () => {
-  console.log(`AI 记忆博物馆已启动：http://localhost:${PORT}`);
-  console.log(process.env.AI_API_KEY ? "AI 模式：已配置 API Key" : "AI 模式：未配置 API Key，将使用 Mock 回退");
-});
+const server = http.createServer(handleRequest);
+
+if (IS_VERCEL) {
+  module.exports = handleRequest;
+} else {
+  server.listen(PORT, () => {
+    console.log(`AI 记忆博物馆已启动：http://localhost:${PORT}`);
+    console.log(process.env.AI_API_KEY ? "AI 模式：已配置 API Key" : "AI 模式：未配置 API Key，将使用 Mock 回退");
+  });
+}
 
 server.on("error", (error) => {
   if (error.code === "EADDRINUSE") {
@@ -541,8 +548,10 @@ server.on("error", (error) => {
   process.exit(1);
 });
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+if (!IS_VERCEL) {
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+}
 
 function shutdown() {
   try {

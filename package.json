@@ -176,6 +176,6 @@
     "git:flattening-index-staged-check": "node scripts/git-flattening-index-staged-check.js"
   },
   "engines": {
-    "node": ">=24"
+    "node": "24.x"
   }
 }
