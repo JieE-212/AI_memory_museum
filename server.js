@@ -1,5 +1,6 @@
 ﻿const http = require("http");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { randomUUID } = require("crypto");
 const { createMemoryStore } = require("./database");
@@ -7,9 +8,17 @@ const { createOperationsService } = require("./src/services/operations");
 const { createHealthRoutes } = require("./src/routes/health");
 const { createOperationsRoutes } = require("./src/routes/operations");
 
-const PORT = Number(process.env.PORT) || 3000;
 const ROOT_DIR = __dirname;
-const DB_PATH = process.env.DB_PATH || path.join(ROOT_DIR, "data", "memory-museum.sqlite");
+
+loadEnvFile(path.join(ROOT_DIR, ".env"));
+
+const PORT = Number(process.env.PORT) || 3000;
+const INTERVIEW_DEMO = parseEnvFlag(process.env.INTERVIEW_DEMO) || parseEnvFlag(process.env.DEMO_MODE);
+const DB_PATH = process.env.DB_PATH || (
+  INTERVIEW_DEMO
+    ? path.join(os.tmpdir(), "ai-memory-museum-interview-demo.sqlite")
+    : path.join(ROOT_DIR, "data", "memory-museum.sqlite")
+);
 const SCHEMA_VERSION = 2;
 const PHASE = 29;
 const PHASE_NAME = "\u53d1\u5e03\u6cbb\u7406\u89c4\u5212";
@@ -17,7 +26,11 @@ const APP_VERSION = "1.9.48";
 const BUILD_LABEL = "phase29-release-exit-final-archive-manifest-preview";
 const RELEASE_CHANNEL = process.env.RELEASE_CHANNEL || "local-preview";
 const OPERATION_EVENT_LIMIT = 80;
-const OPERATION_LOG_PATH = process.env.OPERATIONS_LOG_PATH || path.join(ROOT_DIR, "data", "operations-events.jsonl");
+const OPERATION_LOG_PATH = process.env.OPERATIONS_LOG_PATH || (
+  INTERVIEW_DEMO
+    ? path.join(os.tmpdir(), "ai-memory-museum-operations-events.jsonl")
+    : path.join(ROOT_DIR, "data", "operations-events.jsonl")
+);
 const MAX_RAW_LENGTH = 2000;
 const MAX_BODY_LENGTH = 2 * 1024 * 1024;
 const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS) || 20000;
@@ -25,8 +38,6 @@ const operationEvents = [];
 let operationsService;
 let healthRoutes;
 let operationsRoutes;
-
-loadEnvFile(path.join(ROOT_DIR, ".env"));
 
 const halls = [
   { id: "youth", name: "Youth Hall", description: "Campus, graduation, growth, and unfinished words." },
@@ -128,8 +139,10 @@ const fieldLimits = {
   listLength: 16
 };
 let store;
+resetInterviewDemoStorage();
 try {
   store = createMemoryStore({ dbPath: DB_PATH, halls, schemaVersion: SCHEMA_VERSION });
+  seedInterviewDemoData();
   hydrateOperationEvents();
   operationsService = createOperationsService({
     fs,
@@ -184,6 +197,18 @@ const server = http.createServer(async (request, response) => {
   try {
     const url = new URL(request.url, `http://${request.headers.host}`);
     startRequestTrace(request, response, url);
+
+    if (request.method === "GET" && url.pathname === "/api/demo/status") {
+      return sendJson(response, 200, buildInterviewDemoStatus());
+    }
+
+    if (isInterviewDemoBlockedMutation(request, url)) {
+      return sendJson(response, 403, {
+        error: "Interview demo is read-safe: destructive actions are disabled.",
+        interviewDemo: true,
+        blockedAction: `${request.method} ${url.pathname}`
+      });
+    }
 
     if (healthRoutes.handleHealthRoute(request, response, url)) return;
 
@@ -525,6 +550,142 @@ function shutdown() {
   } finally {
     process.exit(0);
   }
+}
+
+function parseEnvFlag(value) {
+  return ["1", "true", "yes", "on"].includes(String(value || "").trim().toLowerCase());
+}
+
+function resetInterviewDemoStorage() {
+  if (!INTERVIEW_DEMO) return;
+  if (!process.env.DB_PATH) fs.rmSync(DB_PATH, { force: true });
+  if (!process.env.OPERATIONS_LOG_PATH) fs.rmSync(OPERATION_LOG_PATH, { force: true });
+}
+
+function seedInterviewDemoData() {
+  if (!INTERVIEW_DEMO || store.listMemories().length > 0) return;
+
+  const memories = [
+    {
+      id: "demo-campus-night",
+      title: "操场尽头的告别",
+      hall: "youth",
+      rawContent: "高三毕业那天晚上，我们几个人在操场坐到很晚，谁也没有先说以后还会不会见面。",
+      exhibitText: "这件展品记录了一次没有正式说出口的告别。夜晚、操场和沉默一起保存了青春快结束时的重量。",
+      date: "2019-06-12",
+      location: "学校操场",
+      people: ["同学", "朋友"],
+      tags: ["毕业", "校园", "夜晚"],
+      emotions: ["nostalgia", "regret"],
+      emotionIntensity: 4,
+      sourceType: "日记",
+      importance: 4,
+      favorite: true,
+      mediaNote: "面试 Demo 示例：这里可以放照片、截图或语音转写线索，但不上传真实私人文件。",
+      createdAt: "2026-07-01T09:00:00.000Z"
+    },
+    {
+      id: "demo-family-box",
+      title: "被塞满的保鲜盒",
+      hall: "family",
+      rawContent: "离家那天，妈妈把剩菜装进两个保鲜盒，反复说路上饿了就吃。地铁上我突然觉得袋子很重。",
+      exhibitText: "这件展品把普通的叮嘱保存成可回看的证据。重量来自保鲜盒，也来自家人不太会说出口的牵挂。",
+      date: "2021-10-03",
+      location: "地铁站",
+      people: ["妈妈"],
+      tags: ["家人", "离家", "饭菜"],
+      emotions: ["warm", "moved"],
+      emotionIntensity: 5,
+      sourceType: "日记",
+      importance: 5,
+      favorite: true,
+      createdAt: "2026-07-01T09:01:00.000Z"
+    },
+    {
+      id: "demo-friend-photo",
+      title: "群聊里突然翻出的合照",
+      hall: "friends",
+      rawContent: "朋友在群里发了一张很糊的旧合照，大家开始翻旧账，笑到凌晨一点。",
+      exhibitText: "这件展品来自一次被旧照片点燃的群聊。它适合展示项目的标签、人物线索、主题展和讲解员检索能力。",
+      date: "2024-02-18",
+      location: "线上群聊",
+      people: ["室友", "朋友"],
+      tags: ["合照", "群聊", "友情"],
+      emotions: ["joy", "nostalgia"],
+      emotionIntensity: 4,
+      sourceType: "聊天片段",
+      importance: 3,
+      favorite: false,
+      coverImage: "旧合照线索：画面很糊，但所有人都在笑。",
+      createdAt: "2026-07-01T09:02:00.000Z"
+    },
+    {
+      id: "demo-rain-train",
+      title: "不想太快到站的雨夜",
+      hall: "daily",
+      rawContent: "旅行回来的车上，窗外一直下雨，我突然不想那么快到站。",
+      exhibitText: "这件展品适合展示时间线和回忆报告：它不是重大事件，却能把一个阶段的疲惫、安静和期待都带出来。",
+      date: "2025-04-20",
+      location: "返程列车",
+      people: [],
+      tags: ["旅行", "雨夜", "返程"],
+      emotions: ["calm", "lost"],
+      emotionIntensity: 3,
+      sourceType: "旅行片段",
+      importance: 3,
+      favorite: false,
+      createdAt: "2026-07-01T09:03:00.000Z"
+    }
+  ];
+
+  const normalized = memories.map(normalizeMemory);
+  store.importMemories(normalized);
+  store.saveSavedExhibition({
+    id: "demo-exhibition-growing-up",
+    title: "示例主题展：长大的一些证据",
+    intro: "面试 Demo 自动生成的专题展，用来展示展品引用、专题资产和导览词。",
+    status: "published",
+    coverMemoryId: "demo-campus-night",
+    memoryIds: ["demo-campus-night", "demo-family-box", "demo-friend-photo"],
+    tags: ["Interview Demo", "示例数据"],
+    guideText: "从校园告别、家人叮嘱到朋友合照，这组展品展示项目如何把散落记忆组织成可浏览、可检索、可讲解的主题。"
+  });
+  store.saveReportDraft({
+    id: "demo-report-interview",
+    title: "示例回忆报告：一段从离别到回看的路径",
+    status: "review",
+    scope: { source: "interview-demo", memoryCount: normalized.length },
+    sections: [
+      { title: "从告别开始", text: "校园夜晚的展品提供了最强的青春线索。" },
+      { title: "家人的重量", text: "保鲜盒展品把私人情绪转成可回看的叙事节点。" },
+      { title: "可演示能力", text: "面试官可以继续新增、搜索、导出和询问讲解员。" }
+    ],
+    references: normalized.map((memory) => ({ id: memory.id, title: memory.title })),
+    sourceInsights: { demo: true, note: "This is seeded interview data, not real private memory." }
+  });
+}
+
+function buildInterviewDemoStatus() {
+  return {
+    interviewDemo: INTERVIEW_DEMO,
+    mode: INTERVIEW_DEMO ? "interview-demo" : "local",
+    storage: INTERVIEW_DEMO ? "ephemeral-sqlite-on-tmp" : "local-sqlite",
+    databasePath: INTERVIEW_DEMO ? "/tmp/ai-memory-museum-interview-demo.sqlite" : DB_PATH,
+    seededExamples: INTERVIEW_DEMO ? 4 : 0,
+    destructiveActionsBlocked: INTERVIEW_DEMO,
+    aiMode: process.env.AI_API_KEY ? "configured" : "mock-fallback"
+  };
+}
+
+function isInterviewDemoBlockedMutation(request, url) {
+  if (!INTERVIEW_DEMO) return false;
+  if (request.method !== "DELETE") return false;
+  return (
+    url.pathname === "/api/memories/purge"
+    || /^\/api\/memories\/[a-zA-Z0-9_-]{8,80}$/.test(url.pathname)
+    || /^\/api\/exhibitions\/[a-zA-Z0-9_-]{1,120}$/.test(url.pathname)
+    || /^\/api\/report-drafts\/[a-zA-Z0-9_-]{1,120}$/.test(url.pathname)
+  );
 }
 
 function loadEnvFile(filePath) {

@@ -127,6 +127,22 @@ button { cursor: pointer; }
   padding: 30px;
   overflow: hidden;
 }
+.demo-banner {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  gap: 4px;
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 196, 183, 0.46);
+  border-radius: 8px;
+  color: var(--text);
+  background: rgba(31, 48, 44, 0.82);
+  box-shadow: 0 16px 40px rgba(8, 6, 4, 0.16);
+}
+.demo-banner[hidden] { display: none; }
+.demo-banner strong { color: var(--teal); }
+.demo-banner small { color: var(--muted); line-height: 1.6; }
 .main-stage::before,
 .main-stage::after {
   content: "";

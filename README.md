@@ -294,6 +294,17 @@ $env:PORT = "3001"
 npm.cmd start
 ```
 
+## 面试 Demo 部署
+
+项目支持 Vercel 面试演示模式。部署到 Vercel 时设置：
+
+```text
+INTERVIEW_DEMO=true
+AI_API_KEY=
+```
+
+该模式会使用 `/tmp` 下的临时 SQLite，自动注入示例展品，并禁用删除和清空接口，适合把 Live Demo 链接写到简历里。详细步骤见 `DEPLOYMENT.md`。
+
 ## 检查项
 
 完整检查命令：

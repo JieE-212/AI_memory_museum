@@ -24,6 +24,7 @@ const API_OPERATIONS = "/api/operations";
 const API_ASSETS = "/api/assets";
 const API_EXHIBITIONS = "/api/exhibitions";
 const API_REPORT_DRAFTS = "/api/report-drafts";
+const API_DEMO_STATUS = "/api/demo/status";
 
 const emotionOptions = [
   "怀念",
@@ -194,6 +195,7 @@ let versionInfo = null;
 let operationsSource = "local";
 let assetCollection = null;
 let assetSource = "local";
+let interviewDemoInfo = null;
 let activeAssetDialog = null;
 let assetAuditSearchTerm = "";
 let selectedAssetSnapshotId = "";
@@ -368,6 +370,7 @@ const elements = {
   dialogContent: $("#dialogContent"),
   closeDialog: $("#closeDialog")
 };
+elements.demoBanner = $("#demoBanner");
 
 function setActiveFeaturePanel(panelId = "home", scrollTargetId = "", shouldScroll = true) {
   const nextPanel = featurePanelIds.includes(panelId) ? panelId : "home";
@@ -15159,6 +15162,30 @@ async function requestJson(url, options = {}) {
   return payload;
 }
 
+async function syncDemoStatus() {
+  try {
+    interviewDemoInfo = await requestJson(API_DEMO_STATUS);
+  } catch {
+    interviewDemoInfo = null;
+  }
+  renderDemoBanner();
+}
+
+function renderDemoBanner() {
+  if (!elements.demoBanner) return;
+  const isDemo = Boolean(interviewDemoInfo?.interviewDemo);
+  elements.demoBanner.hidden = !isDemo;
+  if (!isDemo) return;
+  elements.demoBanner.innerHTML = `
+    <strong>Interview Demo / 示例数据</strong>
+    <small>这是给面试官打开体验的公开演示版：使用临时 SQLite 和示例记忆，删除与清空接口已关闭；你仍可以新增、搜索、导出并体验 AI Mock 工作流。</small>
+  `;
+  if (elements.purgeDatabaseButton) {
+    elements.purgeDatabaseButton.disabled = true;
+    elements.purgeDatabaseButton.title = "Interview Demo 模式下已禁用清空数据库。";
+  }
+}
+
 function buildLocalAssetCollection() {
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -16544,6 +16571,7 @@ async function loadMemoriesFromDatabase({ silent = false } = {}) {
 
 async function initializeStorage() {
   try {
+    await syncDemoStatus();
     await loadMemoriesFromDatabase();
     await syncWorkflowBlueprint({ quiet: true });
     await syncPrivacyPolicy({ quiet: true });
