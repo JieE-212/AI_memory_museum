@@ -14308,7 +14308,7 @@ function serveStatic(urlPath, response) {
 function resolveStaticFilePath(safePath) {
   const rootPath = path.normalize(path.join(ROOT_DIR, safePath));
   const publicPath = path.normalize(path.join(ROOT_DIR, "public", safePath));
-  const candidates = [rootPath, publicPath].filter((filePath) => (
+  const candidates = [publicPath, rootPath].filter((filePath) => (
     filePath === ROOT_DIR || filePath.startsWith(`${ROOT_DIR}${path.sep}`)
   ));
   return candidates.find((filePath) => fs.existsSync(filePath)) || candidates[0] || null;
