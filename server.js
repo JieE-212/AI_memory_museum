@@ -16,7 +16,7 @@ const INTERVIEW_DEMO = parseEnvFlag(process.env.INTERVIEW_DEMO) || parseEnvFlag(
 const DB_PATH = process.env.DB_PATH || (INTERVIEW_DEMO
   ? path.join(os.tmpdir(), "ai-memory-museum-interview-demo.sqlite")
   : path.join(ROOT_DIR, "data", "memory-museum.sqlite"));
-const APP_VERSION = "2.0.0";
+const APP_VERSION = "2.0.1";
 const SCHEMA_VERSION = 2;
 const MAX_RAW_LENGTH = 4000;
 const MAX_BODY_LENGTH = 2 * 1024 * 1024;
@@ -49,7 +49,9 @@ async function handleRequest(request, response) {
     if (request.method === "GET" && url.pathname === "/api/health") {
       return sendJson(response, 200, {
         ok: true,
-        name: "AI 记忆博物馆",
+        name: "时屿",
+        englishName: "TIME ISLE",
+        tagline: "AI 私人记忆策展工具",
         version: APP_VERSION,
         mode: INTERVIEW_DEMO ? "interview-demo" : "local",
         storage: INTERVIEW_DEMO ? "ephemeral-sqlite" : "local-sqlite",
@@ -60,7 +62,9 @@ async function handleRequest(request, response) {
 
     if (request.method === "GET" && url.pathname === "/api/version") {
       return sendJson(response, 200, {
-        name: "AI 记忆博物馆",
+        name: "时屿",
+        englishName: "TIME ISLE",
+        tagline: "AI 私人记忆策展工具",
         version: APP_VERSION,
         runtime: `Node.js ${process.version}`,
         architecture: ["Vanilla JS", "Node.js HTTP", "SQLite"],
@@ -303,7 +307,7 @@ async function answerGuideQuestion(question) {
       answer = await callAi([
         {
           role: "system",
-          content: "你是私人记忆博物馆讲解员。只能依据提供的展品证据回答，使用自然、克制的中文，并用 [1] [2] 标注引用。证据不足时明确说明，不要编造。"
+          content: "你是“时屿”的私人记忆讲解员。只能依据提供的展品证据回答，使用自然、克制的中文，并用 [1] [2] 标注引用。证据不足时明确说明，不要编造。"
         },
         { role: "user", content: `问题：${question}\n展品证据：${JSON.stringify(evidence)}` }
       ]);
@@ -415,7 +419,8 @@ function buildInsights(memories, filters = {}) {
 function buildCollectionExport(memories, mode) {
   const exported = mode === "redacted" ? memories.map(redactMemory) : memories;
   return {
-    product: "AI 记忆博物馆",
+    product: "时屿",
+    productEnglish: "TIME ISLE",
     version: APP_VERSION,
     schemaVersion: SCHEMA_VERSION,
     mode,
@@ -986,7 +991,7 @@ if (IS_VERCEL) {
 } else {
   const server = http.createServer(handleRequest);
   server.listen(PORT, "127.0.0.1", () => {
-    console.log(`AI 记忆博物馆已启动：http://127.0.0.1:${PORT}`);
+    console.log(`时屿（TIME ISLE）已启动：http://127.0.0.1:${PORT}`);
     console.log(process.env.AI_API_KEY ? "AI 模式：已配置模型" : "AI 模式：本地 Mock 回退");
   });
   server.on("error", (error) => {

@@ -10,6 +10,7 @@ const pkg = JSON.parse(read("package.json"));
 
 const checks = [
   ["页面包含四个清晰主视图", ["collection", "compose", "reflect", "data"].every((view) => html.includes(`data-view-panel="${view}"`))],
+  ["时屿品牌结构完整", html.includes("<strong>时屿</strong>") && html.includes("<small>TIME ISLE</small>") && html.includes("AI 私人记忆策展工具")],
   ["核心记录表单存在", html.includes('id="memoryForm"') && html.includes('id="draftForm"')],
   ["已保存展品仍可编辑", html.includes('id="dialogEditButton"') && app.includes("editSelectedMemory")],
   ["讲解员和引用区域存在", html.includes('id="guideForm"') && html.includes('id="citationList"')],

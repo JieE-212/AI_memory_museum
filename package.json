@@ -1,8 +1,8 @@
 {
   "name": "ai-memory-museum",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "private": true,
-  "description": "把私人记忆整理为可检索、可回顾展品的本地优先 AI 应用",
+  "description": "时屿（TIME ISLE）：本地优先的 AI 私人记忆策展工具",
   "engines": {
     "node": ">=24"
   },

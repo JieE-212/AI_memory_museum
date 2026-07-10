@@ -114,7 +114,7 @@ async function initialize() {
     state.health = health;
     populateOptions();
     renderApp();
-    elements.footerVersion.textContent = `v${version.version || "2.0.0"}`;
+    elements.footerVersion.textContent = `v${version.version || "2.0.1"}`;
     setRuntimeStatus(demo.interviewDemo ? "Demo 已连接" : "本地馆藏已连接", "ready");
     const initialView = normalizeView(location.hash.replace("#", ""));
     switchView(initialView, { updateHash: false });
@@ -576,7 +576,7 @@ async function exportMemories(mode) {
   try {
     const suffix = mode === "redacted" ? "?mode=redacted" : "";
     const payload = await requestJson(`/api/memories/export${suffix}`);
-    downloadJson(payload, `ai-memory-museum-${mode}-${new Date().toISOString().slice(0, 10)}.json`);
+    downloadJson(payload, `time-isle-${mode}-${new Date().toISOString().slice(0, 10)}.json`);
     setDataStatus(mode === "redacted" ? "脱敏版本已下载。" : "完整备份已下载，请妥善保管。", false, true);
   } catch (error) {
     setDataStatus(error.message, true);

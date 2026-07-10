@@ -23,7 +23,7 @@ async function runLocalFlow() {
   await withServer({ DB_PATH: dbPath, INTERVIEW_DEMO: "false" }, async (baseUrl) => {
     const home = await fetch(`${baseUrl}/`);
     const homeText = await home.text();
-    assert("首页可访问", home.ok && homeText.includes("把散落的生活片段"));
+    assert("首页可访问并展示时屿品牌", home.ok && homeText.includes("把散落的生活片段") && homeText.includes("TIME ISLE"));
     assert("首页包含安全响应头", home.headers.get("x-content-type-options") === "nosniff" && home.headers.get("x-frame-options") === "DENY");
 
     const styles = await fetch(`${baseUrl}/styles.css`);
@@ -31,7 +31,7 @@ async function runLocalFlow() {
     assert("静态资源可访问", styles.ok && app.ok);
 
     const health = await getJson(`${baseUrl}/api/health`);
-    assert("健康检查返回精简版本信息", health.response.ok && health.payload.ok && health.payload.version === "2.0.0");
+    assert("健康检查返回时屿品牌与版本", health.response.ok && health.payload.ok && health.payload.version === "2.0.1" && health.payload.name === "时屿" && health.payload.englishName === "TIME ISLE" && health.payload.tagline === "AI 私人记忆策展工具");
     assert("本地模式使用 SQLite", health.payload.mode === "local" && health.payload.storage === "local-sqlite");
 
     const version = await getJson(`${baseUrl}/api/version`);
@@ -80,7 +80,7 @@ async function runLocalFlow() {
     assert("隐私接口说明本地数据位置", privacy.response.ok && privacy.payload.mode === "local-first" && privacy.payload.dataLocations.length >= 3);
 
     const fullExport = await getJson(`${baseUrl}/api/memories/export`);
-    assert("完整备份保留原文", fullExport.response.ok && fullExport.payload.memories.some((memory) => memory.rawContent === rawContent));
+    assert("完整备份保留品牌和原文", fullExport.response.ok && fullExport.payload.product === "时屿" && fullExport.payload.productEnglish === "TIME ISLE" && fullExport.payload.memories.some((memory) => memory.rawContent === rawContent));
 
     const redactedExport = await getJson(`${baseUrl}/api/memories/export?mode=redacted`);
     const redacted = redactedExport.payload.memories.find((memory) => memory.id === memoryId);
