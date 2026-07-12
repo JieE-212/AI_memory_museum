@@ -4,6 +4,13 @@ const os = require("os");
 const path = require("path");
 const { randomUUID } = require("crypto");
 const { createMemoryStore } = require("./database");
+const {
+  buildConnections,
+  buildPuzzle,
+  buildCuratorQuestion,
+  buildFeaturedRoute
+} = require("./lib/archaeology");
+const { buildArchaeologyBackup, restoreArchaeologyBackup, validateArchaeologyBackup } = require("./lib/archaeology-backup");
 
 const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
@@ -16,8 +23,8 @@ const INTERVIEW_DEMO = parseEnvFlag(process.env.INTERVIEW_DEMO) || parseEnvFlag(
 const DB_PATH = process.env.DB_PATH || (INTERVIEW_DEMO
   ? path.join(os.tmpdir(), "ai-memory-museum-interview-demo.sqlite")
   : path.join(ROOT_DIR, "data", "memory-museum.sqlite"));
-const APP_VERSION = "2.0.1";
-const SCHEMA_VERSION = 2;
+const APP_VERSION = "3.0.0";
+const SCHEMA_VERSION = 3;
 const MAX_RAW_LENGTH = 4000;
 const MAX_BODY_LENGTH = 2 * 1024 * 1024;
 const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS) || 20000;
@@ -45,6 +52,13 @@ async function handleRequest(request, response) {
 
   try {
     const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
+    if (
+      url.pathname.startsWith("/api/") &&
+      ["POST", "PUT"].includes(request.method) &&
+      !String(request.headers["content-type"] || "").toLowerCase().includes("application/json")
+    ) {
+      throw httpError(415, "写入接口只接受 application/json。");
+    }
 
     if (request.method === "GET" && url.pathname === "/api/health") {
       return sendJson(response, 200, {
@@ -67,8 +81,8 @@ async function handleRequest(request, response) {
         tagline: "AI 私人记忆策展工具",
         version: APP_VERSION,
         runtime: `Node.js ${process.version}`,
-        architecture: ["Vanilla JS", "Node.js HTTP", "SQLite"],
-        productFlow: ["记录", "AI 整理", "检索与讲解", "回顾", "安全导出"],
+        architecture: ["Vanilla JS", "Node.js HTTP", "SQLite", "证据锚点"],
+        productFlow: ["记录", "AI 整理", "检索与讲解", "记忆考古", "安全导出"],
         demo: buildInterviewDemoStatus()
       });
     }
@@ -79,7 +93,7 @@ async function handleRequest(request, response) {
 
     if (isInterviewDemoBlockedMutation(request, url)) {
       return sendJson(response, 403, {
-        error: "公开 Demo 已禁用删除和清空操作。",
+        error: "公开 Demo 已阻止这项会影响示例稳定性的操作。",
         interviewDemo: true,
         blockedAction: `${request.method} ${url.pathname}`
       });
@@ -109,18 +123,41 @@ async function handleRequest(request, response) {
       const body = await readJsonBody(request);
       const incoming = Array.isArray(body) ? body : body.memories;
       if (!Array.isArray(incoming)) throw httpError(400, "memories 数组不能为空。");
+      const backupArchaeology = !Array.isArray(body) ? body.archaeology : null;
+      if (backupArchaeology) {
+        try {
+          validateArchaeologyBackup(backupArchaeology, incoming.slice(0, 500).map((memory) => sanitizeId(memory?.id)).filter(Boolean));
+        } catch (error) {
+          throw httpError(400, `记忆考古备份无法恢复：${error.message}`);
+        }
+      }
       const existingIds = new Set(store.listMemories().map((memory) => memory.id));
+      const memoryIdMap = new Map();
       const normalized = incoming.slice(0, 500).map((memory) => {
+        const sourceId = sanitizeId(memory?.id);
         const item = normalizeMemory(memory);
         // The JSON backup currently contains memories, not the referenced Agent run tables.
         // Clearing the foreign reference avoids attaching an imported copy to an unrelated run.
         item.agentRunId = "";
         if (existingIds.has(item.id)) item.id = createId("memory");
         existingIds.add(item.id);
+        if (sourceId) memoryIdMap.set(sourceId, item.id);
         return item;
       });
-      const result = store.importMemories(normalized);
-      return sendJson(response, 200, { imported: result.imported, memories: result.memories });
+      let result;
+      try {
+        result = store.importMemories(normalized);
+        const archaeology = backupArchaeology
+          ? restoreArchaeologyBackup(store, backupArchaeology, memoryIdMap)
+          : { events: 0, claims: 0, decisions: 0, questions: 0, skipped: 0 };
+        if (archaeology.skipped) throw new Error(`${archaeology.skipped} 项关系数据未能恢复。`);
+        return sendJson(response, 200, { imported: result.imported, memories: result.memories, archaeology });
+      } catch (error) {
+        normalized.slice().reverse().forEach((memory) => {
+          try { store.deleteMemory(memory.id); } catch { /* Best-effort compensation for a rejected archive. */ }
+        });
+        throw httpError(400, `导入已取消，未保留不完整数据：${error.message}`);
+      }
     }
 
     if (request.method === "DELETE" && url.pathname === "/api/memories/purge") {
@@ -176,6 +213,126 @@ async function handleRequest(request, response) {
         year: limitText(url.searchParams.get("year"), 4)
       };
       return sendJson(response, 200, buildInsights(store.listMemories(), filters));
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/archaeology/overview") {
+      return sendJson(response, 200, {
+        mode: "evidence-rules",
+        overview: store.getArchaeologyOverview(),
+        events: store.listMemoryEvents().map(summarizeMemoryEvent)
+      });
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/archaeology/routes") {
+      const focusId = sanitizeId(url.searchParams.get("focus") || "");
+      const memories = store.listMemories();
+      const route = focusId
+        ? buildConnections(memories, { focusId, limit: clampInteger(url.searchParams.get("limit"), 1, 6, 4) })
+        : buildFeaturedRoute(memories);
+      return sendJson(response, 200, {
+        mode: "evidence-rules",
+        kind: focusId ? "focus" : "featured",
+        route,
+        overview: store.getArchaeologyOverview()
+      });
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/archaeology/puzzle") {
+      const memoryId = sanitizeId(url.searchParams.get("memoryId"));
+      const relatedId = sanitizeId(url.searchParams.get("relatedId"));
+      if (!memoryId || !relatedId || memoryId === relatedId) throw httpError(400, "请选择两件不同的展品进行拼图。");
+      const left = store.getMemory(memoryId);
+      const right = store.getMemory(relatedId);
+      if (!left || !right) throw httpError(404, "没有找到用于拼图的展品。");
+      const puzzle = buildPuzzle(left, right);
+      const event = sharedMemoryEvent(memoryId, relatedId);
+      const savedQuestions = event
+        ? dedupeById([...store.listCuratorQuestions({ eventId: event.id }), ...store.listCuratorQuestions({ memoryId })])
+        : store.listCuratorQuestions({ memoryId });
+      return sendJson(response, 200, {
+        mode: "evidence-rules",
+        puzzle,
+        question: buildCuratorQuestion(puzzle),
+        decision: store.getPairDecision(memoryId, relatedId),
+        event: event ? summarizeMemoryEvent(event) : null,
+        savedQuestions
+      });
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/archaeology/events") {
+      const body = await readJsonBody(request);
+      const memoryIds = normalizeList(body.memoryIds, 2, 120).map(sanitizeId).filter(Boolean);
+      if (memoryIds.length !== 2 || memoryIds[0] === memoryIds[1]) throw httpError(400, "确认同一往事需要两件不同的展品。");
+      const left = store.getMemory(memoryIds[0]);
+      const right = store.getMemory(memoryIds[1]);
+      if (!left || !right) throw httpError(404, "没有找到需要关联的展品。");
+      const puzzle = buildPuzzle(left, right);
+      const connection = buildConnections([left, right], { focusId: left.id, limit: 1 }).connections[0] || null;
+      const leftEvent = store.getMemoryEventForMemory(left.id);
+      const rightEvent = store.getMemoryEventForMemory(right.id);
+      if (leftEvent && rightEvent && leftEvent.id !== rightEvent.id) {
+        throw httpError(409, "这两件展品已分别属于不同的时光拼图，请先核对现有分组。");
+      }
+      const existing = leftEvent || rightEvent;
+      const confirmation = store.saveArchaeologyConfirmation({
+        event: {
+          eventId: existing?.id || sanitizeId(body.eventId),
+          memoryIds,
+          title: limitText(body.title, 100) || `《${left.title}》的时光拼图`,
+          summary: `${puzzle.summary.stable} 条稳定线索，${puzzle.summary.differs} 处描述差异，${puzzle.summary.additions} 条后来补充。`,
+          confirmedBy: "user"
+        },
+        pairDecision: {
+          memoryAId: left.id,
+          memoryBId: right.id,
+          decision: "same_event",
+          rationale: "用户确认这两段记录属于同一往事。",
+          evidence: connection?.reasons || [],
+          metadata: { score: connection?.score || 0 }
+        },
+        claimsByMemory: buildPuzzleClaims(puzzle, [left.id, right.id])
+      });
+      return sendJson(response, 201, {
+        ok: true,
+        event: summarizeMemoryEvent(confirmation.event),
+        overview: store.getArchaeologyOverview()
+      });
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/archaeology/questions") {
+      const body = await readJsonBody(request);
+      const memoryId = sanitizeId(body.memoryId);
+      const relatedId = sanitizeId(body.relatedId);
+      const left = store.getMemory(memoryId);
+      const right = store.getMemory(relatedId);
+      if (!left || !right || left.id === right.id) throw httpError(400, "补充问题需要两件不同的展品。");
+      const puzzle = buildPuzzle(left, right);
+      const generated = buildCuratorQuestion(puzzle);
+      if (!generated.available) throw httpError(409, "当前拼图没有需要补充的问题。");
+      const action = ["answer", "keep_unknown", "skip"].includes(body.action) ? body.action : "answer";
+      const answer = limitText(body.answer, 400);
+      if (action === "answer" && !answer) throw httpError(400, "请写下补充内容，或选择保留不确定。");
+      const event = sharedMemoryEvent(left.id, right.id);
+      const saved = store.saveCuratorQuestion({
+        id: createId("question"),
+        memoryId: left.id,
+        eventId: event?.id || "",
+        question: generated.question,
+        reason: generated.why,
+        status: action === "answer" ? "answered" : action === "keep_unknown" ? "unknown" : "skipped",
+        answer: action === "answer" ? answer : "",
+        priority: questionPriority(generated.basedOn?.field),
+        evidence: generated.basedOn ? [generated.basedOn] : [],
+        metadata: { relatedMemoryId: right.id, action, targetField: generated.basedOn?.field || "" }
+      });
+      return sendJson(response, 201, { ok: true, question: saved });
+    }
+
+    const archaeologyEventMatch = url.pathname.match(/^\/api\/archaeology\/events\/([a-zA-Z0-9_-]{1,120})$/);
+    if (request.method === "DELETE" && archaeologyEventMatch) {
+      const removed = store.deleteMemoryEvent(archaeologyEventMatch[1]);
+      if (!removed) throw httpError(404, "没有找到这组时光拼图。");
+      return sendJson(response, 200, { ok: true, removed, overview: store.getArchaeologyOverview() });
     }
 
     if (request.method === "GET" && url.pathname === "/api/privacy") {
@@ -416,8 +573,86 @@ function buildInsights(memories, filters = {}) {
   };
 }
 
+function sharedMemoryEvent(leftId, rightId) {
+  const event = store.getMemoryEventForMemory(leftId);
+  if (!event) return null;
+  return event.members?.some((member) => member.memoryId === rightId) ? event : null;
+}
+
+function summarizeMemoryEvent(event) {
+  if (!event) return null;
+  return {
+    id: event.id,
+    title: event.title,
+    summary: event.summary,
+    status: event.status,
+    versionCount: event.versionCount || event.members?.length || 0,
+    createdAt: event.createdAt,
+    updatedAt: event.updatedAt,
+    members: (event.members || []).map((member) => ({
+      memoryId: member.memoryId,
+      title: member.title,
+      date: member.date,
+      sourceType: member.sourceType,
+      relation: member.relation,
+      confirmedAt: member.confirmedAt
+    }))
+  };
+}
+
+function buildPuzzleClaims(puzzle, memoryIds) {
+  const groups = ["stable", "differs", "additions", "unknowns"];
+  return Object.fromEntries(memoryIds.map((memoryId) => {
+    const existing = store.getMemoryClaims(memoryId).map((claim) => ({
+      id: claim.id,
+      claimKey: claim.claimKey,
+      type: claim.type,
+      value: claim.value,
+      quote: claim.quote,
+      startOffset: claim.startOffset,
+      endOffset: claim.endOffset,
+      confidence: claim.confidence,
+      status: claim.status,
+      metadata: claim.payload || {}
+    }));
+    const additions = groups.flatMap((group) => (puzzle[group] || []).flatMap((item) => (
+      (item.sources || [])
+        .filter((source) => source.memoryId === memoryId && source.valid)
+        .map((source) => ({
+          claimKey: item.field,
+          type: group,
+          value: source.value || item.statement,
+          quote: source.sourceQuote,
+          startOffset: source.start,
+          endOffset: source.end,
+          confidence: 1,
+          status: "source_verified",
+          metadata: { itemId: item.id, statement: item.statement }
+        }))
+    )));
+    const seen = new Set();
+    const claims = [...existing, ...additions].filter((claim) => {
+      const key = `${claim.claimKey}|${claim.value}|${claim.startOffset}|${claim.endOffset}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return [memoryId, claims];
+  }));
+}
+
+function questionPriority(field) {
+  return ({ date: 100, location: 90, people: 80, emotions: 60, tags: 40 })[field] || 20;
+}
+
+function dedupeById(items) {
+  const seen = new Set();
+  return items.filter((item) => item?.id && !seen.has(item.id) && seen.add(item.id));
+}
+
 function buildCollectionExport(memories, mode) {
   const exported = mode === "redacted" ? memories.map(redactMemory) : memories;
+  const archaeology = buildArchaeologyBackup(store, memories, mode);
   return {
     product: "时屿",
     productEnglish: "TIME ISLE",
@@ -426,8 +661,9 @@ function buildCollectionExport(memories, mode) {
     mode,
     exportedAt: new Date().toISOString(),
     count: exported.length,
-    privacy: mode === "redacted" ? "原始正文、人物、地点和媒体备注已隐藏。" : "包含完整记忆，请妥善保管。",
-    memories: exported
+    privacy: mode === "redacted" ? "原始正文、人物、地点和媒体备注已隐藏。" : "包含馆藏与记忆考古数据，不包含 Agent 运行日志，请妥善保管。",
+    memories: exported,
+    archaeology
   };
 }
 
@@ -448,14 +684,15 @@ function buildPrivacySummary() {
   return {
     mode: INTERVIEW_DEMO ? "interview-demo" : "local-first",
     summary: INTERVIEW_DEMO
-      ? "当前是公开面试 Demo，只使用示例数据和临时 SQLite。"
+      ? "当前是共享的公开面试 Demo，只使用示例数据和临时 SQLite；请勿提交私人内容。"
       : "记忆默认保存在本机 SQLite，只有配置 AI Key 并主动整理或提问时才会调用模型。",
     dataLocations: [
-      { name: "记忆与 Agent 记录", location: INTERVIEW_DEMO ? "Vercel /tmp 临时 SQLite" : "本机 data/memory-museum.sqlite" },
+      { name: "记忆、拼图与 Agent 记录", location: INTERVIEW_DEMO ? "Vercel /tmp 临时 SQLite" : "本机 data/memory-museum.sqlite" },
+      { name: "记忆航线与原文核验", location: "在服务端本地规则中计算，不发送给外部模型" },
       { name: "AI 请求", location: process.env.AI_API_KEY ? "配置的 OpenAI-compatible API" : "未发送，使用本地 Mock" },
       { name: "导出文件", location: "由浏览器下载到用户选择的位置" }
     ],
-    controls: ["完整 JSON 备份", "脱敏 JSON 导出", "JSON 恢复", "明确确认后清空本地数据库"],
+    controls: ["馆藏与时光拼图 JSON 备份", "脱敏 JSON 导出", "JSON 恢复", "明确确认后清空本地数据库"],
     destructiveActionsBlocked: INTERVIEW_DEMO
   };
 }
@@ -726,11 +963,11 @@ function seedInterviewDemoData() {
       title: "操场尽头的告别",
       hall: "youth",
       sourceType: "日记",
-      rawContent: "毕业那天傍晚，我们在操场尽头站了很久。大家都说以后常联系，但真正想说的话反而没有说出口。",
+      rawContent: "2021年6月18日毕业那天傍晚，我和阿棠在学校操场尽头站了很久。大家都说以后常联系，但真正想说的话反而没有说出口。",
       exhibitText: "毕业傍晚的操场保存了青春快结束时的重量：热闹散去以后，沉默也成了一种告别。",
       date: "2021-06-18",
       location: "学校操场",
-      people: ["同学"],
+      people: ["阿棠", "同学"],
       tags: ["毕业", "校园", "告别"],
       emotions: ["怀念", "遗憾"],
       emotionIntensity: 4,
@@ -754,19 +991,19 @@ function seedInterviewDemoData() {
       favorite: true
     },
     {
-      id: "demo-rain-walk",
-      title: "雨停以后绕远的路",
-      hall: "daily",
-      sourceType: "照片描述",
-      rawContent: "雨停后我没有立刻回去，而是沿着河边多走了一段。路灯落在积水里，普通的一天忽然安静了下来。",
-      exhibitText: "这不是重大事件，只是一段雨后的绕路。正因为普通，它提醒人生活也会在没有预告时变得柔软。",
-      date: "2024-04-12",
-      location: "河边",
-      people: [],
-      tags: ["雨天", "散步", "日常"],
-      emotions: ["平静", "释然"],
-      emotionIntensity: 2,
-      importance: 2,
+      id: "demo-campus-farewell-later",
+      title: "后来写下的毕业傍晚",
+      hall: "youth",
+      sourceType: "日记",
+      rawContent: "几年后整理旧日记，我又写起2021年6月19日的毕业傍晚：我和阿棠在学校操场尽头告别。可旧照片标注的是6月18日，所以我决定先保留日期的不确定。",
+      exhibitText: "同一场毕业告别在几年后被重新写下；人物和地点仍然清晰，日期却出现了一天的偏差。",
+      date: "2021-06-19",
+      location: "学校操场",
+      people: ["阿棠", "同学"],
+      tags: ["毕业", "校园", "告别", "后来重写"],
+      emotions: ["怀念", "释然"],
+      emotionIntensity: 3,
+      importance: 4,
       favorite: false
     },
     {
@@ -815,7 +1052,9 @@ function buildInterviewDemoStatus() {
 }
 
 function isInterviewDemoBlockedMutation(request, url) {
-  return INTERVIEW_DEMO && (request.method === "DELETE" || url.pathname === "/api/memories/purge");
+  if (!INTERVIEW_DEMO) return false;
+  if (request.method === "DELETE" || url.pathname === "/api/memories/purge" || url.pathname === "/api/memories/import") return true;
+  return request.method === "PUT" && /^\/api\/memories\/demo-[a-zA-Z0-9_-]+$/.test(url.pathname);
 }
 
 function resetInterviewDemoStorage() {

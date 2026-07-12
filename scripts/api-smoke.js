@@ -27,15 +27,16 @@ async function runLocalFlow() {
     assert("首页包含安全响应头", home.headers.get("x-content-type-options") === "nosniff" && home.headers.get("x-frame-options") === "DENY");
 
     const styles = await fetch(`${baseUrl}/styles.css`);
+    const archaeologyStyles = await fetch(`${baseUrl}/archaeology.css`);
     const app = await fetch(`${baseUrl}/assets/app.js`);
-    assert("静态资源可访问", styles.ok && app.ok);
+    assert("静态资源可访问", styles.ok && archaeologyStyles.ok && app.ok);
 
     const health = await getJson(`${baseUrl}/api/health`);
-    assert("健康检查返回时屿品牌与版本", health.response.ok && health.payload.ok && health.payload.version === "2.0.1" && health.payload.name === "时屿" && health.payload.englishName === "TIME ISLE" && health.payload.tagline === "AI 私人记忆策展工具");
+    assert("健康检查返回时屿品牌与版本", health.response.ok && health.payload.ok && health.payload.version === "3.0.0" && health.payload.name === "时屿" && health.payload.englishName === "TIME ISLE" && health.payload.tagline === "AI 私人记忆策展工具");
     assert("本地模式使用 SQLite", health.payload.mode === "local" && health.payload.storage === "local-sqlite");
 
     const version = await getJson(`${baseUrl}/api/version`);
-    assert("版本接口描述核心产品流程", version.response.ok && version.payload.productFlow.join(",") === "记录,AI 整理,检索与讲解,回顾,安全导出");
+    assert("版本接口描述核心产品流程", version.response.ok && version.payload.productFlow.join(",") === "记录,AI 整理,检索与讲解,记忆考古,安全导出");
 
     const demo = await getJson(`${baseUrl}/api/demo/status`);
     assert("本地模式未伪装成公开 Demo", demo.response.ok && demo.payload.interviewDemo === false);
@@ -76,11 +77,66 @@ async function runLocalFlow() {
     const insights = await getJson(`${baseUrl}/api/insights`);
     assert("回顾接口生成时间线、主题和摘要", insights.response.ok && Array.isArray(insights.payload.timeline) && Array.isArray(insights.payload.themes) && insights.payload.report.summary);
 
+    const relatedId = `smoke-related-${Date.now()}`;
+    const related = await postJson(`${baseUrl}/api/memories`, {
+      id: relatedId,
+      title: "后来想起操场上的陪伴",
+      hall: "friends",
+      sourceType: "日记",
+      rawContent: "2025年5月20日，我和朋友又说起学校操场的那次散步。那段迷茫里，他一直陪伴着我。",
+      exhibitText: "同一段操场往事在后来被再次写下。",
+      date: "2025-05-20",
+      location: "学校操场",
+      people: ["朋友"],
+      tags: ["陪伴", "操场"],
+      emotions: ["温暖"],
+      importance: 4
+    });
+    assert("可保存同一往事的第二个版本", related.response.status === 201 && related.payload.memory.id === relatedId);
+
+    const routes = await getJson(`${baseUrl}/api/archaeology/routes?focus=${memoryId}`);
+    const routeMatch = routes.payload.route.connections.find((item) => item.memory.id === relatedId);
+    assert("记忆航线返回可解释关联且不自动认定同一事件", routes.response.ok && routeMatch?.reasons.length && routeMatch.sameEvent === "unassessed" && routeMatch.requiresConfirmation === true);
+
+    const puzzle = await getJson(`${baseUrl}/api/archaeology/puzzle?memoryId=${memoryId}&relatedId=${relatedId}`);
+    const validSources = [...puzzle.payload.puzzle.stable, ...puzzle.payload.puzzle.differs, ...puzzle.payload.puzzle.additions]
+      .flatMap((item) => item.sources || [])
+      .filter((source) => source.valid);
+    assert("时光拼图只展示可回到原文的证据", puzzle.response.ok && validSources.length > 0 && puzzle.payload.puzzle.guidance.includes("缺失") && puzzle.payload.question.allowUnknown === true);
+
+    const confirmedEvent = await postJson(`${baseUrl}/api/archaeology/events`, { memoryIds: [memoryId, relatedId] });
+    assert("用户确认后才保存同一往事关系", confirmedEvent.response.status === 201 && confirmedEvent.payload.event.versionCount === 2);
+
+    const overview = await getJson(`${baseUrl}/api/archaeology/overview`);
+    const pairedOverview = overview.payload.overview.filter((item) => [memoryId, relatedId].includes(item.memoryId));
+    assert("馆藏概览标记两个记忆版本", overview.response.ok && pairedOverview.length === 2 && pairedOverview.every((item) => item.versionCount === 2));
+
+    const question = await postJson(`${baseUrl}/api/archaeology/questions`, {
+      memoryId,
+      relatedId,
+      action: "keep_unknown"
+    });
+    assert("补一块拼图允许明确保留不确定", question.response.status === 201 && question.payload.question.status === "unknown" && question.payload.question.answer === "");
+
+    const unlinked = await deleteJson(`${baseUrl}/api/archaeology/events/${confirmedEvent.payload.event.id}`);
+    const unlinkedPuzzle = await getJson(`${baseUrl}/api/archaeology/puzzle?memoryId=${memoryId}&relatedId=${relatedId}`);
+    assert("用户可以解除版本分组且保留两段原文", unlinked.response.ok && unlinked.payload.overview.filter((item) => [memoryId, relatedId].includes(item.memoryId)).every((item) => item.versionCount === 1));
+    assert("解除分组后已处理的补问仍然保留", unlinkedPuzzle.payload.event === null && unlinkedPuzzle.payload.savedQuestions.some((item) => item.status === "unknown"));
+
+    const reconfirmedEvent = await postJson(`${baseUrl}/api/archaeology/events`, { memoryIds: [memoryId, relatedId] });
+    assert("解除后仍可由用户重新确认版本关系", reconfirmedEvent.response.status === 201 && reconfirmedEvent.payload.event.versionCount === 2);
+
     const privacy = await getJson(`${baseUrl}/api/privacy`);
     assert("隐私接口说明本地数据位置", privacy.response.ok && privacy.payload.mode === "local-first" && privacy.payload.dataLocations.length >= 3);
 
     const fullExport = await getJson(`${baseUrl}/api/memories/export`);
-    assert("完整备份保留品牌和原文", fullExport.response.ok && fullExport.payload.product === "时屿" && fullExport.payload.productEnglish === "TIME ISLE" && fullExport.payload.memories.some((memory) => memory.rawContent === rawContent));
+    assert("馆藏备份保留品牌和原文", fullExport.response.ok && fullExport.payload.product === "时屿" && fullExport.payload.productEnglish === "TIME ISLE" && fullExport.payload.memories.some((memory) => memory.rawContent === rawContent));
+    assert("馆藏备份包含版本组、证据和补问", fullExport.payload.archaeology.events.length === 1 && fullExport.payload.archaeology.claims.length > 0 && fullExport.payload.archaeology.questions.length === 1);
+
+    await putJson(`${baseUrl}/api/memories/${memoryId}`, { rawContent: "这段原文已被重新整理，不再包含此前的日期、人物或地点线索。" });
+    const revalidatedExport = await getJson(`${baseUrl}/api/memories/export`);
+    const revisedClaims = revalidatedExport.payload.archaeology.claims.filter((claim) => claim.memoryId === memoryId);
+    assert("编辑原文会重新校验并失效旧证据锚点", revisedClaims.length > 0 && revisedClaims.every((claim) => claim.evidenceValid === false && claim.status === "source_invalidated"));
 
     const redactedExport = await getJson(`${baseUrl}/api/memories/export?mode=redacted`);
     const redacted = redactedExport.payload.memories.find((memory) => memory.id === memoryId);
@@ -99,6 +155,17 @@ async function runLocalFlow() {
     });
     assert("无效 JSON 得到明确错误", invalidJson.status === 400);
 
+    const rejectedContentType = await fetch(`${baseUrl}/api/memories`, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify({ title: "跨站简单请求" })
+    });
+    assert("写入接口拒绝非 JSON Content-Type", rejectedContentType.status === 415);
+
+    const deleteRelatedResponse = await fetch(`${baseUrl}/api/memories/${relatedId}`, { method: "DELETE" });
+    const afterVersionDelete = await getJson(`${baseUrl}/api/memories/export`);
+    assert("删除一个版本后保留归属于剩余记忆的补问", deleteRelatedResponse.ok && afterVersionDelete.payload.archaeology.events.length === 0 && afterVersionDelete.payload.archaeology.questions.length === 1);
+
     const deleteResponse = await fetch(`${baseUrl}/api/memories/${memoryId}`, { method: "DELETE" });
     assert("本地展品可删除", deleteResponse.ok);
 
@@ -111,6 +178,19 @@ async function runLocalFlow() {
 
     const purge = await deleteJson(`${baseUrl}/api/memories/purge`, { confirm: "DELETE" });
     assert("确认后可清空本地馆藏", purge.response.ok && purge.payload.ok === true);
+
+    const restored = await postJson(`${baseUrl}/api/memories/import`, fullExport.payload);
+    assert("馆藏备份可恢复记忆考古数据", restored.response.ok && restored.payload.archaeology.events === 1 && restored.payload.archaeology.claims > 0 && restored.payload.archaeology.questions === 1);
+    const restoredOverview = await getJson(`${baseUrl}/api/archaeology/overview`);
+    assert("恢复后两个版本仍属于同一时光拼图", restoredOverview.payload.overview.filter((item) => [memoryId, relatedId].includes(item.memoryId)).length === 2 && restoredOverview.payload.overview.filter((item) => [memoryId, relatedId].includes(item.memoryId)).every((item) => item.versionCount === 2));
+
+    const beforeRejectedImport = await getJson(`${baseUrl}/api/memories`);
+    const rejectedArchive = await postJson(`${baseUrl}/api/memories/import`, {
+      memories: [{ ...created.payload.memory, id: "corrupt-archive-memory" }],
+      archaeology: { mode: "full", events: [null], claims: [], pairDecisions: [], questions: [] }
+    });
+    const afterRejectedImport = await getJson(`${baseUrl}/api/memories`);
+    assert("损坏的考古备份在写入前被拒绝", rejectedArchive.response.status === 400 && afterRejectedImport.payload.memories.length === beforeRejectedImport.payload.memories.length);
   });
   removeDatabase(dbPath);
 }
@@ -137,8 +217,17 @@ async function runDemoSafetyFlow() {
     });
     assert("公开 Demo 阻止清空", blockedPurge.status === 403);
 
+    const blockedSeedEdit = await putJson(`${baseUrl}/api/memories/${targetId}`, { title: "不应覆盖预置展品" });
+    assert("公开 Demo 保护预置展品不被改写", blockedSeedEdit.response.status === 403);
+
+    const blockedImport = await postJson(`${baseUrl}/api/memories/import`, { memories: [] });
+    assert("公开 Demo 禁止导入污染共享临时实例", blockedImport.response.status === 403);
+
     const guide = await postJson(`${baseUrl}/api/guide`, { question: "哪些记忆与温暖有关？" });
     assert("公开 Demo 讲解路径可用", guide.response.ok && guide.payload.citations.length > 0);
+
+    const route = await getJson(`${baseUrl}/api/archaeology/routes`);
+    assert("公开 Demo 可生成不写入私人数据的记忆航线", route.response.ok && route.payload.route.items.length >= 2 && route.payload.route.transitions.every((item) => item.sameEvent === "unassessed"));
   });
   removeDatabase(dbPath);
 }

@@ -10,6 +10,14 @@ const state = {
   searchResults: null,
   searchRequest: 0,
   insights: null,
+  archaeologyOverview: {},
+  route: null,
+  routeFocusId: "",
+  routeLoadedKey: null,
+  routeRequest: 0,
+  puzzle: null,
+  puzzleSession: 0,
+  puzzleMutation: false,
   selectedMemoryId: ""
 };
 
@@ -64,6 +72,7 @@ const elements = {
   insightPanels: [...document.querySelectorAll("[data-insight-panel]")],
   timelinePanel: document.querySelector("#timelinePanel"),
   themesPanel: document.querySelector("#themesPanel"),
+  routesPanel: document.querySelector("#routesPanel"),
   reportPanel: document.querySelector("#reportPanel"),
   privacySummary: document.querySelector("#privacySummary"),
   dataLocationList: document.querySelector("#dataLocationList"),
@@ -76,9 +85,22 @@ const elements = {
   dialogHall: document.querySelector("#dialogHall"),
   dialogTitle: document.querySelector("#dialogTitle"),
   dialogBody: document.querySelector("#dialogBody"),
+  dialogRouteButton: document.querySelector("#dialogRouteButton"),
   dialogTraceButton: document.querySelector("#dialogTraceButton"),
   dialogEditButton: document.querySelector("#dialogEditButton"),
   dialogDeleteButton: document.querySelector("#dialogDeleteButton"),
+  puzzleDialog: document.querySelector("#puzzleDialog"),
+  puzzleCloseButton: document.querySelector("#puzzleCloseButton"),
+  puzzleStatus: document.querySelector("#puzzleStatus"),
+  puzzleBody: document.querySelector("#puzzleBody"),
+  puzzleQuestionSection: document.querySelector("#puzzleQuestionSection"),
+  puzzleQuestionText: document.querySelector("#puzzleQuestionText"),
+  puzzleAnswer: document.querySelector("#puzzleAnswer"),
+  puzzleSaveAnswerButton: document.querySelector("#puzzleSaveAnswerButton"),
+  puzzleUnknownButton: document.querySelector("#puzzleUnknownButton"),
+  puzzleSkipButton: document.querySelector("#puzzleSkipButton"),
+  puzzleConfirmButton: document.querySelector("#puzzleConfirmButton"),
+  puzzleDecisionNote: document.querySelector("#puzzleDecisionNote"),
   toast: document.querySelector("#toast"),
   footerVersion: document.querySelector("#footerVersion")
 };
@@ -99,22 +121,24 @@ initialize();
 async function initialize() {
   setRuntimeStatus("正在连接", "loading");
   try {
-    const [options, memoriesPayload, demo, privacy, health, version] = await Promise.all([
+    const [options, memoriesPayload, demo, privacy, health, version, archaeology] = await Promise.all([
       requestJson("/api/options"),
       requestJson("/api/memories"),
       requestJson("/api/demo/status"),
       requestJson("/api/privacy"),
       requestJson("/api/health"),
-      requestJson("/api/version")
+      requestJson("/api/version"),
+      requestJson("/api/archaeology/overview").catch(() => ({ overview: [] }))
     ]);
     state.options = options;
     state.memories = memoriesPayload.memories || [];
     state.demo = demo;
     state.privacy = privacy;
     state.health = health;
+    state.archaeologyOverview = indexArchaeologyOverview(archaeology.overview);
     populateOptions();
     renderApp();
-    elements.footerVersion.textContent = `v${version.version || "2.0.1"}`;
+    elements.footerVersion.textContent = `v${version.version || "3.0.0"}`;
     setRuntimeStatus(demo.interviewDemo ? "Demo 已连接" : "本地馆藏已连接", "ready");
     const initialView = normalizeView(location.hash.replace("#", ""));
     switchView(initialView, { updateHash: false });
@@ -142,6 +166,7 @@ function bindEvents() {
   elements.citationList.addEventListener("click", handleMemoryLinkClick);
   elements.timelinePanel.addEventListener("click", handleMemoryLinkClick);
   elements.themesPanel.addEventListener("click", handleMemoryLinkClick);
+  elements.routesPanel.addEventListener("click", handleRouteClick);
   elements.reportPanel.addEventListener("click", handleMemoryLinkClick);
 
   elements.rawContent.addEventListener("input", updateCharCount);
@@ -157,17 +182,38 @@ function bindEvents() {
     elements.guideForm.requestSubmit();
   }));
 
-  elements.refreshInsightsButton.addEventListener("click", () => loadInsights(true));
-  elements.insightTabs.forEach((button) => button.addEventListener("click", () => switchInsightTab(button.dataset.insightTab)));
+  elements.refreshInsightsButton.addEventListener("click", () => {
+    loadInsights(true);
+    if (elements.insightTabs.some((button) => button.dataset.insightTab === "routes" && button.classList.contains("is-active"))) {
+      loadRoutes(state.routeFocusId, true);
+    }
+  });
+  elements.insightTabs.forEach((button) => {
+    button.addEventListener("click", () => switchInsightTab(button.dataset.insightTab));
+    button.addEventListener("keydown", handleInsightTabKeydown);
+  });
 
   elements.exportButton.addEventListener("click", () => exportMemories("full"));
   elements.exportRedactedButton.addEventListener("click", () => exportMemories("redacted"));
   elements.importFile.addEventListener("change", importMemories);
   elements.purgeButton.addEventListener("click", purgeMemories);
 
+  elements.dialogRouteButton.addEventListener("click", openSelectedMemoryRoute);
   elements.dialogTraceButton.addEventListener("click", showAgentTrace);
   elements.dialogEditButton.addEventListener("click", editSelectedMemory);
   elements.dialogDeleteButton.addEventListener("click", deleteSelectedMemory);
+  elements.puzzleSaveAnswerButton.addEventListener("click", () => savePuzzleAnswer("answer"));
+  elements.puzzleUnknownButton.addEventListener("click", () => savePuzzleAnswer("keep_unknown"));
+  elements.puzzleSkipButton.addEventListener("click", () => savePuzzleAnswer("skip"));
+  elements.puzzleConfirmButton.addEventListener("click", confirmPuzzleEvent);
+  elements.puzzleAnswer.addEventListener("input", updatePuzzleAnswerAction);
+  elements.puzzleDialog.addEventListener("cancel", (event) => {
+    if (state.puzzleMutation) event.preventDefault();
+  });
+  elements.puzzleDialog.addEventListener("close", () => {
+    state.puzzleSession += 1;
+    state.puzzleMutation = false;
+  });
 }
 
 function renderApp() {
@@ -188,7 +234,9 @@ function switchView(view, options = {}) {
     panel.classList.toggle("is-active", active);
   });
   if (options.updateHash !== false && location.hash !== `#${target}`) history.pushState(null, "", `#${target}`);
-  if (target === "reflect" && !state.insights) loadInsights();
+  if (target === "reflect") {
+    if (!state.insights) loadInsights();
+  }
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -202,6 +250,9 @@ function renderDemoStatus() {
   elements.purgeButton.disabled = demo;
   elements.purgeButton.title = demo ? "公开 Demo 已禁用清空操作" : "永久清空本地 SQLite 馆藏";
   elements.dialogDeleteButton.disabled = demo;
+  elements.importFile.disabled = demo;
+  elements.importFile.previousElementSibling?.classList.toggle("is-disabled", demo);
+  elements.importFile.previousElementSibling?.setAttribute("aria-disabled", String(demo));
 }
 
 function renderStats() {
@@ -280,6 +331,7 @@ function renderCollection() {
 
 function renderMemoryCard(memory) {
   const tags = [...(memory.tags || []), ...(memory.emotions || [])].slice(0, 4);
+  const versionCount = state.archaeologyOverview[memory.id]?.versionCount || 1;
   return `
     <article class="memory-card">
       <button type="button" class="memory-card-button" data-memory-id="${escapeHtml(memory.id)}" aria-label="查看《${escapeHtml(memory.title)}》"></button>
@@ -290,6 +342,7 @@ function renderMemoryCard(memory) {
       <h3>${escapeHtml(memory.title)}</h3>
       <p class="memory-excerpt">${escapeHtml(memory.exhibitText || memory.rawContent || "暂无展品说明")}</p>
       <div class="tag-list">${tags.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}</div>
+      ${versionCount > 1 ? `<span class="memory-version-badge">${escapeHtml(String(versionCount))} 个记忆版本</span>` : ""}
     </article>`;
 }
 
@@ -313,10 +366,15 @@ async function openMemory(id) {
   elements.dialogHall.textContent = hallName(memory.hall);
   elements.dialogTitle.textContent = memory.title;
   elements.dialogBody.innerHTML = renderMemoryDetail(memory);
+  elements.dialogRouteButton.disabled = state.memories.length < 2;
+  elements.dialogRouteButton.title = state.memories.length < 2 ? "至少需要两件展品才能生成航线" : "查看与这件展品有关的记忆";
   elements.dialogTraceButton.disabled = !memory.agentRunId;
-  elements.dialogTraceButton.textContent = memory.agentRunId ? "查看 Agent 记录" : "没有 Agent 记录";
+  elements.dialogTraceButton.textContent = memory.agentRunId ? "查看整理记录" : "没有整理记录";
   elements.dialogDeleteButton.disabled = Boolean(state.demo?.interviewDemo);
   elements.dialogDeleteButton.hidden = Boolean(state.demo?.interviewDemo);
+  const protectedDemoMemory = Boolean(state.demo?.interviewDemo && memory.id.startsWith("demo-"));
+  elements.dialogEditButton.disabled = protectedDemoMemory;
+  elements.dialogEditButton.title = protectedDemoMemory ? "公开 Demo 的预置展品不可修改" : "编辑这件展品";
   if (!elements.memoryDialog.open) elements.memoryDialog.showModal();
 }
 
@@ -553,15 +611,362 @@ function renderMemoryLinks(memories = []) {
   return memories.map((memory) => `<button type="button" data-open-memory="${escapeHtml(memory.id)}">${escapeHtml(memory.title)}</button>`).join("");
 }
 
+async function loadRoutes(focusId = "", force = false) {
+  const normalizedFocus = String(focusId || "");
+  if (!force && state.route && state.routeLoadedKey === normalizedFocus) {
+    renderRoutes();
+    return;
+  }
+  const requestId = ++state.routeRequest;
+  state.routeFocusId = normalizedFocus;
+  elements.routesPanel.innerHTML = '<p class="muted">正在寻找馆藏之间有依据的联系…</p>';
+  try {
+    const suffix = normalizedFocus ? `?focus=${encodeURIComponent(normalizedFocus)}&limit=4` : "";
+    const payload = await requestJson(`/api/archaeology/routes${suffix}`);
+    if (requestId !== state.routeRequest) return;
+    state.route = payload;
+    state.routeLoadedKey = normalizedFocus;
+    state.archaeologyOverview = indexArchaeologyOverview(state.route.overview);
+    renderRoutes();
+    renderCollection();
+  } catch (error) {
+    if (requestId !== state.routeRequest) return;
+    state.route = null;
+    state.routeLoadedKey = null;
+    elements.routesPanel.innerHTML = `<div class="route-empty"><strong>暂时无法生成航线</strong><span>${escapeHtml(error.message)}</span></div>`;
+  }
+}
+
+function renderRoutes() {
+  const payload = state.route;
+  if (!payload?.route) return;
+  const route = payload.route;
+  if (payload.kind === "focus") {
+    if (!route.focus || !route.connections?.length) {
+      elements.routesPanel.innerHTML = '<button type="button" class="route-back" data-route-featured>← 返回今日航线</button><div class="route-empty"><strong>这座岛暂时没有清晰航线</strong><span>继续记录人物、地点、日期或主题，关系会逐渐出现。</span></div>';
+      return;
+    }
+    elements.routesPanel.innerHTML = `
+      <button type="button" class="route-back" data-route-featured>← 返回今日航线</button>
+      <p class="route-intro">只展示少量可解释关联；它们不是“同一事件”的自动结论。</p>
+      ${renderRouteFocus(route.focus, "当前展品")}
+      <div class="route-list">${route.connections.map((connection, index) => renderRouteCard({
+        index,
+        leftId: route.focus.id,
+        rightId: connection.memory.id,
+        memory: connection.memory,
+        summary: connection.summary,
+        strength: connection.strength
+      })).join("")}</div>`;
+    return;
+  }
+
+  if (!route.items?.length || route.status === "empty_collection") {
+    elements.routesPanel.innerHTML = '<div class="route-empty"><strong>馆藏还没有形成航线</strong><span>保存两段带人物、地点或主题的记忆后再来看看。</span></div>';
+    return;
+  }
+  const itemMap = Object.fromEntries(route.items.map((item) => [item.id, item]));
+  elements.routesPanel.innerHTML = `
+    <p class="route-intro">${escapeHtml(route.description || "从少量展品开始漫游")}<span>${escapeHtml(route.guidance || "航线只提供关联建议。")}</span></p>
+    ${renderRouteFocus(route.items[0], route.title || "今日记忆航线")}
+    ${route.transitions?.length ? `<div class="route-list">${route.transitions.map((transition, index) => renderRouteCard({
+      index,
+      leftId: transition.fromId,
+      rightId: transition.toId,
+      memory: itemMap[transition.toId],
+      summary: transition.summary,
+      strength: transition.strength
+    })).join("")}</div>` : '<div class="route-empty"><span>暂时只有一个停靠点，继续补充馆藏后会出现新的航线。</span></div>'}`;
+}
+
+function renderRouteFocus(memory, label) {
+  return `<div class="route-focus"><small>${escapeHtml(label)}</small><strong>${escapeHtml(memory.title)}</strong><span>${escapeHtml(memory.date ? formatDate(memory.date) : memory.excerpt || "从这件展品出发")}</span></div>`;
+}
+
+function renderRouteCard({ index, leftId, rightId, memory, summary, strength }) {
+  if (!memory) return "";
+  const strengthLabel = strength === "strong" ? "关联较强" : strength === "medium" ? "可参考" : "轻关联";
+  return `
+    <button type="button" class="route-card" data-puzzle-left="${escapeHtml(leftId)}" data-puzzle-right="${escapeHtml(rightId)}">
+      <span class="route-marker">${escapeHtml(String(index + 1).padStart(2, "0"))}</span>
+      <span class="route-card-copy"><strong>${escapeHtml(memory.title)}</strong><span>${escapeHtml(summary || memory.excerpt || "查看关联依据")}</span></span>
+      <span class="route-strength">${escapeHtml(strengthLabel)} · 查看拼图</span>
+    </button>`;
+}
+
+function handleRouteClick(event) {
+  if (event.target.closest("[data-route-featured]")) {
+    loadRoutes("", true);
+    return;
+  }
+  const puzzleLink = event.target.closest("[data-puzzle-left][data-puzzle-right]");
+  if (puzzleLink) openPuzzle(puzzleLink.dataset.puzzleLeft, puzzleLink.dataset.puzzleRight);
+}
+
+function openSelectedMemoryRoute() {
+  if (!state.selectedMemoryId || state.memories.length < 2) return;
+  const focusId = state.selectedMemoryId;
+  elements.memoryDialog.close();
+  state.routeFocusId = focusId;
+  switchView("reflect");
+  switchInsightTab("routes");
+  elements.routesPanel.focus({ preventScroll: true });
+}
+
+async function openPuzzle(leftId, rightId) {
+  if (!leftId || !rightId || leftId === rightId) return;
+  const session = ++state.puzzleSession;
+  state.puzzle = null;
+  state.puzzleMutation = false;
+  resetPuzzleDialog();
+  if (!elements.puzzleDialog.open) elements.puzzleDialog.showModal();
+  try {
+    const query = new URLSearchParams({ memoryId: leftId, relatedId: rightId });
+    const payload = await requestJson(`/api/archaeology/puzzle?${query}`);
+    if (session !== state.puzzleSession) return;
+    state.puzzle = payload;
+    renderPuzzle();
+  } catch (error) {
+    if (session !== state.puzzleSession) return;
+    elements.puzzleStatus.textContent = error.message;
+    elements.puzzleStatus.classList.add("is-error");
+    elements.puzzleBody.innerHTML = '<div class="route-empty"><span>没有生成任何未经核验的比较结论。</span></div>';
+  }
+}
+
+function renderPuzzle() {
+  const payload = state.puzzle;
+  const puzzle = payload?.puzzle;
+  if (!puzzle) return;
+  elements.puzzleStatus.classList.remove("is-success", "is-error");
+  elements.puzzleStatus.textContent = `${puzzle.summary.stable} 条稳定线索 · ${puzzle.summary.differs} 处描述差异 · ${puzzle.summary.additions} 条单侧补充`;
+  elements.puzzleBody.innerHTML = `
+    <div class="puzzle-source-grid">
+      ${renderPuzzleSource("第一段记录", puzzle.pair.left)}
+      ${renderPuzzleSource("第二段记录", puzzle.pair.right)}
+    </div>
+    ${renderPuzzleGroup("稳定锚点", "两段原文都能核对", puzzle.stable, "is-stable", 3)}
+    ${renderPuzzleGroup("描述不同", "只展示双侧都有原文依据的差异", puzzle.differs, "is-different", 3)}
+    ${renderPuzzleGroup("后来补充", "另一段未提及，不代表矛盾", puzzle.additions, "", 3)}
+    ${renderPuzzleGroup("仍未确定", "缺少原文锚点，因此不下结论", puzzle.unknowns, "", 2)}`;
+
+  const confirmed = payload.decision?.decision === "same_event" || Boolean(payload.event);
+  const demoConfirmed = confirmed && Boolean(state.demo?.interviewDemo);
+  elements.puzzleConfirmButton.disabled = demoConfirmed;
+  elements.puzzleConfirmButton.classList.toggle("primary", !confirmed);
+  elements.puzzleConfirmButton.classList.toggle("secondary", confirmed);
+  elements.puzzleConfirmButton.textContent = confirmed ? demoConfirmed ? "Demo 中已分组" : "解除版本分组" : "确认属于同一往事";
+  elements.puzzleDecisionNote.textContent = confirmed
+    ? `已保存为“${payload.event?.title || "时光拼图"}”，原文仍分别保留；需要时可以解除分组。`
+    : "确认会保存版本分组，但不会合并或改写原文。";
+
+  const questionAlreadyHandled = (payload.savedQuestions || []).some((item) => item.question === payload.question?.question);
+  elements.puzzleQuestionSection.hidden = !payload.question?.available || questionAlreadyHandled;
+  if (!elements.puzzleQuestionSection.hidden) {
+    elements.puzzleQuestionText.textContent = payload.question.question;
+    elements.puzzleAnswer.value = "";
+    updatePuzzleAnswerAction();
+  } else if (questionAlreadyHandled) {
+    elements.puzzleStatus.textContent += " · 这块拼图已经留下处理记录";
+  }
+}
+
+function renderPuzzleSource(label, memory) {
+  return `<article class="puzzle-source"><small>${escapeHtml(label)}${memory.date ? ` · ${escapeHtml(formatDate(memory.date))}` : ""}</small><strong>${escapeHtml(memory.title)}</strong><span>${escapeHtml(memory.excerpt || "未提供摘要")}</span></article>`;
+}
+
+function renderPuzzleGroup(title, note, items = [], modifier = "", visibleLimit = 3) {
+  if (!items.length) return "";
+  const visible = items.slice(0, visibleLimit);
+  const remaining = items.slice(visibleLimit);
+  return `
+    <section class="puzzle-group">
+      <div class="puzzle-group-header"><h3>${escapeHtml(title)}</h3><span>${escapeHtml(note)}</span></div>
+      <div class="puzzle-evidence-grid">${visible.map((item) => renderPuzzleEvidence(item, modifier)).join("")}</div>
+      ${remaining.length ? `<details class="puzzle-more"><summary>查看其余 ${remaining.length} 条</summary><div class="puzzle-evidence-grid">${remaining.map((item) => renderPuzzleEvidence(item, modifier)).join("")}</div></details>` : ""}
+    </section>`;
+}
+
+function renderPuzzleEvidence(item, modifier) {
+  return `
+    <article class="puzzle-evidence ${modifier}">
+      <strong>${escapeHtml(item.statement)}</strong>
+      <span>${escapeHtml(item.fieldLabel || "线索")} · ${item.verified ? "原文已核验" : "保留未知"}</span>
+      ${(item.sources || []).filter((source) => source.valid).map((source) => `<q>${escapeHtml(source.sourceQuote)}</q>`).join("")}
+    </article>`;
+}
+
+async function savePuzzleAnswer(action) {
+  const pair = state.puzzle?.puzzle?.pair;
+  if (!pair || state.puzzleMutation) return;
+  const answer = elements.puzzleAnswer.value.trim();
+  if (action === "answer" && !answer) {
+    elements.puzzleStatus.textContent = "请先写下补充，或选择保留不确定。";
+    elements.puzzleStatus.classList.add("is-error");
+    return;
+  }
+  const session = state.puzzleSession;
+  const activePair = puzzlePairKey(pair);
+  setPuzzleBusy(true);
+  try {
+    const result = await requestJson("/api/archaeology/questions", {
+      method: "POST",
+      body: JSON.stringify({
+        memoryId: pair.left.id,
+        relatedId: pair.right.id,
+        action,
+        answer
+      })
+    });
+    if (!isCurrentPuzzleSession(session, activePair)) return;
+    state.puzzle.savedQuestions = [...(state.puzzle.savedQuestions || []), result.question];
+    renderPuzzle();
+    elements.puzzleStatus.textContent = action === "answer" ? "补充已经单独保存，原始记忆没有被覆盖。" : action === "keep_unknown" ? "已明确保留这处不确定。" : "已跳过这道问题。";
+    elements.puzzleStatus.classList.remove("is-error");
+    elements.puzzleStatus.classList.add("is-success");
+  } catch (error) {
+    if (!isCurrentPuzzleSession(session, activePair)) return;
+    elements.puzzleStatus.textContent = error.message;
+    elements.puzzleStatus.classList.remove("is-success");
+    elements.puzzleStatus.classList.add("is-error");
+  } finally {
+    if (session === state.puzzleSession) setPuzzleBusy(false);
+  }
+}
+
+async function confirmPuzzleEvent() {
+  const pair = state.puzzle?.puzzle?.pair;
+  if (!pair || state.puzzleMutation) return;
+  if (state.puzzle?.event) {
+    if (state.demo?.interviewDemo) return;
+    await removePuzzleEvent();
+    return;
+  }
+  if (!window.confirm("确认把这两段记录保存为同一往事的两个版本吗？原文不会被合并或改写。")) return;
+  const session = state.puzzleSession;
+  const activePair = puzzlePairKey(pair);
+  setPuzzleBusy(true);
+  elements.puzzleConfirmButton.textContent = "保存中…";
+  try {
+    const result = await requestJson("/api/archaeology/events", {
+      method: "POST",
+      body: JSON.stringify({ memoryIds: [pair.left.id, pair.right.id] })
+    });
+    if (!isCurrentPuzzleSession(session, activePair)) return;
+    state.archaeologyOverview = indexArchaeologyOverview(result.overview);
+    state.puzzle.event = result.event;
+    state.puzzle.decision = { decision: "same_event" };
+    renderCollection();
+    renderPuzzle();
+    await loadRoutes(state.routeFocusId, true);
+    showToast("时光拼图已保存，两段原文仍分别保留。", false);
+  } catch (error) {
+    if (!isCurrentPuzzleSession(session, activePair)) return;
+    elements.puzzleStatus.textContent = error.message;
+    elements.puzzleStatus.classList.remove("is-success");
+    elements.puzzleStatus.classList.add("is-error");
+    elements.puzzleConfirmButton.disabled = false;
+    elements.puzzleConfirmButton.textContent = "确认属于同一往事";
+  } finally {
+    if (session === state.puzzleSession) setPuzzleBusy(false);
+  }
+}
+
+async function removePuzzleEvent() {
+  const eventId = state.puzzle?.event?.id;
+  const pair = state.puzzle?.puzzle?.pair;
+  if (!eventId || !pair || state.puzzleMutation) return;
+  if (!window.confirm("解除这组时光拼图吗？两段原文会继续保留，已保存的字段证据会被移除。")) return;
+  const session = state.puzzleSession;
+  const activePair = puzzlePairKey(pair);
+  setPuzzleBusy(true);
+  elements.puzzleConfirmButton.textContent = "解除中…";
+  try {
+    const result = await requestJson(`/api/archaeology/events/${encodeURIComponent(eventId)}`, { method: "DELETE" });
+    if (!isCurrentPuzzleSession(session, activePair)) return;
+    state.archaeologyOverview = indexArchaeologyOverview(result.overview);
+    state.puzzle.event = null;
+    state.puzzle.decision = null;
+    renderCollection();
+    renderPuzzle();
+    await loadRoutes(state.routeFocusId, true);
+    showToast("版本分组已解除，两段原文仍保留。", false);
+  } catch (error) {
+    if (!isCurrentPuzzleSession(session, activePair)) return;
+    renderPuzzle();
+    elements.puzzleStatus.textContent = error.message;
+    elements.puzzleStatus.classList.remove("is-success");
+    elements.puzzleStatus.classList.add("is-error");
+  } finally {
+    if (session === state.puzzleSession) setPuzzleBusy(false);
+  }
+}
+
+function setPuzzleBusy(busy) {
+  state.puzzleMutation = busy;
+  elements.puzzleSaveAnswerButton.disabled = busy || !elements.puzzleAnswer.value.trim();
+  elements.puzzleUnknownButton.disabled = busy;
+  elements.puzzleSkipButton.disabled = busy;
+  elements.puzzleConfirmButton.disabled = busy || Boolean(state.demo?.interviewDemo && state.puzzle?.event);
+  elements.puzzleCloseButton.disabled = busy;
+}
+
+function updatePuzzleAnswerAction() {
+  elements.puzzleSaveAnswerButton.disabled = state.puzzleMutation || !elements.puzzleAnswer.value.trim();
+}
+
+function resetPuzzleDialog() {
+  elements.puzzleBody.innerHTML = "";
+  elements.puzzleStatus.textContent = "正在逐条核对原文证据…";
+  elements.puzzleStatus.classList.remove("is-success", "is-error");
+  elements.puzzleQuestionSection.hidden = true;
+  elements.puzzleAnswer.value = "";
+  elements.puzzleConfirmButton.disabled = true;
+  elements.puzzleConfirmButton.textContent = "确认属于同一往事";
+  elements.puzzleConfirmButton.classList.add("primary");
+  elements.puzzleConfirmButton.classList.remove("secondary");
+  elements.puzzleDecisionNote.textContent = "系统只提供关联建议，不会自动合并原文。";
+  elements.puzzleCloseButton.disabled = false;
+  updatePuzzleAnswerAction();
+}
+
+function puzzlePairKey(pair) {
+  return [pair?.left?.id, pair?.right?.id].filter(Boolean).sort().join("|");
+}
+
+function isCurrentPuzzleSession(session, pairKey) {
+  return session === state.puzzleSession && pairKey === puzzlePairKey(state.puzzle?.puzzle?.pair);
+}
+
+function indexArchaeologyOverview(items = []) {
+  return Object.fromEntries((items || []).map((item) => [item.memoryId, item]));
+}
+
 function switchInsightTab(tab) {
   elements.insightTabs.forEach((button) => {
     const active = button.dataset.insightTab === tab;
     button.classList.toggle("is-active", active);
     button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
   });
   elements.insightPanels.forEach((panel) => {
     panel.hidden = panel.dataset.insightPanel !== tab;
   });
+  if (tab === "routes") loadRoutes(state.routeFocusId);
+}
+
+function handleInsightTabKeydown(event) {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  const current = elements.insightTabs.indexOf(event.currentTarget);
+  const next = event.key === "Home"
+    ? 0
+    : event.key === "End"
+      ? elements.insightTabs.length - 1
+      : (current + (event.key === "ArrowRight" ? 1 : -1) + elements.insightTabs.length) % elements.insightTabs.length;
+  const button = elements.insightTabs[next];
+  switchInsightTab(button.dataset.insightTab);
+  button.focus();
 }
 
 function renderPrivacy() {
@@ -577,7 +982,7 @@ async function exportMemories(mode) {
     const suffix = mode === "redacted" ? "?mode=redacted" : "";
     const payload = await requestJson(`/api/memories/export${suffix}`);
     downloadJson(payload, `time-isle-${mode}-${new Date().toISOString().slice(0, 10)}.json`);
-    setDataStatus(mode === "redacted" ? "脱敏版本已下载。" : "完整备份已下载，请妥善保管。", false, true);
+    setDataStatus(mode === "redacted" ? "脱敏版本已下载。" : "馆藏与记忆考古备份已下载；整理运行日志不在备份内。", false, true);
   } catch (error) {
     setDataStatus(error.message, true);
   }
@@ -594,10 +999,13 @@ async function importMemories(event) {
     if (!window.confirm(`准备导入 ${memories.length} 条记忆。已有相同 ID 的记录会作为新展品保存，是否继续？`)) return;
     const result = await requestJson("/api/memories/import", {
       method: "POST",
-      body: JSON.stringify({ memories })
+      body: JSON.stringify({ memories, ...(payload?.archaeology ? { archaeology: payload.archaeology } : {}) })
     });
     await reloadMemories();
-    setDataStatus(`已导入 ${result.imported} 条记忆。`, false, true);
+    const archaeologyNote = result.archaeology?.events
+      ? `，并恢复 ${result.archaeology.events} 组时光拼图`
+      : "";
+    setDataStatus(`已导入 ${result.imported} 条记忆${archaeologyNote}。`, false, true);
   } catch (error) {
     setDataStatus(`导入失败：${error.message}`, true);
   } finally {
@@ -639,11 +1047,11 @@ async function showAgentTrace() {
       <p class="muted">本次整理模式：${escapeHtml(run.mode)} · ${escapeHtml(formatDateTime(run.createdAt))}</p>
       <div class="agent-run-detail">${(run.steps || []).map((step, index) => `
         <article><strong>${index + 1}. ${escapeHtml(step.agent)}</strong><span>${escapeHtml(step.duty)}</span><p>${escapeHtml(step.output)}</p></article>`).join("")}</div>`;
-    elements.dialogTraceButton.textContent = "已显示 Agent 记录";
+    elements.dialogTraceButton.textContent = "已显示整理记录";
   } catch (error) {
     showToast(error.message, true);
     elements.dialogTraceButton.disabled = false;
-    elements.dialogTraceButton.textContent = "查看 Agent 记录";
+    elements.dialogTraceButton.textContent = "查看整理记录";
   }
 }
 
@@ -658,7 +1066,7 @@ async function editSelectedMemory() {
   elements.draftPlaceholder.hidden = true;
   elements.draftForm.hidden = false;
   elements.saveMemoryButton.textContent = "保存修改";
-  elements.workflowSteps.innerHTML = '<p class="muted">这件展品没有可读取的 Agent 整理记录。</p>';
+  elements.workflowSteps.innerHTML = '<p class="muted">这件展品没有可读取的整理记录。</p>';
   if (memory.agentRunId) {
     try {
       const payload = await requestJson(`/api/memories/${encodeURIComponent(memory.id)}/agent-run`);
@@ -689,10 +1097,18 @@ async function deleteSelectedMemory() {
 }
 
 async function reloadMemories() {
-  const payload = await requestJson("/api/memories");
+  const [payload, archaeology] = await Promise.all([
+    requestJson("/api/memories"),
+    requestJson("/api/archaeology/overview").catch(() => ({ overview: [] }))
+  ]);
   state.memories = payload.memories || [];
+  state.archaeologyOverview = indexArchaeologyOverview(archaeology.overview);
   state.searchResults = null;
   state.insights = null;
+  state.route = null;
+  state.routeFocusId = "";
+  state.routeLoadedKey = null;
+  state.routeRequest += 1;
   renderStats();
   renderCollection();
 }

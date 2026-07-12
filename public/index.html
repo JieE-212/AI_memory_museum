@@ -6,6 +6,7 @@
     <meta name="description" content="时屿（TIME ISLE）——把散落的生活片段整理成可检索、可回顾的私人展览。" />
     <title>时屿｜AI 私人记忆策展工具</title>
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/archaeology.css" />
   </head>
   <body>
     <a class="skip-link" href="#mainContent">跳到主要内容</a>
@@ -52,7 +53,7 @@
         <aside class="demo-notice shell" id="demoNotice" hidden>
           <div>
             <strong>这是公开面试 Demo</strong>
-            <span>馆内为示例数据，修改只会临时保留；删除和清空操作已关闭。</span>
+            <span>馆内为共享临时示例；预置展品、导入、删除和清空已保护，请勿提交私人内容。</span>
           </div>
           <span class="status-tag">安全演示模式</span>
         </aside>
@@ -173,7 +174,7 @@
               <label class="check-field"><input id="draftFavorite" type="checkbox" /> 标记为重点展品</label>
 
               <details class="workflow-trace">
-                <summary>查看 Agent 如何整理这段记忆</summary>
+                <summary>查看三阶段整理记录</summary>
                 <div id="workflowSteps"></div>
               </details>
 
@@ -227,13 +228,17 @@
             </div>
             <div class="insight-summary" id="insightSummary"></div>
             <div class="insight-tabs" role="tablist" aria-label="回顾方式">
-              <button type="button" class="is-active" role="tab" aria-selected="true" data-insight-tab="timeline">时间线</button>
-              <button type="button" role="tab" aria-selected="false" data-insight-tab="themes">主题</button>
-              <button type="button" role="tab" aria-selected="false" data-insight-tab="report">摘要</button>
+              <button type="button" class="is-active" id="insightTabTimeline" role="tab" aria-selected="true" aria-controls="timelinePanel" tabindex="0" data-insight-tab="timeline">时间线</button>
+              <button type="button" id="insightTabThemes" role="tab" aria-selected="false" aria-controls="themesPanel" tabindex="-1" data-insight-tab="themes">主题</button>
+              <button type="button" id="insightTabRoutes" role="tab" aria-selected="false" aria-controls="routesPanel" tabindex="-1" data-insight-tab="routes">记忆航线</button>
+              <button type="button" id="insightTabReport" role="tab" aria-selected="false" aria-controls="reportPanel" tabindex="-1" data-insight-tab="report">摘要</button>
             </div>
-            <div class="insight-panel" id="timelinePanel" data-insight-panel="timeline"></div>
-            <div class="insight-panel" id="themesPanel" data-insight-panel="themes" hidden></div>
-            <div class="insight-panel" id="reportPanel" data-insight-panel="report" hidden></div>
+            <div class="insight-panel" id="timelinePanel" role="tabpanel" aria-labelledby="insightTabTimeline" tabindex="-1" data-insight-panel="timeline"></div>
+            <div class="insight-panel" id="themesPanel" role="tabpanel" aria-labelledby="insightTabThemes" tabindex="-1" data-insight-panel="themes" hidden></div>
+            <div class="insight-panel" id="routesPanel" role="tabpanel" aria-labelledby="insightTabRoutes" tabindex="-1" data-insight-panel="routes" hidden>
+              <p class="muted">正在寻找馆藏之间有依据的联系…</p>
+            </div>
+            <div class="insight-panel" id="reportPanel" role="tabpanel" aria-labelledby="insightTabReport" tabindex="-1" data-insight-panel="report" hidden></div>
           </section>
         </div>
       </section>
@@ -255,7 +260,7 @@
             </div>
             <div class="data-location-list" id="dataLocationList"></div>
             <div class="data-actions">
-              <button type="button" class="button secondary" id="exportButton">导出完整备份</button>
+              <button type="button" class="button secondary" id="exportButton">导出馆藏备份</button>
               <button type="button" class="button secondary" id="exportRedactedButton">导出脱敏版本</button>
               <label class="button secondary file-button" for="importFile">导入 JSON</label>
               <input id="importFile" class="sr-only" type="file" accept="application/json,.json" />
@@ -274,7 +279,7 @@
             </div>
             <ol class="project-points">
               <li><strong>本地优先存储</strong><span>Node.js 内置 SQLite 保存结构化记忆，不依赖外部数据库服务。</span></li>
-              <li><strong>可追踪 Agent</strong><span>整理过程拆为档案、策展和编辑步骤，用户确认后才保存。</span></li>
+              <li><strong>可追踪工作流</strong><span>一次模型或规则分析被组织为档案、策展和草稿三个阶段，处理快照可以回看。</span></li>
               <li><strong>检索有引用</strong><span>混合匹配标题、正文、人物、地点、标签与情绪，回答会回链到具体展品。</span></li>
               <li><strong>公开 Demo 隔离</strong><span>示例数据使用临时数据库，禁用破坏性操作，无 Key 时自动使用 Mock。</span></li>
             </ol>
@@ -286,7 +291,7 @@
       </section>
     </main>
 
-    <dialog class="memory-dialog" id="memoryDialog">
+    <dialog class="memory-dialog" id="memoryDialog" aria-labelledby="dialogTitle">
       <form method="dialog" class="dialog-header">
         <div>
           <p class="eyebrow" id="dialogHall">展品详情</p>
@@ -296,9 +301,40 @@
       </form>
       <div class="dialog-body" id="dialogBody"></div>
       <div class="dialog-actions">
-        <button type="button" class="button secondary" id="dialogTraceButton">查看 Agent 记录</button>
+        <button type="button" class="button primary" id="dialogRouteButton">沿这段记忆漫游</button>
+        <button type="button" class="button text-button" id="dialogTraceButton">查看整理记录</button>
         <button type="button" class="button secondary" id="dialogEditButton">编辑展品</button>
         <button type="button" class="button danger" id="dialogDeleteButton">删除展品</button>
+      </div>
+    </dialog>
+
+    <dialog class="memory-dialog puzzle-dialog" id="puzzleDialog" aria-labelledby="puzzleTitle">
+      <form method="dialog" class="dialog-header">
+        <div>
+          <p class="eyebrow">Memory archaeology</p>
+          <h2 id="puzzleTitle">时光拼图</h2>
+        </div>
+        <button class="icon-button" id="puzzleCloseButton" value="close" aria-label="关闭时光拼图">×</button>
+      </form>
+      <div class="dialog-body puzzle-dialog-body">
+        <p class="puzzle-status" id="puzzleStatus" aria-live="polite"></p>
+        <div id="puzzleBody"></div>
+        <section class="puzzle-question" id="puzzleQuestionSection" aria-labelledby="puzzleQuestionText" hidden>
+          <p class="eyebrow">补一块拼图</p>
+          <h3 id="puzzleQuestionText">有一处线索值得补充</h3>
+          <p class="puzzle-question-note">只回答你愿意确认的部分；“不记得”也是有效答案。</p>
+          <label for="puzzleAnswer">我的补充</label>
+          <textarea id="puzzleAnswer" maxlength="400" placeholder="可以补充一句，也可以保留不确定。"></textarea>
+          <div class="puzzle-question-actions">
+            <button type="button" class="button secondary compact" id="puzzleSaveAnswerButton" disabled>保存补充</button>
+            <button type="button" class="button secondary compact" id="puzzleUnknownButton">保留不确定</button>
+            <button type="button" class="button text-button compact" id="puzzleSkipButton">跳过此问题</button>
+          </div>
+        </section>
+      </div>
+      <div class="dialog-actions puzzle-dialog-actions">
+        <span class="puzzle-decision-note" id="puzzleDecisionNote">确认会保存版本分组但不合并原文；当前需谨慎操作。</span>
+        <button type="button" class="button primary" id="puzzleConfirmButton">确认属于同一往事</button>
       </div>
     </dialog>
 
@@ -306,7 +342,7 @@
 
     <footer class="site-footer">
       <span>时屿 · 让记忆可整理，也让 AI 的依据可回看。</span>
-      <span id="footerVersion">v2.0.1</span>
+      <span id="footerVersion">v3.0.0</span>
     </footer>
 
     <script src="/assets/app.js"></script>

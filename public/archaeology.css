@@ -1,0 +1,361 @@
+.memory-version-badge {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 12px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.route-empty,
+.route-focus,
+.route-card {
+  border: 1px solid var(--line);
+  background: #fffefa;
+}
+
+.route-empty {
+  padding: 24px;
+  text-align: center;
+}
+
+.route-empty strong,
+.route-empty span {
+  display: block;
+}
+
+.route-empty span {
+  margin-top: 6px;
+  color: var(--ink-soft);
+  font-size: 0.84rem;
+}
+
+.route-intro {
+  margin: 0 0 14px;
+  color: var(--ink-soft);
+  font-size: 0.84rem;
+}
+
+.route-intro span {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.76rem;
+}
+
+.route-back {
+  margin-bottom: 10px;
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-dark);
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.route-focus {
+  padding: 16px;
+  border-left: 3px solid var(--accent);
+}
+
+.route-focus small,
+.route-focus strong,
+.route-focus span {
+  display: block;
+}
+
+.route-focus small {
+  color: var(--accent-dark);
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.route-focus strong {
+  margin-top: 6px;
+  font-family: Georgia, "Noto Serif SC", "Songti SC", serif;
+  font-size: 1.05rem;
+}
+
+.route-focus span {
+  margin-top: 4px;
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+}
+
+.route-list {
+  display: grid;
+  gap: 9px;
+  margin-top: 10px;
+}
+
+.route-card {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 11px;
+  align-items: center;
+  width: 100%;
+  padding: 13px;
+  color: inherit;
+  text-align: left;
+}
+
+.route-card:hover,
+.route-card:focus-visible {
+  border-color: var(--accent);
+}
+
+.route-marker {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid var(--accent);
+  border-radius: 50%;
+  color: var(--accent-dark);
+  font-family: Georgia, serif;
+  font-size: 0.78rem;
+}
+
+.route-card-copy strong,
+.route-card-copy span {
+  display: block;
+}
+
+.route-card-copy span {
+  margin-top: 3px;
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+}
+
+.route-strength {
+  color: var(--accent-dark);
+  font-size: 0.72rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.puzzle-dialog {
+  width: min(920px, calc(100% - 32px));
+}
+
+.puzzle-dialog[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.puzzle-dialog-body {
+  max-height: none;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.puzzle-status {
+  min-height: 20px;
+  margin: 0 0 14px;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+}
+
+.puzzle-status.is-success {
+  color: var(--accent-dark);
+}
+
+.puzzle-status.is-error {
+  color: var(--danger);
+}
+
+.puzzle-source-grid,
+.puzzle-evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.puzzle-source {
+  padding: 15px;
+  border: 1px solid var(--line);
+  background: #fffefa;
+}
+
+.puzzle-source small,
+.puzzle-source strong,
+.puzzle-source span {
+  display: block;
+}
+
+.puzzle-source small {
+  color: var(--ink-soft);
+}
+
+.puzzle-source strong {
+  margin: 4px 0 8px;
+}
+
+.puzzle-source span {
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  line-height: 1.65;
+}
+
+.puzzle-group {
+  margin-top: 18px;
+}
+
+.puzzle-group-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+
+.puzzle-group-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.puzzle-group-header span {
+  color: var(--ink-soft);
+  font-size: 0.74rem;
+}
+
+.puzzle-evidence {
+  padding: 12px 13px;
+  border-left: 3px solid var(--line-strong);
+  background: var(--surface-muted);
+}
+
+.puzzle-evidence.is-stable {
+  border-left-color: var(--accent);
+}
+
+.puzzle-evidence.is-different {
+  border-left-color: var(--warm);
+}
+
+.puzzle-evidence strong,
+.puzzle-evidence span,
+.puzzle-evidence q {
+  display: block;
+}
+
+.puzzle-evidence span {
+  margin-top: 3px;
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+}
+
+.puzzle-evidence q {
+  margin-top: 8px;
+  color: var(--ink-soft);
+  font-size: 0.79rem;
+  line-height: 1.55;
+}
+
+.puzzle-question {
+  margin-top: 22px;
+  padding: 18px;
+  border: 1px solid var(--line-strong);
+  background: #fffefa;
+}
+
+.puzzle-question[hidden] {
+  display: none;
+}
+
+.puzzle-question h3 {
+  margin: 2px 0 5px;
+  font-size: 1rem;
+}
+
+.puzzle-question-note {
+  margin: 0 0 13px;
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+}
+
+.puzzle-question textarea {
+  min-height: 84px;
+  margin-bottom: 10px;
+}
+
+.puzzle-question-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.puzzle-more {
+  margin-top: 9px;
+  border-top: 1px solid var(--line);
+}
+
+.puzzle-more summary {
+  padding: 10px 0;
+  color: var(--accent-dark);
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.puzzle-dialog-actions {
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.puzzle-decision-note {
+  max-width: 500px;
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+}
+
+@media (max-width: 650px) {
+  .puzzle-dialog .dialog-header,
+  .puzzle-dialog .dialog-body,
+  .puzzle-dialog .dialog-actions {
+    padding-right: 17px;
+    padding-left: 17px;
+  }
+
+  .route-card {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+
+  .route-strength {
+    grid-column: 2;
+  }
+
+  .puzzle-source-grid,
+  .puzzle-evidence-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .puzzle-group-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .puzzle-dialog-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .puzzle-dialog-actions .button {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-card {
+    scroll-behavior: auto;
+  }
+}

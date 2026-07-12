@@ -7,6 +7,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
   fs.mkdirSync(path.dirname(normalizedDbPath), { recursive: true });
 
   const db = new DatabaseSync(normalizedDbPath);
+  const internalTransaction = Symbol("internal-transaction");
   db.exec("PRAGMA foreign_keys = ON;");
   db.exec(`
     CREATE TABLE IF NOT EXISTS halls (
@@ -96,6 +97,82 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
       FOREIGN KEY (run_id) REFERENCES agent_runs(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS memory_events (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      summary TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'confirmed',
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE TABLE IF NOT EXISTS event_members (
+      event_id TEXT NOT NULL,
+      memory_id TEXT NOT NULL UNIQUE,
+      position INTEGER NOT NULL DEFAULT 0,
+      relation TEXT NOT NULL DEFAULT 'version',
+      confirmation_note TEXT NOT NULL DEFAULT '',
+      confirmed_at TEXT NOT NULL,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      PRIMARY KEY (event_id, memory_id),
+      FOREIGN KEY (event_id) REFERENCES memory_events(id) ON DELETE CASCADE,
+      FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS memory_claims (
+      id TEXT PRIMARY KEY,
+      memory_id TEXT NOT NULL,
+      position INTEGER NOT NULL DEFAULT 0,
+      claim_key TEXT NOT NULL DEFAULT '',
+      claim_type TEXT NOT NULL DEFAULT 'fact',
+      value_json TEXT NOT NULL DEFAULT 'null',
+      quote_text TEXT NOT NULL DEFAULT '',
+      start_offset INTEGER,
+      end_offset INTEGER,
+      evidence_valid INTEGER NOT NULL DEFAULT 0,
+      confidence REAL,
+      status TEXT NOT NULL DEFAULT 'extracted',
+      payload_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT '',
+      FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS memory_pair_decisions (
+      pair_key TEXT PRIMARY KEY,
+      memory_a_id TEXT NOT NULL,
+      memory_b_id TEXT NOT NULL,
+      decision TEXT NOT NULL,
+      rationale TEXT NOT NULL DEFAULT '',
+      evidence_json TEXT NOT NULL DEFAULT '[]',
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT '',
+      CHECK (memory_a_id <> memory_b_id),
+      FOREIGN KEY (memory_a_id) REFERENCES memories(id) ON DELETE CASCADE,
+      FOREIGN KEY (memory_b_id) REFERENCES memories(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS curator_questions (
+      id TEXT PRIMARY KEY,
+      memory_id TEXT,
+      event_id TEXT,
+      question TEXT NOT NULL,
+      reason TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'open',
+      answer TEXT NOT NULL DEFAULT '',
+      priority INTEGER NOT NULL DEFAULT 0,
+      evidence_json TEXT NOT NULL DEFAULT '[]',
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT '',
+      answered_at TEXT NOT NULL DEFAULT '',
+      CHECK (memory_id IS NOT NULL OR event_id IS NOT NULL),
+      FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE,
+      FOREIGN KEY (event_id) REFERENCES memory_events(id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_memories_hall ON memories(hall_id);
     CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at);
     CREATE INDEX IF NOT EXISTS idx_memory_people_name ON memory_people(name);
@@ -103,6 +180,12 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     CREATE INDEX IF NOT EXISTS idx_memory_emotions_emotion ON memory_emotions(emotion);
     CREATE INDEX IF NOT EXISTS idx_agent_runs_memory ON agent_runs(memory_id);
     CREATE INDEX IF NOT EXISTS idx_agent_events_run ON agent_events(run_id);
+    CREATE INDEX IF NOT EXISTS idx_event_members_event ON event_members(event_id, position);
+    CREATE INDEX IF NOT EXISTS idx_memory_claims_memory ON memory_claims(memory_id, position);
+    CREATE INDEX IF NOT EXISTS idx_pair_decisions_a ON memory_pair_decisions(memory_a_id);
+    CREATE INDEX IF NOT EXISTS idx_pair_decisions_b ON memory_pair_decisions(memory_b_id);
+    CREATE INDEX IF NOT EXISTS idx_curator_questions_memory ON curator_questions(memory_id, status);
+    CREATE INDEX IF NOT EXISTS idx_curator_questions_event ON curator_questions(event_id, status);
   `);
 
   ensureColumn("memories", "cover_image", "TEXT NOT NULL DEFAULT ''");
@@ -186,7 +269,139 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `),
     stepsForRun: db.prepare("SELECT * FROM agent_steps WHERE run_id = ? ORDER BY position"),
-    eventsForRun: db.prepare("SELECT * FROM agent_events WHERE run_id = ? ORDER BY datetime(created_at), id")
+    eventsForRun: db.prepare("SELECT * FROM agent_events WHERE run_id = ? ORDER BY datetime(created_at), id"),
+    upsertMemoryEvent: db.prepare(`
+      INSERT INTO memory_events (id, title, summary, status, metadata_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        title = excluded.title,
+        summary = excluded.summary,
+        status = excluded.status,
+        metadata_json = excluded.metadata_json,
+        updated_at = excluded.updated_at
+    `),
+    getMemoryEvent: db.prepare("SELECT * FROM memory_events WHERE id = ?"),
+    deleteMemoryEvent: db.prepare("DELETE FROM memory_events WHERE id = ?"),
+    listMemoryEvents: db.prepare(`
+      SELECT event.*, COUNT(member.memory_id) AS version_count
+      FROM memory_events event
+      LEFT JOIN event_members member ON member.event_id = event.id
+      GROUP BY event.id
+      ORDER BY datetime(event.updated_at) DESC, datetime(event.created_at) DESC, event.id
+    `),
+    getEventMemberForMemory: db.prepare("SELECT * FROM event_members WHERE memory_id = ?"),
+    getEventMembers: db.prepare(`
+      SELECT member.*, memory.title, memory.memory_date, memory.source_type,
+        memory.raw_content, memory.exhibit_text, memory.created_at AS memory_created_at,
+        memory.updated_at AS memory_updated_at
+      FROM event_members member
+      JOIN memories memory ON memory.id = member.memory_id
+      WHERE member.event_id = ?
+      ORDER BY member.position, datetime(memory.created_at), member.memory_id
+    `),
+    maxEventMemberPosition: db.prepare("SELECT COALESCE(MAX(position), -1) AS position FROM event_members WHERE event_id = ?"),
+    insertEventMember: db.prepare(`
+      INSERT INTO event_members (
+        event_id, memory_id, position, relation, confirmation_note, confirmed_at, metadata_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(event_id, memory_id) DO UPDATE SET
+        position = excluded.position,
+        relation = excluded.relation,
+        confirmation_note = excluded.confirmation_note,
+        confirmed_at = excluded.confirmed_at,
+        metadata_json = excluded.metadata_json
+    `),
+    deleteSmallMemoryEvents: db.prepare(`
+      DELETE FROM memory_events
+      WHERE id IN (
+        SELECT event.id
+        FROM memory_events event
+        LEFT JOIN event_members member ON member.event_id = event.id
+        GROUP BY event.id
+        HAVING COUNT(member.memory_id) < 2
+      )
+    `),
+    listSmallMemoryEvents: db.prepare(`
+      SELECT event.id
+      FROM memory_events event
+      LEFT JOIN event_members member ON member.event_id = event.id
+      GROUP BY event.id
+      HAVING COUNT(member.memory_id) < 2
+    `),
+    detachSurvivingEventQuestions: db.prepare(`
+      UPDATE curator_questions
+      SET event_id = NULL, updated_at = ?
+      WHERE event_id = ? AND memory_id IS NOT NULL
+    `),
+    archaeologyOverview: db.prepare(`
+      SELECT memory.id AS memory_id, event.id AS event_id, event.title AS event_title,
+        CASE WHEN event.id IS NULL THEN 0 ELSE 1 END AS event_count,
+        CASE WHEN event.id IS NULL THEN 1 ELSE COUNT(sibling.memory_id) END AS version_count
+      FROM memories memory
+      LEFT JOIN event_members member ON member.memory_id = memory.id
+      LEFT JOIN memory_events event ON event.id = member.event_id
+      LEFT JOIN event_members sibling ON sibling.event_id = event.id
+      GROUP BY memory.id, event.id
+      ORDER BY datetime(memory.created_at) DESC, memory.id
+    `),
+    archaeologyOverviewForMemory: db.prepare(`
+      SELECT memory.id AS memory_id, event.id AS event_id, event.title AS event_title,
+        CASE WHEN event.id IS NULL THEN 0 ELSE 1 END AS event_count,
+        CASE WHEN event.id IS NULL THEN 1 ELSE COUNT(sibling.memory_id) END AS version_count
+      FROM memories memory
+      LEFT JOIN event_members member ON member.memory_id = memory.id
+      LEFT JOIN memory_events event ON event.id = member.event_id
+      LEFT JOIN event_members sibling ON sibling.event_id = event.id
+      WHERE memory.id = ?
+      GROUP BY memory.id, event.id
+    `),
+    deleteMemoryClaims: db.prepare("DELETE FROM memory_claims WHERE memory_id = ?"),
+    insertMemoryClaim: db.prepare(`
+      INSERT INTO memory_claims (
+        id, memory_id, position, claim_key, claim_type, value_json, quote_text,
+        start_offset, end_offset, evidence_valid, confidence, status, payload_json,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `),
+    getMemoryClaims: db.prepare("SELECT * FROM memory_claims WHERE memory_id = ? ORDER BY position, id"),
+    upsertPairDecision: db.prepare(`
+      INSERT INTO memory_pair_decisions (
+        pair_key, memory_a_id, memory_b_id, decision, rationale, evidence_json,
+        metadata_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(pair_key) DO UPDATE SET
+        decision = excluded.decision,
+        rationale = excluded.rationale,
+        evidence_json = excluded.evidence_json,
+        metadata_json = excluded.metadata_json,
+        updated_at = excluded.updated_at
+    `),
+    getPairDecision: db.prepare("SELECT * FROM memory_pair_decisions WHERE pair_key = ?"),
+    deletePairDecision: db.prepare("DELETE FROM memory_pair_decisions WHERE pair_key = ?"),
+    upsertCuratorQuestion: db.prepare(`
+      INSERT INTO curator_questions (
+        id, memory_id, event_id, question, reason, status, answer, priority,
+        evidence_json, metadata_json, created_at, updated_at, answered_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        memory_id = excluded.memory_id,
+        event_id = excluded.event_id,
+        question = excluded.question,
+        reason = excluded.reason,
+        status = excluded.status,
+        answer = excluded.answer,
+        priority = excluded.priority,
+        evidence_json = excluded.evidence_json,
+        metadata_json = excluded.metadata_json,
+        updated_at = excluded.updated_at,
+        answered_at = excluded.answered_at
+    `),
+    getCuratorQuestion: db.prepare("SELECT * FROM curator_questions WHERE id = ?"),
+    listCuratorQuestions: db.prepare(`
+      SELECT * FROM curator_questions
+      ORDER BY CASE status WHEN 'open' THEN 0 ELSE 1 END, priority DESC, datetime(created_at) DESC, id
+    `),
+    countMemoryEvents: db.prepare("SELECT COUNT(*) AS count FROM memory_events")
   };
 
   function ensureColumn(tableName, columnName, definition) {
@@ -237,6 +452,11 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     try {
       const result = statements.deleteMemory.run(id);
       if (memory.agentRunId) statements.deleteAgentRun.run(memory.agentRunId);
+      const now = new Date().toISOString();
+      statements.listSmallMemoryEvents.all().forEach((event) => (
+        statements.detachSurvivingEventQuestions.run(now, event.id)
+      ));
+      statements.deleteSmallMemoryEvents.run();
       db.exec("COMMIT");
       return result.changes > 0;
     } catch (error) {
@@ -248,9 +468,15 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
   function purgeAll() {
     const memoriesDeleted = Number(statements.countMemories.get()?.count) || 0;
     const agentRunsDeleted = Number(statements.countAgentRuns.get()?.count) || 0;
+    const memoryEventsDeleted = Number(statements.countMemoryEvents.get()?.count) || 0;
     db.exec("BEGIN");
     try {
       db.exec(`
+        DELETE FROM curator_questions;
+        DELETE FROM memory_pair_decisions;
+        DELETE FROM memory_claims;
+        DELETE FROM event_members;
+        DELETE FROM memory_events;
         DELETE FROM memory_people;
         DELETE FROM memory_tags;
         DELETE FROM memory_emotions;
@@ -260,7 +486,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
         DELETE FROM memories;
       `);
       db.exec("COMMIT");
-      return { memoriesDeleted, agentRunsDeleted };
+      return { memoriesDeleted, agentRunsDeleted, memoryEventsDeleted };
     } catch (error) {
       db.exec("ROLLBACK");
       throw error;
@@ -338,6 +564,397 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     }
   }
 
+  function createOrExtendMemoryEvent(input = {}, transactionToken) {
+    if (!isPlainObject(input)) throw new TypeError("Memory event input must be an object.");
+
+    const memberInputs = Array.isArray(input.members) ? input.members : [];
+    const requestedMemoryIds = uniqueStrings([
+      ...(Array.isArray(input.memoryIds) ? input.memoryIds : []),
+      ...memberInputs.map((member) => isPlainObject(member) ? member.memoryId || member.id : member)
+    ]);
+    if (!requestedMemoryIds.length) throw new Error("At least one memoryId is required.");
+
+    const memories = requestedMemoryIds.map((memoryId) => {
+      const memory = getMemory(memoryId);
+      if (!memory) throw new Error(`Memory not found: ${memoryId}`);
+      return memory;
+    });
+    const memberships = requestedMemoryIds
+      .map((memoryId) => statements.getEventMemberForMemory.get(memoryId))
+      .filter(Boolean);
+    const occupiedEventIds = [...new Set(memberships.map((member) => member.event_id))];
+
+    const rawEventId = String(input.eventId || input.id || "").trim();
+    const requestedEventId = rawEventId ? sanitizeId(rawEventId) : "";
+    if (rawEventId && !requestedEventId) throw new Error("Invalid memory event id.");
+    if (occupiedEventIds.length > 1) {
+      throw new Error("The selected memories already belong to different memory events.");
+    }
+
+    const eventId = requestedEventId || occupiedEventIds[0] || createId("event");
+    if (occupiedEventIds.length && occupiedEventIds[0] !== eventId) {
+      throw new Error("A memory can belong to only one memory event.");
+    }
+
+    const existingRow = statements.getMemoryEvent.get(eventId);
+    const existingEvent = existingRow ? rowToMemoryEvent(existingRow) : null;
+    const newMemberIds = requestedMemoryIds.filter((memoryId) => (
+      !statements.getEventMemberForMemory.get(memoryId)
+    ));
+    const existingVersionCount = existingEvent ? existingEvent.versionCount : 0;
+    if (existingVersionCount + newMemberIds.length < 2) {
+      throw new Error("A new memory event requires at least two confirmed memory versions.");
+    }
+
+    const now = new Date().toISOString();
+    const title = String(
+      input.title !== undefined
+        ? input.title
+        : existingEvent?.title || `关于「${memories[0].title}」的时光拼图`
+    ).trim().slice(0, 160);
+    const summary = String(
+      input.summary !== undefined ? input.summary : existingEvent?.summary || ""
+    ).trim().slice(0, 1200);
+    const status = existingEvent?.status || "confirmed";
+    const eventMetadata = {
+      ...(existingEvent?.metadata || {}),
+      ...toJsonObject(input.metadata)
+    };
+    if (!eventMetadata.confirmationSource) eventMetadata.confirmationSource = "user";
+    if (input.confirmedBy) eventMetadata.confirmedBy = String(input.confirmedBy).slice(0, 120);
+
+    function writeMemoryEvent() {
+      statements.upsertMemoryEvent.run(
+        eventId,
+        title,
+        summary,
+        status,
+        stringifyJson(eventMetadata, "{}"),
+        existingEvent?.createdAt || normalizeTimestamp(input.createdAt, now),
+        now
+      );
+
+      let nextPosition = Number(statements.maxEventMemberPosition.get(eventId)?.position ?? -1) + 1;
+      for (const memoryId of requestedMemoryIds) {
+        const currentMember = statements.getEventMemberForMemory.get(memoryId);
+        const providedMemberInput = memberInputs.find((member) => (
+          isPlainObject(member) && String(member.memoryId || member.id || "") === memoryId
+        ));
+        const memberInput = providedMemberInput || {};
+        const hasMemberUpdate = !currentMember || Boolean(providedMemberInput) ||
+          input.relation !== undefined || input.confirmationNote !== undefined ||
+          input.confirmedAt !== undefined || input.confirmedBy !== undefined;
+        if (!hasMemberUpdate) continue;
+        const memberMetadata = {
+          ...toJsonObject(currentMember?.metadata_json),
+          ...toJsonObject(memberInput.metadata)
+        };
+        if (input.confirmedBy && !memberMetadata.confirmedBy) {
+          memberMetadata.confirmedBy = String(input.confirmedBy).slice(0, 120);
+        }
+        statements.insertEventMember.run(
+          eventId,
+          memoryId,
+          currentMember ? Number(currentMember.position) || 0 : nextPosition,
+          String(memberInput.relation ?? input.relation ?? currentMember?.relation ?? "version").slice(0, 60),
+          String(
+            memberInput.confirmationNote ?? input.confirmationNote ?? currentMember?.confirmation_note ?? ""
+          ).slice(0, 800),
+          normalizeTimestamp(
+            memberInput.confirmedAt ?? input.confirmedAt ?? currentMember?.confirmed_at,
+            now
+          ),
+          stringifyJson(memberMetadata, "{}")
+        );
+        if (!currentMember) nextPosition += 1;
+      }
+      return getMemoryEvent(eventId);
+    }
+
+    if (transactionToken === internalTransaction) return writeMemoryEvent();
+    db.exec("BEGIN");
+    try {
+      const event = writeMemoryEvent();
+      db.exec("COMMIT");
+      return event;
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  function getMemoryEvent(eventId) {
+    const row = statements.getMemoryEvent.get(String(eventId || ""));
+    return row ? rowToMemoryEvent(row) : null;
+  }
+
+  function getMemoryEventForMemory(memoryId) {
+    const member = statements.getEventMemberForMemory.get(String(memoryId || ""));
+    return member ? getMemoryEvent(member.event_id) : null;
+  }
+
+  function deleteMemoryEvent(eventId) {
+    const event = getMemoryEvent(String(eventId || ""));
+    if (!event) return null;
+    const memoryIds = event.members.map((member) => member.memoryId);
+    const pairKeys = memoryIds.flatMap((leftId, index) => (
+      memoryIds.slice(index + 1).map((rightId) => normalizeMemoryPair(leftId, rightId).pairKey)
+    ));
+    const now = new Date().toISOString();
+    db.exec("BEGIN");
+    try {
+      statements.detachSurvivingEventQuestions.run(now, event.id);
+      memoryIds.forEach((memoryId) => statements.deleteMemoryClaims.run(memoryId));
+      pairKeys.forEach((pairKey) => statements.deletePairDecision.run(pairKey));
+      statements.deleteMemoryEvent.run(event.id);
+      db.exec("COMMIT");
+      return { id: event.id, memoryIds };
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  function listMemoryEvents(options = {}) {
+    const events = statements.listMemoryEvents.all().map(rowToMemoryEvent);
+    const limit = Number(options?.limit);
+    return Number.isInteger(limit) && limit >= 0 ? events.slice(0, limit) : events;
+  }
+
+  function getArchaeologyOverview(memoryId = "") {
+    const requestedId = String(memoryId || "").trim();
+    const rows = requestedId
+      ? statements.archaeologyOverviewForMemory.all(requestedId)
+      : statements.archaeologyOverview.all();
+    return rows.map((row) => ({
+      memoryId: row.memory_id,
+      eventId: row.event_id || "",
+      eventTitle: row.event_title || "",
+      eventCount: Number(row.event_count) || 0,
+      versionCount: Number(row.version_count) || 1
+    }));
+  }
+
+  function replaceMemoryClaims(memoryId, claims = [], transactionToken) {
+    const memory = getMemory(String(memoryId || ""));
+    if (!memory) throw new Error(`Memory not found: ${memoryId}`);
+    if (!Array.isArray(claims)) throw new TypeError("claims must be an array.");
+
+    const now = new Date().toISOString();
+    const normalizedClaims = claims.map((claim, index) => normalizeMemoryClaim(memory, claim, index, now));
+    function writeMemoryClaims() {
+      statements.deleteMemoryClaims.run(memory.id);
+      normalizedClaims.forEach((claim) => statements.insertMemoryClaim.run(
+        claim.id,
+        memory.id,
+        claim.position,
+        claim.claimKey,
+        claim.type,
+        stringifyJson(claim.value, "null"),
+        claim.quote,
+        claim.startOffset,
+        claim.endOffset,
+        claim.evidenceValid ? 1 : 0,
+        claim.confidence,
+        claim.status,
+        stringifyJson(claim.payload, "{}"),
+        claim.createdAt,
+        claim.updatedAt
+      ));
+      return getMemoryClaims(memory.id);
+    }
+
+    if (transactionToken === internalTransaction) return writeMemoryClaims();
+    db.exec("BEGIN");
+    try {
+      const savedClaims = writeMemoryClaims();
+      db.exec("COMMIT");
+      return savedClaims;
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  function getMemoryClaims(memoryId) {
+    return statements.getMemoryClaims.all(String(memoryId || "")).map(rowToMemoryClaim);
+  }
+
+  function saveArchaeologyConfirmation(input = {}) {
+    if (!isPlainObject(input)) throw new TypeError("Archaeology confirmation input must be an object.");
+    if (!isPlainObject(input.event)) throw new Error("event is required.");
+    const requestedDecisions = Array.isArray(input.pairDecisions)
+      ? input.pairDecisions.filter(isPlainObject)
+      : isPlainObject(input.pairDecision) ? [input.pairDecision] : [];
+    if (!requestedDecisions.length) throw new Error("pairDecision is required.");
+
+    const claimEntries = normalizeClaimsByMemory(input.claimsByMemory);
+    const eventMemoryIds = uniqueStrings([
+      ...(Array.isArray(input.event.memoryIds) ? input.event.memoryIds : []),
+      ...(Array.isArray(input.event.members)
+        ? input.event.members.map((member) => isPlainObject(member) ? member.memoryId || member.id : member)
+        : [])
+    ]);
+    const pairInputs = requestedDecisions.map((decision, index) => ({
+      ...decision,
+      memoryAId: decision.memoryAId || decision.leftMemoryId || eventMemoryIds[index] || eventMemoryIds[0],
+      memoryBId: decision.memoryBId || decision.rightMemoryId || eventMemoryIds[index + 1] || eventMemoryIds[1]
+    }));
+
+    db.exec("BEGIN");
+    try {
+      const event = createOrExtendMemoryEvent(input.event, internalTransaction);
+      const decisions = pairInputs.map((pairInput) => savePairDecision({
+        ...pairInput,
+        metadata: {
+          ...toJsonObject(pairInput.metadata),
+          eventId: event.id
+        }
+      }));
+      const savedClaimEntries = [];
+      for (const [memoryId, claims] of claimEntries) {
+        savedClaimEntries.push([
+          memoryId,
+          replaceMemoryClaims(memoryId, claims, internalTransaction)
+        ]);
+      }
+      const saved = {
+        event: getMemoryEvent(event.id),
+        decision: decisions[0],
+        decisions,
+        claimsByMemory: Object.fromEntries(savedClaimEntries)
+      };
+      db.exec("COMMIT");
+      return saved;
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  function savePairDecision(memoryAId, memoryBId, decisionOrDetails = {}, options = {}) {
+    let input;
+    if (isPlainObject(memoryAId)) {
+      input = memoryAId;
+    } else if (isPlainObject(decisionOrDetails)) {
+      input = { ...decisionOrDetails, ...options, memoryAId, memoryBId };
+    } else {
+      input = { ...options, memoryAId, memoryBId, decision: decisionOrDetails };
+    }
+
+    const pair = normalizeMemoryPair(
+      input.memoryAId || input.leftMemoryId,
+      input.memoryBId || input.rightMemoryId
+    );
+    if (!getMemory(pair.memoryAId)) throw new Error(`Memory not found: ${pair.memoryAId}`);
+    if (!getMemory(pair.memoryBId)) throw new Error(`Memory not found: ${pair.memoryBId}`);
+
+    const existingRow = statements.getPairDecision.get(pair.pairKey);
+    const existing = existingRow ? rowToPairDecision(existingRow) : null;
+    const now = new Date().toISOString();
+    const decision = String(input.decision || input.status || "pending").trim().slice(0, 40) || "pending";
+    statements.upsertPairDecision.run(
+      pair.pairKey,
+      pair.memoryAId,
+      pair.memoryBId,
+      decision,
+      String(input.rationale ?? input.reason ?? existing?.rationale ?? "").slice(0, 1600),
+      stringifyJson(Array.isArray(input.evidence) ? input.evidence : existing?.evidence || [], "[]"),
+      stringifyJson({
+        ...(existing?.metadata || {}),
+        ...toJsonObject(input.metadata)
+      }, "{}"),
+      existing?.createdAt || normalizeTimestamp(input.createdAt, now),
+      now
+    );
+    return getPairDecision(pair.memoryAId, pair.memoryBId);
+  }
+
+  function getPairDecision(memoryAId, memoryBId) {
+    const input = isPlainObject(memoryAId)
+      ? memoryAId
+      : { memoryAId, memoryBId };
+    const firstId = input.memoryAId || input.leftMemoryId;
+    const secondId = input.memoryBId || input.rightMemoryId;
+    if (!firstId || !secondId || String(firstId) === String(secondId)) return null;
+    const pair = normalizeMemoryPair(firstId, secondId);
+    const row = statements.getPairDecision.get(pair.pairKey);
+    return row ? rowToPairDecision(row) : null;
+  }
+
+  function saveCuratorQuestion(input = {}, details = {}) {
+    if (typeof input === "string") input = { ...details, memoryId: input };
+    if (!isPlainObject(input)) throw new TypeError("Curator question input must be an object.");
+
+    const rawId = String(input.id || "").trim();
+    const id = rawId ? sanitizeId(rawId) : createId("question");
+    if (!id) throw new Error("Invalid curator question id.");
+    const existingRow = statements.getCuratorQuestion.get(id);
+    const existing = existingRow ? rowToCuratorQuestion(existingRow) : null;
+    const memoryId = input.memoryId !== undefined
+      ? String(input.memoryId || "").trim()
+      : existing?.memoryId || "";
+    const eventId = input.eventId !== undefined
+      ? String(input.eventId || "").trim()
+      : existing?.eventId || "";
+    if (!memoryId && !eventId) throw new Error("A curator question requires a memoryId or eventId.");
+    if (memoryId && !getMemory(memoryId)) throw new Error(`Memory not found: ${memoryId}`);
+    if (eventId && !getMemoryEvent(eventId)) throw new Error(`Memory event not found: ${eventId}`);
+    if (memoryId && eventId) {
+      const memoryEvent = getMemoryEventForMemory(memoryId);
+      if (!memoryEvent || memoryEvent.id !== eventId) {
+        throw new Error("The memory is not a member of the selected memory event.");
+      }
+    }
+
+    const now = new Date().toISOString();
+    const question = String(input.question !== undefined ? input.question : existing?.question || "").trim();
+    if (!question) throw new Error("question is required.");
+    const status = String(input.status !== undefined ? input.status : existing?.status || "open").slice(0, 40);
+    const isAnswered = status === "answered";
+    const answer = String(
+      input.answer !== undefined ? input.answer : isAnswered ? existing?.answer || "" : ""
+    ).slice(0, 4000);
+    const answeredAt = !isAnswered || !answer
+      ? ""
+      : input.answeredAt !== undefined
+        ? normalizeTimestamp(input.answeredAt, "")
+        : existing?.answeredAt || now;
+    statements.upsertCuratorQuestion.run(
+      id,
+      memoryId || null,
+      eventId || null,
+      question.slice(0, 1200),
+      String(input.reason !== undefined ? input.reason : existing?.reason || "").slice(0, 1600),
+      status || "open",
+      answer,
+      normalizeInteger(input.priority, existing?.priority || 0),
+      stringifyJson(
+        Array.isArray(input.evidence) ? input.evidence : existing?.evidence || [],
+        "[]"
+      ),
+      stringifyJson({
+        ...(existing?.metadata || {}),
+        ...toJsonObject(input.metadata)
+      }, "{}"),
+      existing?.createdAt || normalizeTimestamp(input.createdAt, now),
+      now,
+      answeredAt
+    );
+    return rowToCuratorQuestion(statements.getCuratorQuestion.get(id));
+  }
+
+  function listCuratorQuestions(filters = {}) {
+    if (typeof filters === "string") filters = { memoryId: filters };
+    const input = isPlainObject(filters) ? filters : {};
+    let questions = statements.listCuratorQuestions.all().map(rowToCuratorQuestion);
+    if (input.memoryId) questions = questions.filter((item) => item.memoryId === String(input.memoryId));
+    if (input.eventId) questions = questions.filter((item) => item.eventId === String(input.eventId));
+    if (input.status) questions = questions.filter((item) => item.status === String(input.status));
+    const limit = Number(input.limit);
+    return Number.isInteger(limit) && limit >= 0 ? questions.slice(0, limit) : questions;
+  }
+
   function getStats() {
     const memories = listMemories();
     return {
@@ -404,6 +1021,24 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     replaceRelated(memory.id, statements.deletePeople, statements.insertPerson, memory.people || []);
     replaceRelated(memory.id, statements.deleteTags, statements.insertTag, memory.tags || []);
     replaceRelated(memory.id, statements.deleteEmotions, statements.insertEmotion, memory.emotions || []);
+    revalidateMemoryClaims(memory.id);
+  }
+
+  function revalidateMemoryClaims(memoryId) {
+    const claims = getMemoryClaims(memoryId);
+    if (!claims.length) return;
+    const memory = getMemory(memoryId);
+    const revised = claims.map((claim) => {
+      const quote = String(claim.quote || "");
+      const evidenceStillExists = Boolean(quote) && String(memory.rawContent || "").includes(quote);
+      return {
+        ...claim,
+        status: evidenceStillExists
+          ? claim.status === "source_invalidated" ? "source_verified" : claim.status
+          : "source_invalidated"
+      };
+    });
+    replaceMemoryClaims(memoryId, revised, internalTransaction);
   }
 
   function replaceRelated(memoryId, clearStatement, insertStatement, values) {
@@ -508,6 +1143,250 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     };
   }
 
+  function rowToMemoryEvent(row) {
+    const members = statements.getEventMembers.all(row.id).map((member) => ({
+      memoryId: member.memory_id,
+      title: member.title,
+      date: member.memory_date || "",
+      sourceType: member.source_type,
+      rawContent: member.raw_content,
+      exhibitText: member.exhibit_text,
+      position: Number(member.position) || 0,
+      relation: member.relation || "version",
+      confirmationNote: member.confirmation_note || "",
+      confirmedAt: member.confirmed_at,
+      metadata: toJsonObject(member.metadata_json),
+      createdAt: member.memory_created_at,
+      updatedAt: member.memory_updated_at || ""
+    }));
+    return {
+      id: row.id,
+      title: row.title || "",
+      summary: row.summary || "",
+      status: row.status || "confirmed",
+      metadata: toJsonObject(row.metadata_json),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at || "",
+      versionCount: members.length,
+      members
+    };
+  }
+
+  function normalizeMemoryClaim(memory, claim, index, now) {
+    const input = isPlainObject(claim) ? claim : { value: claim };
+    const evidence = toJsonObject(input.evidence);
+    let quote = String(
+      input.quote ?? input.quoteText ?? input.sourceText ?? evidence.quote ?? evidence.text ?? ""
+    );
+    let startOffset = normalizeNullableInteger(
+      input.startOffset ?? input.start ?? evidence.startOffset ?? evidence.start
+    );
+    let endOffset = normalizeNullableInteger(
+      input.endOffset ?? input.end ?? evidence.endOffset ?? evidence.end
+    );
+    const rawContent = String(memory.rawContent || "");
+    let evidenceValid = false;
+
+    if (quote) {
+      if (
+        startOffset !== null && endOffset !== null &&
+        startOffset >= 0 && endOffset >= startOffset &&
+        rawContent.slice(startOffset, endOffset) === quote
+      ) {
+        evidenceValid = true;
+      } else {
+        const locatedAt = rawContent.indexOf(quote);
+        if (locatedAt >= 0) {
+          startOffset = locatedAt;
+          endOffset = locatedAt + quote.length;
+          evidenceValid = true;
+        } else {
+          startOffset = null;
+          endOffset = null;
+        }
+      }
+    } else if (
+      startOffset !== null && endOffset !== null &&
+      startOffset >= 0 && endOffset > startOffset && endOffset <= rawContent.length
+    ) {
+      quote = rawContent.slice(startOffset, endOffset);
+      evidenceValid = Boolean(quote);
+    }
+
+    const rawId = String(input.id || input.claimId || "").trim();
+    const id = rawId ? sanitizeId(rawId) : createId("claim");
+    if (!id) throw new Error(`Invalid claim id at index ${index}.`);
+    const value = input.value !== undefined
+      ? input.value
+      : input.text !== undefined
+        ? input.text
+        : input.statement ?? null;
+    return {
+      id,
+      position: index,
+      claimKey: String(input.claimKey || input.key || input.field || "").slice(0, 160),
+      type: String(input.type || input.claimType || "fact").slice(0, 60),
+      value,
+      quote,
+      startOffset,
+      endOffset,
+      evidenceValid,
+      confidence: normalizeNullableNumber(input.confidence),
+      status: String(input.status || "extracted").slice(0, 40),
+      payload: {
+        ...toJsonObject(input.payload),
+        ...toJsonObject(input.metadata)
+      },
+      createdAt: normalizeTimestamp(input.createdAt, now),
+      updatedAt: now
+    };
+  }
+
+  function rowToMemoryClaim(row) {
+    return {
+      id: row.id,
+      memoryId: row.memory_id,
+      position: Number(row.position) || 0,
+      claimKey: row.claim_key || "",
+      type: row.claim_type || "fact",
+      value: parseJson(row.value_json, null),
+      quote: row.quote_text || "",
+      startOffset: row.start_offset === null ? null : Number(row.start_offset),
+      endOffset: row.end_offset === null ? null : Number(row.end_offset),
+      evidenceValid: Boolean(row.evidence_valid),
+      confidence: row.confidence === null ? null : Number(row.confidence),
+      status: row.status || "extracted",
+      payload: toJsonObject(row.payload_json),
+      metadata: toJsonObject(row.payload_json),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at || ""
+    };
+  }
+
+  function normalizeMemoryPair(firstId, secondId) {
+    const first = String(firstId || "").trim();
+    const second = String(secondId || "").trim();
+    if (!first || !second) throw new Error("Two memory ids are required.");
+    if (first === second) throw new Error("A memory cannot be paired with itself.");
+    const [memoryAId, memoryBId] = first < second ? [first, second] : [second, first];
+    return {
+      memoryAId,
+      memoryBId,
+      pairKey: stringifyJson([memoryAId, memoryBId], "[]")
+    };
+  }
+
+  function rowToPairDecision(row) {
+    return {
+      pairKey: row.pair_key,
+      memoryAId: row.memory_a_id,
+      memoryBId: row.memory_b_id,
+      decision: row.decision,
+      rationale: row.rationale || "",
+      evidence: parseJsonArray(row.evidence_json),
+      metadata: toJsonObject(row.metadata_json),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at || ""
+    };
+  }
+
+  function rowToCuratorQuestion(row) {
+    return {
+      id: row.id,
+      memoryId: row.memory_id || "",
+      eventId: row.event_id || "",
+      question: row.question,
+      reason: row.reason || "",
+      status: row.status || "open",
+      answer: row.answer || "",
+      priority: Number(row.priority) || 0,
+      evidence: parseJsonArray(row.evidence_json),
+      metadata: toJsonObject(row.metadata_json),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at || "",
+      answeredAt: row.answered_at || ""
+    };
+  }
+
+  function createId(prefix) {
+    return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  function uniqueStrings(values) {
+    return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
+  }
+
+  function normalizeClaimsByMemory(value) {
+    if (value === null || value === undefined) return [];
+    const entries = Array.isArray(value)
+      ? value.map((item) => {
+        if (Array.isArray(item)) return item;
+        if (isPlainObject(item)) return [item.memoryId, item.claims];
+        throw new TypeError("claimsByMemory entries must identify a memory and claims array.");
+      })
+      : isPlainObject(value)
+        ? Object.entries(value)
+        : null;
+    if (!entries) throw new TypeError("claimsByMemory must be an object or array.");
+
+    const seen = new Set();
+    return entries.map(([memoryId, claims]) => {
+      const normalizedMemoryId = String(memoryId || "").trim();
+      if (!normalizedMemoryId) throw new Error("claimsByMemory contains an empty memoryId.");
+      if (seen.has(normalizedMemoryId)) throw new Error(`Duplicate claims entry: ${normalizedMemoryId}`);
+      if (!Array.isArray(claims)) throw new TypeError(`Claims for ${normalizedMemoryId} must be an array.`);
+      seen.add(normalizedMemoryId);
+      return [normalizedMemoryId, claims];
+    });
+  }
+
+  function isPlainObject(value) {
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+  }
+
+  function toJsonObject(value) {
+    if (isPlainObject(value)) return value;
+    if (typeof value !== "string") return {};
+    const parsed = parseJson(value, {});
+    return isPlainObject(parsed) ? parsed : {};
+  }
+
+  function parseJsonArray(value) {
+    const parsed = parseJson(value, []);
+    return Array.isArray(parsed) ? parsed : [];
+  }
+
+  function stringifyJson(value, fallback) {
+    try {
+      const serialized = JSON.stringify(value);
+      return serialized === undefined ? fallback : serialized;
+    } catch {
+      return fallback;
+    }
+  }
+
+  function normalizeNullableInteger(value) {
+    if (value === null || value === undefined || value === "") return null;
+    const number = Number(value);
+    return Number.isInteger(number) ? number : null;
+  }
+
+  function normalizeInteger(value, fallback = 0) {
+    const number = Number(value);
+    return Number.isInteger(number) ? number : fallback;
+  }
+
+  function normalizeNullableNumber(value) {
+    if (value === null || value === undefined || value === "") return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function normalizeTimestamp(value, fallback) {
+    const timestamp = String(value || "").trim();
+    return timestamp ? timestamp.slice(0, 40) : fallback;
+  }
+
   function parseJson(value, fallback) {
     try {
       return JSON.parse(value || "");
@@ -533,6 +1412,19 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     getAgentRun,
     getAgentRunForMemory,
     attachAgentRunToMemory,
+    createOrExtendMemoryEvent,
+    getMemoryEvent,
+    getMemoryEventForMemory,
+    deleteMemoryEvent,
+    listMemoryEvents,
+    getArchaeologyOverview,
+    replaceMemoryClaims,
+    getMemoryClaims,
+    saveArchaeologyConfirmation,
+    savePairDecision,
+    getPairDecision,
+    saveCuratorQuestion,
+    listCuratorQuestions,
     getStats,
     searchMemories,
     close: () => db.close()
