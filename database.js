@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { DatabaseSync } = require("node:sqlite");
+const { initializeMediaDatabase } = require("./lib/media-database");
 
 function createMemoryStore({ dbPath, halls, schemaVersion }) {
   const normalizedDbPath = path.resolve(dbPath);
@@ -8,6 +9,25 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
 
   const db = new DatabaseSync(normalizedDbPath);
   const internalTransaction = Symbol("internal-transaction");
+  let transactionDepth = 0;
+
+  function withTransaction(fn) {
+    if (transactionDepth > 0) return fn(internalTransaction);
+
+    db.exec("BEGIN");
+    transactionDepth += 1;
+    try {
+      const result = fn(internalTransaction);
+      db.exec("COMMIT");
+      return result;
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    } finally {
+      transactionDepth -= 1;
+    }
+  }
+
   db.exec("PRAGMA foreign_keys = ON;");
   db.exec(`
     CREATE TABLE IF NOT EXISTS halls (
@@ -192,6 +212,13 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
   ensureColumn("memories", "media_note", "TEXT NOT NULL DEFAULT ''");
   ensureColumn("memories", "attachments_json", "TEXT NOT NULL DEFAULT '[]'");
   ensureColumn("memories", "agent_run_id", "TEXT NOT NULL DEFAULT ''");
+
+  const mediaDatabase = initializeMediaDatabase({
+    db,
+    withTransaction,
+    now: () => new Date().toISOString(),
+    createId
+  });
 
   const upsertHall = db.prepare(`
     INSERT INTO halls (id, name, description) VALUES (?, ?, ?)
@@ -422,34 +449,24 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
 
   function saveMemory(memory, options = {}) {
     const transaction = options.transaction !== false;
-    if (transaction) db.exec("BEGIN");
-    try {
+    const writeMemory = () => {
       saveMemoryRow(memory);
-      if (transaction) db.exec("COMMIT");
       return getMemory(memory.id);
-    } catch (error) {
-      if (transaction) db.exec("ROLLBACK");
-      throw error;
-    }
+    };
+    return transaction ? withTransaction(writeMemory) : writeMemory();
   }
 
   function importMemories(memories) {
-    db.exec("BEGIN");
-    try {
+    return withTransaction(() => {
       memories.forEach(saveMemoryRow);
-      db.exec("COMMIT");
       return { imported: memories.length, memories: listMemories() };
-    } catch (error) {
-      db.exec("ROLLBACK");
-      throw error;
-    }
+    });
   }
 
   function deleteMemory(id) {
     const memory = getMemory(id);
     if (!memory) return false;
-    db.exec("BEGIN");
-    try {
+    return withTransaction(() => {
       const result = statements.deleteMemory.run(id);
       if (memory.agentRunId) statements.deleteAgentRun.run(memory.agentRunId);
       const now = new Date().toISOString();
@@ -457,21 +474,20 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
         statements.detachSurvivingEventQuestions.run(now, event.id)
       ));
       statements.deleteSmallMemoryEvents.run();
-      db.exec("COMMIT");
       return result.changes > 0;
-    } catch (error) {
-      db.exec("ROLLBACK");
-      throw error;
-    }
+    });
   }
 
   function purgeAll() {
     const memoriesDeleted = Number(statements.countMemories.get()?.count) || 0;
     const agentRunsDeleted = Number(statements.countAgentRuns.get()?.count) || 0;
     const memoryEventsDeleted = Number(statements.countMemoryEvents.get()?.count) || 0;
-    db.exec("BEGIN");
-    try {
+    return withTransaction(() => {
       db.exec(`
+        DELETE FROM media_observations;
+        DELETE FROM memory_media;
+        DELETE FROM media_variants;
+        DELETE FROM media_assets;
         DELETE FROM curator_questions;
         DELETE FROM memory_pair_decisions;
         DELETE FROM memory_claims;
@@ -485,18 +501,13 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
         DELETE FROM agent_runs;
         DELETE FROM memories;
       `);
-      db.exec("COMMIT");
       return { memoriesDeleted, agentRunsDeleted, memoryEventsDeleted };
-    } catch (error) {
-      db.exec("ROLLBACK");
-      throw error;
-    }
+    });
   }
 
   function saveAgentRun(workflow, context = {}) {
     const run = normalizeAgentRun(workflow, context);
-    db.exec("BEGIN");
-    try {
+    return withTransaction(() => {
       statements.upsertAgentRun.run(
         run.id,
         run.phase,
@@ -531,12 +542,8 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
         JSON.stringify(event.payload),
         event.at
       ));
-      db.exec("COMMIT");
       return getAgentRun(run.id);
-    } catch (error) {
-      db.exec("ROLLBACK");
-      throw error;
-    }
+    });
   }
 
   function getAgentRun(id) {
@@ -552,16 +559,11 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
   function attachAgentRunToMemory(runId, memoryId) {
     if (!runId || !memoryId || !getAgentRun(runId) || !getMemory(memoryId)) return null;
     const now = new Date().toISOString();
-    db.exec("BEGIN");
-    try {
+    return withTransaction(() => {
       statements.updateAgentRunMemory.run(memoryId, now, runId);
       statements.updateMemoryAgentRun.run(runId, now, memoryId);
-      db.exec("COMMIT");
       return getAgentRun(runId);
-    } catch (error) {
-      db.exec("ROLLBACK");
-      throw error;
-    }
+    });
   }
 
   function createOrExtendMemoryEvent(input = {}, transactionToken) {
@@ -672,15 +674,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     }
 
     if (transactionToken === internalTransaction) return writeMemoryEvent();
-    db.exec("BEGIN");
-    try {
-      const event = writeMemoryEvent();
-      db.exec("COMMIT");
-      return event;
-    } catch (error) {
-      db.exec("ROLLBACK");
-      throw error;
-    }
+    return withTransaction(writeMemoryEvent);
   }
 
   function getMemoryEvent(eventId) {
@@ -701,18 +695,13 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
       memoryIds.slice(index + 1).map((rightId) => normalizeMemoryPair(leftId, rightId).pairKey)
     ));
     const now = new Date().toISOString();
-    db.exec("BEGIN");
-    try {
+    return withTransaction(() => {
       statements.detachSurvivingEventQuestions.run(now, event.id);
       memoryIds.forEach((memoryId) => statements.deleteMemoryClaims.run(memoryId));
       pairKeys.forEach((pairKey) => statements.deletePairDecision.run(pairKey));
       statements.deleteMemoryEvent.run(event.id);
-      db.exec("COMMIT");
       return { id: event.id, memoryIds };
-    } catch (error) {
-      db.exec("ROLLBACK");
-      throw error;
-    }
+    });
   }
 
   function listMemoryEvents(options = {}) {
@@ -765,15 +754,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     }
 
     if (transactionToken === internalTransaction) return writeMemoryClaims();
-    db.exec("BEGIN");
-    try {
-      const savedClaims = writeMemoryClaims();
-      db.exec("COMMIT");
-      return savedClaims;
-    } catch (error) {
-      db.exec("ROLLBACK");
-      throw error;
-    }
+    return withTransaction(writeMemoryClaims);
   }
 
   function getMemoryClaims(memoryId) {
@@ -801,8 +782,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
       memoryBId: decision.memoryBId || decision.rightMemoryId || eventMemoryIds[index + 1] || eventMemoryIds[1]
     }));
 
-    db.exec("BEGIN");
-    try {
+    return withTransaction(() => {
       const event = createOrExtendMemoryEvent(input.event, internalTransaction);
       const decisions = pairInputs.map((pairInput) => savePairDecision({
         ...pairInput,
@@ -824,12 +804,8 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
         decisions,
         claimsByMemory: Object.fromEntries(savedClaimEntries)
       };
-      db.exec("COMMIT");
       return saved;
-    } catch (error) {
-      db.exec("ROLLBACK");
-      throw error;
-    }
+    });
   }
 
   function savePairDecision(memoryAId, memoryBId, decisionOrDetails = {}, options = {}) {
@@ -1427,6 +1403,8 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     listCuratorQuestions,
     getStats,
     searchMemories,
+    withTransaction,
+    ...mediaDatabase,
     close: () => db.close()
   };
 }

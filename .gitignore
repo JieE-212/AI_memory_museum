@@ -4,5 +4,10 @@
 .vercel/
 node_modules/
 data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+*.time-isle
 *.log
 npm-debug.log*

@@ -7,7 +7,9 @@ const state = {
   draft: null,
   workflow: null,
   editingMemoryId: "",
+  pendingSaveMemoryId: "",
   searchResults: null,
+  searchError: "",
   searchRequest: 0,
   insights: null,
   archaeologyOverview: {},
@@ -37,6 +39,9 @@ const elements = {
   clearFiltersButton: document.querySelector("#clearFiltersButton"),
   memoryGrid: document.querySelector("#memoryGrid"),
   emptyState: document.querySelector("#emptyState"),
+  searchErrorState: document.querySelector("#searchErrorState"),
+  searchErrorMessage: document.querySelector("#searchErrorMessage"),
+  retrySearchButton: document.querySelector("#retrySearchButton"),
   memoryForm: document.querySelector("#memoryForm"),
   rawContent: document.querySelector("#rawContent"),
   charCount: document.querySelector("#charCount"),
@@ -78,6 +83,8 @@ const elements = {
   dataLocationList: document.querySelector("#dataLocationList"),
   exportButton: document.querySelector("#exportButton"),
   exportRedactedButton: document.querySelector("#exportRedactedButton"),
+  exportJsonButton: document.querySelector("#exportJsonButton"),
+  exportRedactedJsonButton: document.querySelector("#exportRedactedJsonButton"),
   importFile: document.querySelector("#importFile"),
   purgeButton: document.querySelector("#purgeButton"),
   dataActionStatus: document.querySelector("#dataActionStatus"),
@@ -114,6 +121,11 @@ const sampleMemories = [
 
 let searchTimer = null;
 let toastTimer = null;
+let mediaController = null;
+let mediaEvidenceController = null;
+let portabilityController = null;
+let mediaCompareControllers = [];
+let mediaLabController = null;
 
 bindEvents();
 initialize();
@@ -136,9 +148,23 @@ async function initialize() {
     state.privacy = privacy;
     state.health = health;
     state.archaeologyOverview = indexArchaeologyOverview(archaeology.overview);
+    mediaController = window.TimeIsleMedia?.createController({
+      policy: options.mediaPolicy,
+      demo: demo.interviewDemo,
+      onBusyChange: (busy) => {
+        if (busy) elements.saveMemoryButton.title = "正在安全处理照片";
+        else elements.saveMemoryButton.removeAttribute("title");
+      }
+    }) || null;
+    mediaEvidenceController = window.TimeIsleMediaEvidence?.createController({ demo: demo.interviewDemo }) || null;
+    portabilityController = window.TimeIslePortability?.createController({
+      demo: demo.interviewDemo,
+      onRestored: reloadMemories
+    }) || null;
+    mediaLabController = window.TimeIsleMediaLab?.createController({ demo: demo.interviewDemo }) || null;
     populateOptions();
     renderApp();
-    elements.footerVersion.textContent = `v${version.version || "3.0.0"}`;
+    elements.footerVersion.textContent = `v${version.version || "4.0.0"}`;
     setRuntimeStatus(demo.interviewDemo ? "Demo 已连接" : "本地馆藏已连接", "ready");
     const initialView = normalizeView(location.hash.replace("#", ""));
     switchView(initialView, { updateHash: false });
@@ -151,7 +177,7 @@ async function initialize() {
 
 function bindEvents() {
   elements.navButtons.forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
-  document.querySelectorAll("[data-go-view]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.goView)));
+  document.querySelectorAll("[data-go-view]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.goView, { focusHeading: true })));
   document.querySelectorAll("[data-view-link]").forEach((link) => link.addEventListener("click", (event) => {
     event.preventDefault();
     switchView(link.dataset.viewLink);
@@ -162,12 +188,14 @@ function bindEvents() {
   elements.hallFilter.addEventListener("change", renderCollection);
   elements.sortSelect.addEventListener("change", renderCollection);
   elements.clearFiltersButton.addEventListener("click", clearFilters);
+  elements.retrySearchButton.addEventListener("click", performSearch);
   elements.memoryGrid.addEventListener("click", handleMemoryLinkClick);
   elements.citationList.addEventListener("click", handleMemoryLinkClick);
   elements.timelinePanel.addEventListener("click", handleMemoryLinkClick);
   elements.themesPanel.addEventListener("click", handleMemoryLinkClick);
   elements.routesPanel.addEventListener("click", handleRouteClick);
   elements.reportPanel.addEventListener("click", handleMemoryLinkClick);
+  elements.dialogBody.addEventListener("click", handleMemoryLinkClick);
 
   elements.rawContent.addEventListener("input", updateCharCount);
   elements.sampleButton.addEventListener("click", insertSample);
@@ -193,8 +221,8 @@ function bindEvents() {
     button.addEventListener("keydown", handleInsightTabKeydown);
   });
 
-  elements.exportButton.addEventListener("click", () => exportMemories("full"));
-  elements.exportRedactedButton.addEventListener("click", () => exportMemories("redacted"));
+  elements.exportJsonButton.addEventListener("click", () => exportMemories("full"));
+  elements.exportRedactedJsonButton.addEventListener("click", () => exportMemories("redacted"));
   elements.importFile.addEventListener("change", importMemories);
   elements.purgeButton.addEventListener("click", purgeMemories);
 
@@ -202,6 +230,7 @@ function bindEvents() {
   elements.dialogTraceButton.addEventListener("click", showAgentTrace);
   elements.dialogEditButton.addEventListener("click", editSelectedMemory);
   elements.dialogDeleteButton.addEventListener("click", deleteSelectedMemory);
+  elements.memoryDialog.addEventListener("close", () => { mediaEvidenceController?.close(); mediaLabController?.close(); });
   elements.puzzleSaveAnswerButton.addEventListener("click", () => savePuzzleAnswer("answer"));
   elements.puzzleUnknownButton.addEventListener("click", () => savePuzzleAnswer("keep_unknown"));
   elements.puzzleSkipButton.addEventListener("click", () => savePuzzleAnswer("skip"));
@@ -213,6 +242,7 @@ function bindEvents() {
   elements.puzzleDialog.addEventListener("close", () => {
     state.puzzleSession += 1;
     state.puzzleMutation = false;
+    destroyMediaCompare();
   });
 }
 
@@ -227,25 +257,31 @@ function renderApp() {
 
 function switchView(view, options = {}) {
   const target = normalizeView(view);
-  elements.navButtons.forEach((button) => button.classList.toggle("is-active", button.dataset.view === target));
+  elements.navButtons.forEach((button) => {
+    const active = button.dataset.view === target;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-current", active ? "page" : "false");
+  });
   elements.viewPanels.forEach((panel) => {
     const active = panel.dataset.viewPanel === target;
     panel.hidden = !active;
     panel.classList.toggle("is-active", active);
   });
   if (options.updateHash !== false && location.hash !== `#${target}`) history.pushState(null, "", `#${target}`);
-  if (target === "reflect") {
-    if (!state.insights) loadInsights();
-  }
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  if (target === "reflect" && !state.insights) loadInsights();
+  if (options.focusHeading) elements.viewPanels.find((panel) => !panel.hidden)?.querySelector("h1")?.focus({ preventScroll: true });
+  window.scrollTo({ top: 0, behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
 }
-
 function normalizeView(view) {
   return ["collection", "compose", "reflect", "data"].includes(view) ? view : "collection";
 }
 
 function renderDemoStatus() {
   const demo = Boolean(state.demo?.interviewDemo);
+  mediaController?.setDemo(demo);
+  mediaEvidenceController?.setDemo(demo);
+  portabilityController?.setDemo(demo);
+  mediaLabController?.setDemo(demo);
   elements.demoNotice.hidden = !demo;
   elements.purgeButton.disabled = demo;
   elements.purgeButton.title = demo ? "公开 Demo 已禁用清空操作" : "永久清空本地 SQLite 馆藏";
@@ -272,27 +308,37 @@ function populateOptions() {
 
 function scheduleSearch() {
   clearTimeout(searchTimer);
+  state.searchRequest += 1;
   searchTimer = setTimeout(performSearch, 260);
 }
 
 async function performSearch() {
+  clearTimeout(searchTimer);
   const query = elements.searchInput.value.trim();
   const requestId = ++state.searchRequest;
   if (!query) {
     state.searchResults = null;
+    state.searchError = "";
     renderCollection();
     return;
   }
+  state.searchError = "";
+  elements.searchErrorState.hidden = true;
+  elements.memoryGrid.setAttribute("aria-busy", "true");
   elements.collectionMeta.textContent = "正在进行混合检索…";
   try {
     const payload = await requestJson(`/api/search?mode=hybrid&limit=50&query=${encodeURIComponent(query)}`);
     if (requestId !== state.searchRequest) return;
     state.searchResults = (payload.results || []).map((item) => item.memory);
+    state.searchError = "";
     renderCollection();
   } catch (error) {
     if (requestId !== state.searchRequest) return;
     state.searchResults = [];
-    elements.collectionMeta.textContent = `检索失败：${error.message}`;
+    state.searchError = error?.message
+      ? `暂时无法完成这次检索：${error.message}`
+      : "本次检索没有完成，请稍后重试。";
+    renderCollection();
   }
 }
 
@@ -301,6 +347,7 @@ function clearFilters() {
   elements.hallFilter.value = "all";
   elements.sortSelect.value = "recent";
   state.searchResults = null;
+  state.searchError = "";
   state.searchRequest += 1;
   renderCollection();
 }
@@ -319,12 +366,22 @@ function getVisibleMemories() {
 }
 
 function renderCollection() {
+  elements.memoryGrid.removeAttribute("aria-busy");
+  if (state.searchError) {
+    elements.collectionMeta.textContent = "检索失败，请重试。";
+    elements.memoryGrid.innerHTML = "";
+    elements.emptyState.hidden = true;
+    elements.searchErrorMessage.textContent = state.searchError;
+    elements.searchErrorState.hidden = false;
+    return;
+  }
   const visible = getVisibleMemories();
   const query = elements.searchInput.value.trim();
   const filterNote = elements.hallFilter.value === "all" ? "" : ` · ${hallName(elements.hallFilter.value)}`;
   elements.collectionMeta.textContent = query
     ? `“${query}”找到 ${visible.length} 件展品${filterNote}`
     : `馆内共有 ${state.memories.length} 件展品，当前显示 ${visible.length} 件${filterNote}`;
+  elements.searchErrorState.hidden = true;
   elements.emptyState.hidden = visible.length > 0;
   elements.memoryGrid.innerHTML = visible.map(renderMemoryCard).join("");
 }
@@ -339,6 +396,7 @@ function renderMemoryCard(memory) {
         <span>${escapeHtml(hallName(memory.hall))}${memory.date ? ` · ${escapeHtml(formatDate(memory.date))}` : ""}</span>
         ${memory.favorite ? '<span class="favorite-mark" aria-label="重点展品">★</span>' : ""}
       </div>
+      ${window.TimeIsleMedia?.renderCardMedia(memory, escapeHtml) || ""}
       <h3>${escapeHtml(memory.title)}</h3>
       <p class="memory-excerpt">${escapeHtml(memory.exhibitText || memory.rawContent || "暂无展品说明")}</p>
       <div class="tag-list">${tags.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}</div>
@@ -353,6 +411,7 @@ function handleMemoryLinkClick(event) {
 }
 
 async function openMemory(id) {
+  const updatingOpenDialog = elements.memoryDialog.open;
   let memory = state.memories.find((item) => item.id === id);
   if (!memory) {
     try {
@@ -366,6 +425,9 @@ async function openMemory(id) {
   elements.dialogHall.textContent = hallName(memory.hall);
   elements.dialogTitle.textContent = memory.title;
   elements.dialogBody.innerHTML = renderMemoryDetail(memory);
+  elements.dialogBody.scrollTop = 0;
+  mediaEvidenceController?.open(memory, elements.dialogBody);
+  mediaLabController?.open(memory, elements.dialogBody);
   elements.dialogRouteButton.disabled = state.memories.length < 2;
   elements.dialogRouteButton.title = state.memories.length < 2 ? "至少需要两件展品才能生成航线" : "查看与这件展品有关的记忆";
   elements.dialogTraceButton.disabled = !memory.agentRunId;
@@ -376,11 +438,15 @@ async function openMemory(id) {
   elements.dialogEditButton.disabled = protectedDemoMemory;
   elements.dialogEditButton.title = protectedDemoMemory ? "公开 Demo 的预置展品不可修改" : "编辑这件展品";
   if (!elements.memoryDialog.open) elements.memoryDialog.showModal();
+  else if (updatingOpenDialog) elements.dialogTitle.focus({ preventScroll: true });
 }
 
 function renderMemoryDetail(memory) {
   const tags = [...(memory.tags || []), ...(memory.emotions || [])];
   return `
+    ${window.TimeIsleMedia?.renderDetailGallery(memory, escapeHtml) || ""}
+    ${window.TimeIsleMediaEvidence?.renderPanel(memory) || ""}
+    ${window.TimeIsleMediaLab?.renderPanel(memory, escapeHtml) || ""}
     <div class="tag-list">${tags.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}</div>
     <p class="detail-text">${escapeHtml(memory.exhibitText || "暂无展品说明")}</p>
     <div class="detail-grid">
@@ -479,34 +545,54 @@ async function saveDraft(event) {
   elements.saveMemoryButton.disabled = true;
   elements.saveMemoryButton.textContent = "保存中…";
   const editing = Boolean(state.editingMemoryId);
-  if (editing) memory.id = state.editingMemoryId;
+  const targetMemoryId = state.editingMemoryId || state.pendingSaveMemoryId;
+  let contentSaved = false;
+  let mediaSaved = Boolean(state.demo?.interviewDemo);
+  if (targetMemoryId) memory.id = targetMemoryId;
   try {
-    await requestJson(editing ? `/api/memories/${encodeURIComponent(state.editingMemoryId)}` : "/api/memories", {
-      method: editing ? "PUT" : "POST",
+    await mediaController?.waitForReady();
+    const saved = await requestJson(targetMemoryId ? `/api/memories/${encodeURIComponent(targetMemoryId)}` : "/api/memories", {
+      method: targetMemoryId ? "PUT" : "POST",
       body: JSON.stringify(memory)
     });
+    contentSaved = true;
+    state.pendingSaveMemoryId = saved.memory.id;
+    if (!state.demo?.interviewDemo) {
+      await mediaController?.saveToMemory(saved.memory.id);
+      mediaSaved = true;
+    }
     await reloadMemories();
     resetComposer();
-    switchView("collection");
+    switchView("collection", { focusHeading: true });
     showToast(editing ? "展品修改已保存。" : "记忆已经保存为展品。", false);
   } catch (error) {
-    setAnalyzeStatus(error.message, true);
+    if (contentSaved && !mediaSaved) setAnalyzeStatus(`展品正文已保存，照片尚未完成：${error.message}。请修正后点击“继续完成保存”；不会重复创建展品。`, true);
+    else if (contentSaved) setAnalyzeStatus(`展品已保存，但页面刷新失败：${error.message}。点击“继续完成保存”会复用同一件展品。`, true);
+    else if (state.pendingSaveMemoryId) setAnalyzeStatus(`未能继续完成保存：${error.message}。再次尝试仍会复用同一件展品。`, true);
+    else setAnalyzeStatus(error.message, true);
   } finally {
     elements.saveMemoryButton.disabled = false;
-    elements.saveMemoryButton.textContent = "保存到博物馆";
+    elements.saveMemoryButton.textContent = saveButtonLabel();
   }
+}
+
+function saveButtonLabel() {
+  if (state.pendingSaveMemoryId) return "继续完成保存";
+  return state.editingMemoryId ? "保存修改" : "保存到博物馆";
 }
 
 function resetComposer() {
   state.draft = null;
   state.workflow = null;
   state.editingMemoryId = "";
+  state.pendingSaveMemoryId = "";
+  mediaController?.reset();
   elements.memoryForm.reset();
   elements.draftForm.reset();
   elements.draftForm.hidden = true;
   elements.draftPlaceholder.hidden = false;
   elements.workflowSteps.innerHTML = "";
-  elements.saveMemoryButton.textContent = "保存到博物馆";
+  elements.saveMemoryButton.textContent = saveButtonLabel();
   setAnalyzeStatus("");
   updateCharCount();
   updateEmotionIntensity();
@@ -745,10 +831,12 @@ function renderPuzzle() {
       ${renderPuzzleSource("第一段记录", puzzle.pair.left)}
       ${renderPuzzleSource("第二段记录", puzzle.pair.right)}
     </div>
+    ${payload.imageCompare?.left?.length && payload.imageCompare?.right?.length ? window.TimeIsleMediaCompare?.renderComparison(payload.imageCompare, escapeHtml) || "" : ""}
     ${renderPuzzleGroup("稳定锚点", "两段原文都能核对", puzzle.stable, "is-stable", 3)}
     ${renderPuzzleGroup("描述不同", "只展示双侧都有原文依据的差异", puzzle.differs, "is-different", 3)}
     ${renderPuzzleGroup("后来补充", "另一段未提及，不代表矛盾", puzzle.additions, "", 3)}
     ${renderPuzzleGroup("仍未确定", "缺少原文锚点，因此不下结论", puzzle.unknowns, "", 2)}`;
+  mediaCompareControllers = window.TimeIsleMediaCompare?.hydrate(elements.puzzleBody) || [];
 
   const confirmed = payload.decision?.decision === "same_event" || Boolean(payload.event);
   const demoConfirmed = confirmed && Boolean(state.demo?.interviewDemo);
@@ -916,6 +1004,7 @@ function updatePuzzleAnswerAction() {
 }
 
 function resetPuzzleDialog() {
+  destroyMediaCompare();
   elements.puzzleBody.innerHTML = "";
   elements.puzzleStatus.textContent = "正在逐条核对原文证据…";
   elements.puzzleStatus.classList.remove("is-success", "is-error");
@@ -928,6 +1017,11 @@ function resetPuzzleDialog() {
   elements.puzzleDecisionNote.textContent = "系统只提供关联建议，不会自动合并原文。";
   elements.puzzleCloseButton.disabled = false;
   updatePuzzleAnswerAction();
+}
+
+function destroyMediaCompare() {
+  mediaCompareControllers.forEach((controller) => controller.destroy());
+  mediaCompareControllers = [];
 }
 
 function puzzlePairKey(pair) {
@@ -1012,7 +1106,6 @@ async function importMemories(event) {
     elements.importFile.value = "";
   }
 }
-
 async function purgeMemories() {
   if (state.demo?.interviewDemo) return;
   const phrase = window.prompt("该操作会永久清空本地 SQLite 馆藏。请输入 DELETE 确认：");
@@ -1021,9 +1114,10 @@ async function purgeMemories() {
     return;
   }
   try {
-    await requestJson("/api/memories/purge", { method: "DELETE", body: JSON.stringify({ confirm: "DELETE" }) });
+    const result = await requestJson("/api/memories/purge", { method: "DELETE", body: JSON.stringify({ confirm: "DELETE" }) });
     await reloadMemories();
-    setDataStatus("本地馆藏已经清空。", false, true);
+    if (result.mediaCleanupPending) setDataStatus("馆藏记录已清空；部分隔离图片仍在后台重试物理清理。", false, false);
+    else setDataStatus("本地馆藏和媒体文件已经清空。", false, true);
   } catch (error) {
     setDataStatus(error.message, true);
   }
@@ -1043,6 +1137,8 @@ async function showAgentTrace() {
   try {
     const payload = await requestJson(`/api/memories/${encodeURIComponent(memory.id)}/agent-run`);
     const run = payload.run;
+    mediaEvidenceController?.close();
+    mediaLabController?.close();
     elements.dialogBody.innerHTML = `
       <p class="muted">本次整理模式：${escapeHtml(run.mode)} · ${escapeHtml(formatDateTime(run.createdAt))}</p>
       <div class="agent-run-detail">${(run.steps || []).map((step, index) => `
@@ -1059,8 +1155,10 @@ async function editSelectedMemory() {
   const memory = state.memories.find((item) => item.id === state.selectedMemoryId);
   if (!memory) return;
   state.editingMemoryId = memory.id;
+  state.pendingSaveMemoryId = "";
   state.draft = { ...memory };
   state.workflow = null;
+  mediaController?.loadMemory(memory);
   elements.rawContent.value = memory.rawContent || "";
   populateDraft(memory);
   elements.draftPlaceholder.hidden = true;
@@ -1079,7 +1177,7 @@ async function editSelectedMemory() {
   updateCharCount();
   setAnalyzeStatus(`正在编辑《${memory.title}》。修改后点击“保存修改”。`, false, true);
   elements.memoryDialog.close();
-  switchView("compose");
+  switchView("compose", { focusHeading: true });
 }
 
 async function deleteSelectedMemory() {
@@ -1104,6 +1202,7 @@ async function reloadMemories() {
   state.memories = payload.memories || [];
   state.archaeologyOverview = indexArchaeologyOverview(archaeology.overview);
   state.searchResults = null;
+  state.searchError = "";
   state.insights = null;
   state.route = null;
   state.routeFocusId = "";

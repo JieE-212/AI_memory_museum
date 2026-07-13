@@ -590,6 +590,16 @@ textarea:focus {
   color: var(--ink-soft);
 }
 
+.search-error-state .empty-symbol {
+  color: var(--danger);
+  font-family: Georgia, serif;
+}
+
+.search-error-state p {
+  max-width: 560px;
+  margin-inline: auto;
+}
+
 .page-heading {
   padding-block: 62px 32px;
   border-bottom: 1px solid var(--line-strong);
@@ -1015,6 +1025,24 @@ form label textarea {
   cursor: not-allowed;
   opacity: 0.5;
   pointer-events: none;
+}
+
+.compatibility-backup {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-soft);
+}
+
+.compatibility-backup summary {
+  width: fit-content;
+  padding: 12px 0 4px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.compatibility-backup .data-actions {
+  margin-top: 6px;
 }
 
 .text-link {

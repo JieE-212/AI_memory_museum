@@ -7,6 +7,11 @@
     <title>时屿｜AI 私人记忆策展工具</title>
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="/archaeology.css" />
+    <link rel="stylesheet" href="/media.css" />
+    <link rel="stylesheet" href="/media-evidence.css" />
+    <link rel="stylesheet" href="/media-compare.css" />
+    <link rel="stylesheet" href="/media-ocr.css" />
+    <link rel="stylesheet" href="/media-lab.css" />
   </head>
   <body>
     <a class="skip-link" href="#mainContent">跳到主要内容</a>
@@ -21,10 +26,10 @@
       </a>
 
       <nav class="main-nav" aria-label="主要功能">
-        <button type="button" class="nav-button is-active" data-view="collection">展品库</button>
-        <button type="button" class="nav-button" data-view="compose">记录记忆</button>
-        <button type="button" class="nav-button" data-view="reflect">讲解与回顾</button>
-        <button type="button" class="nav-button" data-view="data">数据与项目</button>
+        <button type="button" class="nav-button is-active" data-view="collection" aria-controls="view-collection" aria-current="page">展品库</button>
+        <button type="button" class="nav-button" data-view="compose" aria-controls="view-compose">记录记忆</button>
+        <button type="button" class="nav-button" data-view="reflect" aria-controls="view-reflect">讲解与回顾</button>
+        <button type="button" class="nav-button" data-view="data" aria-controls="view-data">数据与项目</button>
       </nav>
 
       <div class="runtime-badge" id="runtimeBadge" aria-live="polite">正在连接</div>
@@ -35,7 +40,7 @@
         <div class="hero shell">
           <div class="hero-copy">
             <p class="eyebrow">AI 私人记忆策展工具</p>
-            <h1>把散落的生活片段，整理成一座可以回看的博物馆。</h1>
+            <h1 tabindex="-1">把散落的生活片段，整理成一座可以回看的博物馆。</h1>
             <p class="hero-lead">记录原始故事，让 AI 协助分类、提炼和标注；以后可以按人物、地点、情绪和主题重新找到它。</p>
             <div class="hero-actions">
               <button type="button" class="button primary" data-go-view="compose">写一段记忆</button>
@@ -63,7 +68,7 @@
             <div>
               <p class="eyebrow">Collection</p>
               <h2 id="collectionTitle">最近展品</h2>
-              <p id="collectionMeta">正在读取馆藏…</p>
+              <p id="collectionMeta" role="status" aria-live="polite" aria-atomic="true">正在读取馆藏…</p>
             </div>
             <button type="button" class="button text-button" data-go-view="compose">＋ 新增记忆</button>
           </div>
@@ -89,12 +94,18 @@
             <button type="button" class="button secondary compact" id="clearFiltersButton">清除</button>
           </div>
 
-          <div class="memory-grid" id="memoryGrid" aria-live="polite"></div>
+          <div class="memory-grid" id="memoryGrid"></div>
           <div class="empty-state" id="emptyState" hidden>
             <span class="empty-symbol" aria-hidden="true">◇</span>
             <h3>还没有匹配的展品</h3>
             <p>换一个关键词或展厅，也可以直接记录一段新记忆。</p>
             <button type="button" class="button primary" data-go-view="compose">记录第一段记忆</button>
+          </div>
+          <div class="empty-state search-error-state" id="searchErrorState" hidden>
+            <span class="empty-symbol" aria-hidden="true">!</span>
+            <h3>暂时无法检索展品</h3>
+            <p id="searchErrorMessage">本次检索没有完成，请稍后重试。</p>
+            <button type="button" class="button secondary" id="retrySearchButton">重新检索</button>
           </div>
         </section>
       </section>
@@ -102,7 +113,7 @@
       <section class="app-view" id="view-compose" data-view-panel="compose" hidden>
         <div class="page-heading shell">
           <p class="eyebrow">Create an exhibit</p>
-          <h1>记录一段记忆</h1>
+          <h1 tabindex="-1">记录一段记忆</h1>
           <p>先写原始故事，再让 AI 给出可编辑的展品草稿。只有点击保存后才会进入馆藏。</p>
         </div>
 
@@ -119,6 +130,43 @@
               <label for="rawContent">记忆正文</label>
               <textarea id="rawContent" maxlength="4000" required placeholder="例如：毕业那天傍晚，我们在操场尽头站了很久……"></textarea>
               <div class="field-meta"><span>原文会保留，AI 建议可以继续修改。</span><span id="charCount">0 / 4000</span></div>
+
+              <details class="media-field">
+                <summary>
+                  <span><strong>添加照片</strong><small>可选 · 为这段记忆留下画面</small></span>
+                  <span aria-hidden="true">＋</span>
+                </summary>
+                <div class="media-field-body">
+                  <div class="media-field-heading">
+                    <label class="button secondary compact" for="photoInput">选择照片</label>
+                    <input id="photoInput" class="sr-only" type="file" multiple />
+                    <label class="media-privacy-field" for="privacyMode">保存方式
+                      <select id="privacyMode">
+                        <option value="sanitized_only">仅保留安全展示图</option>
+                        <option value="preserve_original">保留原图</option>
+                      </select>
+                    </label>
+                  </div>
+                  <p class="field-help" id="photoHelp">支持 JPEG、PNG、WebP；图片只保存在本地。</p>
+                  <ul class="photo-tray" id="photoTray" aria-label="待保存照片"></ul>
+                  <fieldset class="photo-editor" id="photoEditor" hidden>
+                    <legend>照片信息</legend>
+                    <label for="photoCaption">照片说明<input id="photoCaption" type="text" maxlength="1000" placeholder="这张照片记录了什么？" /></label>
+                    <label for="photoAltText">无障碍文字<input id="photoAltText" type="text" maxlength="1000" placeholder="简要描述画面，便于读屏理解；留空时使用照片说明。" /></label>
+                    <label for="photoCapturedAt">拍摄时间<input id="photoCapturedAt" type="datetime-local" /></label>
+                    <div class="photo-hint" id="photoHint" aria-live="polite" hidden></div>
+                    <label for="photoBackNote">照片背面<textarea id="photoBackNote" maxlength="4000" placeholder="写下画面之外的故事，可留空。"></textarea></label>
+                    <div class="photo-editor-actions">
+                      <button class="button secondary compact" id="photoSetCoverButton" type="button">设为封面</button>
+                      <button class="button text-button compact" id="photoMoveLeftButton" type="button">前移</button>
+                      <button class="button text-button compact" id="photoMoveRightButton" type="button">后移</button>
+                      <button class="button text-button compact" id="photoRemoveButton" type="button">移除</button>
+                    </div>
+                  </fieldset>
+                  <p class="inline-status" id="photoStatus" role="status" aria-live="polite"></p>
+                </div>
+              </details>
+
               <div class="form-actions">
                 <button type="button" class="button secondary" id="sampleButton">放入示例</button>
                 <button type="submit" class="button primary" id="analyzeButton">AI 帮我整理</button>
@@ -190,7 +238,7 @@
       <section class="app-view" id="view-reflect" data-view-panel="reflect" hidden>
         <div class="page-heading shell">
           <p class="eyebrow">Explore and reflect</p>
-          <h1>讲解与回顾</h1>
+          <h1 tabindex="-1">讲解与回顾</h1>
           <p>用自然语言寻找展品，查看引用依据，再从时间和主题重新理解这些记忆。</p>
         </div>
 
@@ -246,7 +294,7 @@
       <section class="app-view" id="view-data" data-view-panel="data" hidden>
         <div class="page-heading shell">
           <p class="eyebrow">Data and project</p>
-          <h1>数据安全与项目说明</h1>
+          <h1 tabindex="-1">数据安全与项目说明</h1>
           <p>维护备份和隐私边界，也让面试官可以快速理解这个项目真正解决了什么。</p>
         </div>
 
@@ -260,12 +308,21 @@
             </div>
             <div class="data-location-list" id="dataLocationList"></div>
             <div class="data-actions">
-              <button type="button" class="button secondary" id="exportButton">导出馆藏备份</button>
-              <button type="button" class="button secondary" id="exportRedactedButton">导出脱敏版本</button>
-              <label class="button secondary file-button" for="importFile">导入 JSON</label>
-              <input id="importFile" class="sr-only" type="file" accept="application/json,.json" />
+              <button type="button" class="button primary" id="exportButton">导出完整备份（含照片）</button>
+              <button type="button" class="button secondary" id="exportRedactedButton">导出脱敏备份</button>
+              <label class="button secondary file-button" for="archiveImportFile">恢复完整备份</label>
+              <input id="archiveImportFile" class="sr-only" type="file" accept="application/vnd.time-isle,.time-isle" />
               <button type="button" class="button danger" id="purgeButton">清空本地馆藏</button>
             </div>
+            <details class="compatibility-backup">
+              <summary>JSON 兼容工具</summary>
+              <div class="data-actions">
+                <button type="button" class="button text-button compact" id="exportJsonButton">导出 JSON</button>
+                <button type="button" class="button text-button compact" id="exportRedactedJsonButton">导出脱敏 JSON</button>
+                <label class="button text-button compact file-button" for="importFile">导入旧版 JSON</label>
+                <input id="importFile" class="sr-only" type="file" accept="application/json,.json" />
+              </div>
+            </details>
             <p class="action-note" id="dataActionStatus" aria-live="polite"></p>
           </section>
 
@@ -278,13 +335,13 @@
               <a class="text-link" href="https://github.com/JieE-212/AI_memory_museum" target="_blank" rel="noreferrer">查看 GitHub ↗</a>
             </div>
             <ol class="project-points">
-              <li><strong>本地优先存储</strong><span>Node.js 内置 SQLite 保存结构化记忆，不依赖外部数据库服务。</span></li>
-              <li><strong>可追踪工作流</strong><span>一次模型或规则分析被组织为档案、策展和草稿三个阶段，处理快照可以回看。</span></li>
-              <li><strong>检索有引用</strong><span>混合匹配标题、正文、人物、地点、标签与情绪，回答会回链到具体展品。</span></li>
-              <li><strong>公开 Demo 隔离</strong><span>示例数据使用临时数据库，禁用破坏性操作，无 Key 时自动使用 Mock。</span></li>
+              <li><strong>本地影像保险箱</strong><span>原图流式校验、浏览器生成安全展示图，SHA-256 内容寻址并自动回收孤儿文件。</span></li>
+              <li><strong>照片成为证据</strong><span>用户可圈选画面区域并锚定原图哈希，让时光拼图同时回看文字与图片依据。</span></li>
+              <li><strong>克制的智能线索</strong><span>EXIF、近似图片与本机文字摘录只给待核对建议，不自动写地点、合并照片或改正文。</span></li>
+              <li><strong>可携带且可恢复</strong><span>.time-isle 归档逐项验真，损坏零写入；脱敏版物理排除照片，公开 Demo 禁止私人上传。</span></li>
             </ol>
             <div class="tech-line" aria-label="技术栈">
-              <span>Vanilla JS</span><span>Node.js</span><span>SQLite</span><span>Vercel</span>
+              <span>Vanilla JS</span><span>Node.js</span><span>SQLite</span><span>Canvas</span><span>Vercel</span>
             </div>
           </section>
         </div>
@@ -295,7 +352,7 @@
       <form method="dialog" class="dialog-header">
         <div>
           <p class="eyebrow" id="dialogHall">展品详情</p>
-          <h2 id="dialogTitle">展品</h2>
+          <h2 id="dialogTitle" tabindex="-1">展品</h2>
         </div>
         <button class="icon-button" value="close" aria-label="关闭详情">×</button>
       </form>
@@ -342,9 +399,16 @@
 
     <footer class="site-footer">
       <span>时屿 · 让记忆可整理，也让 AI 的依据可回看。</span>
-      <span id="footerVersion">v3.0.0</span>
+      <span id="footerVersion">v4.0.0</span>
     </footer>
 
+    <script src="/assets/portability.js"></script>
+    <script src="/assets/media-intelligence.js"></script>
+    <script src="/assets/media.js"></script>
+    <script src="/assets/media-evidence.js"></script>
+    <script src="/assets/media-compare.js"></script>
+    <script src="/assets/media-ocr.js"></script>
+    <script src="/assets/media-lab.js"></script>
     <script src="/assets/app.js"></script>
   </body>
 </html>
