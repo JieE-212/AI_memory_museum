@@ -1,12 +1,12 @@
 # 时屿（TIME ISLE）V4.0.0 Vercel 面试 Demo 部署
 
-线上 Demo（当前仍为 V3.0.0）：
+线上 Demo（V4.0.0，已部署）：
 
 ```text
 https://ai-memory-museum-demo.vercel.app
 ```
 
-本文对应已完成本地提交、尚未推送或部署的 V4.0.0 候选；上述 Vercel 地址目前仍运行 V3.0.0。只有 V4 推送、部署并通过本文的线上核验后，才能把该域名标记为 V4 Demo。V4 Demo 仍是公开、临时、只用于面试演示的环境：它不接收私人图片，也不允许 `.time-isle` 归档恢复；完整图片保存与恢复应在具有持久磁盘的本地 Node.js 环境体验。
+本文对应已发布的 V4.0.0（schema 4）：源码已同步至 GitHub 与 Gitee，Vercel 公开 Demo 也已完成部署；`/api/health` 已核验 `version: 4.0.0`、`schemaVersion: 4`、`mode: interview-demo`、`storage: ephemeral-sqlite` 和 `aiMode: mock-fallback`。V4 Demo 仍是公开、临时、只用于面试演示的环境：它不接收私人图片，也不允许 `.time-isle` 归档恢复；完整图片保存与恢复应在具有持久磁盘的本地 Node.js 环境体验。
 
 ## Git 连接
 

@@ -4,11 +4,11 @@
 
 把散落的日记、聊天片段和照片整理成一座可检索、可回顾，也能保留不同记忆版本与证据来源的私人记忆岛屿。
 
-- Live Demo（当前线上仍为 V3.0.0）: https://ai-memory-museum-demo.vercel.app
+- Live Demo（V4.0.0）: https://ai-memory-museum-demo.vercel.app
 - GitHub: https://github.com/JieE-212/AI_memory_museum
 - Demo 状态: https://ai-memory-museum-demo.vercel.app/api/demo/status
 
-> 发布状态（2026-07-13）：本文描述的是已完成本地提交、尚未推送或部署的 V4.0.0 候选；上方公开域名目前仍运行 V3.0.0。V4 发布并完成线上核验后，才能把该链接视为 V4 Demo。
+> 发布状态（2026-07-13）：V4.0.0（schema 4）已同步至 GitHub 与 Gitee，并部署到上方 Vercel 公开 Demo；`/api/health` 已核验 `version: 4.0.0`、`schemaVersion: 4`、`mode: interview-demo`、`storage: ephemeral-sqlite` 和 `aiMode: mock-fallback`。
 
 V4 公开 Demo 只使用示例数据和临时 SQLite。它禁止私人图片上传、媒体修改、归档恢复、导入、删除与清空；访客新增的文本可能在同一临时实例中被其他访客看到，因此也请勿提交私人信息。Demo 在代码层强制使用本地 Mock，即使环境误配 `AI_API_KEY` 也不会调用外部模型；共享文本、整理运行、时光拼图与补问分别受 SQLite 事务内的固定硬上限保护。
 
