@@ -311,6 +311,7 @@ async function checkApi() {
     ];
     const dependencies = {
       database: fixture.revisits,
+      intentDatabase: emptyIntentDatabase(),
       store: { listMemories: () => memories },
       sendJson: (_response, status, payload) => ({ status, payload }),
       readJsonBody: async (request) => request.body || {},
@@ -447,6 +448,15 @@ function viewedState(memoryId, lastViewedAt, localDate) {
 
 function request(method, body) {
   return { method, body };
+}
+
+function emptyIntentDatabase() {
+  return {
+    listRevisitIntents: () => [],
+    getRevisitIntent: () => null,
+    setRevisitIntent: () => { throw new Error("unexpected revisit intent write"); },
+    clearRevisitIntent: () => { throw new Error("unexpected revisit intent clear"); }
+  };
 }
 
 function httpError(statusCode, message) {

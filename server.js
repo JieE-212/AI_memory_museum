@@ -7,6 +7,7 @@ const { createMemoryStore } = require("./database");
 const { createCollectionExporter } = require("./lib/collection-export");
 const { createCollectionImporter } = require("./lib/collection-import");
 const { createExhibitionApi } = require("./lib/exhibition-api");
+const { seedInterviewDemoData } = require("./lib/demo-seed");
 const { createRevisitApi } = require("./lib/revisit-api");
 const { createClueApi } = require("./lib/clue-api");
 const { createCapsuleApi } = require("./lib/capsule-api");
@@ -51,8 +52,8 @@ const MEDIA_ROOT = process.env.MEDIA_ROOT || (INTERVIEW_DEMO
   ? path.join(os.tmpdir(), "ai-memory-museum-interview-demo-media")
   : path.join(path.dirname(DB_PATH), "media"));
 const VOICE_ROOT = INTERVIEW_DEMO ? path.join(MEDIA_ROOT, "voice") : (process.env.VOICE_ROOT || path.join(MEDIA_ROOT, "voice"));
-const APP_VERSION = "7.2.0";
-const SCHEMA_VERSION = 10;
+const APP_VERSION = "7.3.0";
+const SCHEMA_VERSION = 11;
 const MAX_RAW_LENGTH = 4000;
 const MAX_BODY_LENGTH = 2 * 1024 * 1024;
 const MAX_IMPORT_BODY_LENGTH = 64 * 1024 * 1024;
@@ -105,13 +106,18 @@ const buildPrivacySummary = createPrivacySummary({
   featureLocations: [
     { name: "记忆年轮与并发保护", location: "正文历史以可校验快照保存在本机 SQLite；每次恢复都会生成新的 head，不覆盖旧版本" },
     { name: "时光胶囊与加密离线展览", location: "胶囊外壳与安全快照分表保存在本机 SQLite；分享口令只在浏览器内用于加密，不发送给服务端，也不写入导出文件" },
-    { name: "记忆回访状态", location: "仅保存于本机 SQLite，用于避免同一天重复推荐，不生成心理判断" },
+    { name: "回访状态与明确意愿", location: "查看/略过状态、欢迎出现、指定日期以后或暂停主动出现均只保存在本机 SQLite；later 会保存用户选择的本地日期与 IANA 时区，不生成心理判断" },
     { name: "实体线索、别名与检索索引", location: "仅保存于本机 SQLite；同名默认只是线索，只有明确确认后才会新增别名或合并档案" },
     { name: "声音片段与人工文字稿", location: "声音文件仅保存在本机内容寻址目录；只有人工确认的文字稿会进入本地检索，不发送给外部模型" }
   ],
-  featureControls: ["编辑与历史恢复必须匹配当前展品版本，冲突时不会覆盖较新的内容", "实体别名与合并必须先预览，再由用户明确确认", "声音文字稿只有人工确认后才会公开展示并进入检索"]
+  featureControls: ["编辑与历史恢复必须匹配当前展品版本，冲突时不会覆盖较新的内容", "回访意愿只接受用户明确确认；恢复自然回访会删除对应长期意愿记录", "实体别名与合并必须先预览，再由用户明确确认", "声音文字稿只有人工确认后才会公开展示并进入检索"]
 });
-seedInterviewDemoData();
+seedInterviewDemoData({
+  enabled: INTERVIEW_DEMO,
+  store,
+  normalizeMemory,
+  buildAgentWorkflow
+});
 let mediaMaintenancePromise = null;
 const startupMaintenance = runMediaMaintenance().catch((error) => console.error("媒体维护失败：", error.message));
 
@@ -237,6 +243,8 @@ async function handleRequest(request, response) {
               validateArchaeologyBackup, restoreArchaeologyBackup,
               validateExhibitionBackup: store.validateExhibitionBackup, restoreExhibitionBackup: store.restoreExhibitionBackup,
               validateRevisitBackup: store.validateRevisitBackup, restoreRevisitBackup: store.restoreRevisitBackup,
+              validateRevisitIntentBackup: store.validateRevisitIntentBackup,
+              restoreRevisitIntentBackup: store.restoreRevisitIntentBackup,
               validateEntityBackup: store.validateClueBackup, restoreEntityBackup: store.restoreClueBackup,
               validateVoiceBackup: store.validateVoiceBackup, restoreVoiceBackup: store.restoreVoiceBackup,
               validateCapsuleBackup: store.validateCapsuleBackup, restoreCapsuleBackup: store.restoreCapsuleBackup,
@@ -1088,95 +1096,11 @@ function parseAiJson(content) {
   }
 }
 
-function seedInterviewDemoData() {
-  if (!INTERVIEW_DEMO || store.listMemories().length) return;
-  const samples = [
-    {
-      id: "demo-campus-farewell",
-      title: "操场尽头的告别",
-      hall: "youth",
-      sourceType: "日记",
-      rawContent: "2021年6月18日毕业那天傍晚，我和阿棠在学校操场尽头站了很久。大家都说以后常联系，但真正想说的话反而没有说出口。",
-      exhibitText: "毕业傍晚的操场保存了青春快结束时的重量：热闹散去以后，沉默也成了一种告别。",
-      date: "2021-06-18",
-      location: "学校操场",
-      people: ["阿棠", "同学"],
-      tags: ["毕业", "校园", "告别"],
-      emotions: ["怀念", "遗憾"],
-      emotionIntensity: 4,
-      importance: 4,
-      favorite: true
-    },
-    {
-      id: "demo-family-noodles",
-      title: "凌晨到家的一碗面",
-      hall: "family",
-      sourceType: "日记",
-      rawContent: "有次出差很晚才到家，妈妈没有多问，只把厨房里温着的面端出来。那一刻突然觉得，回家是有人替你留着一盏灯。",
-      exhibitText: "一碗深夜的面，把家最具体的样子留了下来：不追问理由，只先照顾疲惫。",
-      date: "2023-11-02",
-      location: "家里",
-      people: ["妈妈"],
-      tags: ["家人", "回家", "饭桌"],
-      emotions: ["温暖", "感动"],
-      emotionIntensity: 5,
-      importance: 4,
-      favorite: true
-    },
-    {
-      id: "demo-campus-farewell-later",
-      title: "后来写下的毕业傍晚",
-      hall: "youth",
-      sourceType: "日记",
-      rawContent: "几年后整理旧日记，我又写起2021年6月19日的毕业傍晚：我和阿棠在学校操场尽头告别。可旧照片标注的是6月18日，所以我决定先保留日期的不确定。",
-      exhibitText: "同一场毕业告别在几年后被重新写下；人物和地点仍然清晰，日期却出现了一天的偏差。",
-      date: "2021-06-19",
-      location: "学校操场",
-      people: ["阿棠", "同学"],
-      tags: ["毕业", "校园", "告别", "后来重写"],
-      emotions: ["怀念", "释然"],
-      emotionIntensity: 3,
-      importance: 4,
-      favorite: false
-    },
-    {
-      id: "demo-friend-call",
-      title: "低谷里打来的电话",
-      hall: "friends",
-      sourceType: "聊天片段",
-      rawContent: "最迷茫的那段时间，一个朋友突然打来电话。他没有劝我振作，只陪我把混乱的话说完。后来想起，真正的帮助有时只是没有提前挂断。",
-      exhibitText: "这通电话没有解决所有问题，却留下了陪伴最可信的证据：在混乱被说完以前，对方一直都在。",
-      date: "2022-09",
-      location: "",
-      people: ["朋友"],
-      tags: ["朋友", "陪伴", "低谷"],
-      emotions: ["迷茫", "温暖"],
-      emotionIntensity: 4,
-      importance: 4,
-      favorite: true
-    }
-  ];
-
-  samples.forEach((sample, index) => {
-    const memory = normalizeMemory({
-      ...sample,
-      createdAt: new Date(Date.now() - index * 3600000).toISOString()
-    });
-    if (index === 0) {
-      const workflow = buildAgentWorkflow(memory, memory.rawContent, "mock-seed");
-      workflow.run.memoryId = memory.id;
-      const savedRun = store.saveAgentRun(workflow, { rawContent: memory.rawContent, mode: "mock-seed", memoryId: memory.id });
-      memory.agentRunId = savedRun.id;
-    }
-    store.saveMemory(memory);
-    if (memory.agentRunId) store.attachAgentRunToMemory(memory.agentRunId, memory.id);
-  });
-}
-
 function isInterviewDemoBlockedMutation(request, url) {
   if (!INTERVIEW_DEMO) return false;
   if (request.method === "DELETE" || url.pathname === "/api/memories/purge" || url.pathname === "/api/memories/import" || url.pathname === "/api/archive/restore") return true;
   if (request.method === "POST" && /^\/api\/memories\/[a-zA-Z0-9_-]+\/revisions\/[a-zA-Z0-9_-]+\/restore$/.test(url.pathname)) return true;
+  if (request.method === "PUT" && /^\/api\/revisits\/[a-zA-Z0-9_-]+\/intent$/.test(url.pathname)) return true;
   if ((request.method === "POST" || request.method === "DELETE") && url.pathname.startsWith("/api/collection-health/")) return true;
   if (request.method === "POST" && url.pathname === "/api/archive/inspect") return true;
   return request.method === "PUT" && /^\/api\/memories\/[a-zA-Z0-9_-]+$/.test(url.pathname);

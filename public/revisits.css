@@ -157,6 +157,16 @@
   font-weight: 700;
 }
 
+.revisit-reason span {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--ink-soft);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .revisit-excerpt {
   display: -webkit-box;
   overflow: hidden;
@@ -202,6 +212,18 @@
 .revisit-empty p {
   max-width: 520px;
   margin: 0;
+}
+
+.revisit-intent-start strong {
+  margin-bottom: 5px;
+  color: var(--ink);
+  font-family: "Noto Serif SC", "Songti SC", Georgia, serif;
+  font-size: 1.2rem;
+}
+
+.revisit-intent-start .button {
+  min-height: 44px;
+  margin-top: 16px;
 }
 
 .revisit-empty strong {

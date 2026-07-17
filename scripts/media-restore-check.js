@@ -38,6 +38,9 @@ let capsuleHandlerDefenseStore;
 let capsuleTargetStore;
 let capsuleMissingStore;
 let capsuleCorruptStore;
+let intentHandlerDefenseStore;
+let intentTargetStore;
+let intentIncompleteStore;
 
 function check(value, message) {
   assert.ok(value, message);
@@ -111,6 +114,90 @@ async function main() {
     }), (error) => error?.code === "MEDIA_RESTORE_EXHIBITION_HANDLER_REQUIRED");
     assertions += 1;
     equal(exhibitionDefense.store.listMemories().length, 0, "缺少展览恢复处理器时必须在任何写入前整包拒绝");
+
+    const fullIntentShell = {
+      ...firstPrepared,
+      assets: [],
+      links: [],
+      mediaObservations: [],
+      files: { ...firstPrepared.files, variants: [] },
+      collection: {
+        ...firstPrepared.collection,
+        revisitIntents: {
+          mode: "full",
+          schemaVersion: 11,
+          intents: [{
+            memoryId: "memory-source",
+            intent: "welcome",
+            notBeforeLocalDate: "",
+            notBeforeTimezone: "",
+            createdAt: "2026-07-18T10:00:00.000Z",
+            updatedAt: "2026-07-18T10:00:00.000Z"
+          }]
+        }
+      }
+    };
+    const intentHandlerDefense = createTarget(path.join(root, "intent-handler-defense"));
+    intentHandlerDefenseStore = intentHandlerDefense.store;
+    assert.throws(() => restorePreparedArchive({
+      prepared: fullIntentShell,
+      store: intentHandlerDefense.store,
+      storage: intentHandlerDefense.storage,
+      normalizeMemory,
+      validateArchaeologyBackup,
+      restoreArchaeologyBackup,
+      createId: (prefix) => `${prefix}-missing-intent-handler-${++idCounter}`
+    }), (error) => error?.code === "MEDIA_RESTORE_REVISIT_INTENT_HANDLER_REQUIRED");
+    assertions += 1;
+    equal(intentHandlerDefense.store.listMemories().length, 0, "缺少回访意愿处理器时在物化文件和数据库写入前拒绝");
+
+    const intentTarget = createTarget(path.join(root, "intent-target"));
+    intentTargetStore = intentTarget.store;
+    let validatedIntentIds = [];
+    let restoredIntentMap = null;
+    const restoredIntentArchive = restorePreparedArchive({
+      prepared: fullIntentShell,
+      store: intentTarget.store,
+      storage: intentTarget.storage,
+      normalizeMemory,
+      validateArchaeologyBackup,
+      restoreArchaeologyBackup,
+      validateRevisitIntentBackup(backup, sourceIds) {
+        validatedIntentIds = [...sourceIds];
+        return backup.intents.length === 1;
+      },
+      restoreRevisitIntentBackup(backup, memoryIdMap) {
+        restoredIntentMap = new Map(memoryIdMap);
+        return { intents: backup.intents.length, skipped: 0, idMap: Object.fromEntries(memoryIdMap) };
+      },
+      createId: (prefix) => `${prefix}-intent-${++idCounter}`
+    });
+    deepEqual(validatedIntentIds, ["memory-source"], "回访意愿在恢复规划前按归档展品边界验真");
+    equal(restoredIntentArchive.revisitIntents.intents, 1, "完整 .time-isle 在同一事务恢复回访意愿");
+    equal(
+      restoredIntentArchive.idMap.revisitIntents["memory-source"],
+      restoredIntentArchive.idMap.memories["memory-source"],
+      "回访意愿 ID 映射与本次恢复展品映射一致"
+    );
+    equal(restoredIntentMap.get("memory-source"), restoredIntentArchive.idMap.memories["memory-source"], "恢复处理器收到统一 memoryIdMap");
+
+    const intentIncomplete = createTarget(path.join(root, "intent-incomplete"));
+    intentIncompleteStore = intentIncomplete.store;
+    assert.throws(() => restorePreparedArchive({
+      prepared: fullIntentShell,
+      store: intentIncomplete.store,
+      storage: intentIncomplete.storage,
+      normalizeMemory,
+      validateArchaeologyBackup,
+      restoreArchaeologyBackup,
+      validateRevisitIntentBackup: () => true,
+      restoreRevisitIntentBackup: () => ({ intents: 0, skipped: 1, idMap: {} }),
+      createId: (prefix) => `${prefix}-incomplete-intent-${++idCounter}`
+    }), (error) => error?.code === "MEDIA_RESTORE_REVISIT_INTENT_INCOMPLETE");
+    assertions += 1;
+    equal(intentIncomplete.store.listMemories().length, 0, "回访意愿 skipped 会回滚同一事务内的展品写入");
+    const incompleteAssetRoot = path.join(intentIncomplete.storage.root, "assets");
+    equal(countFiles(incompleteAssetRoot), 0, "回访意愿恢复失败会补偿本次物化媒体文件");
 
     const malformedPrepared = {
       ...firstPrepared,
@@ -725,7 +812,10 @@ async function main() {
       capsuleHandlerDefenseStore,
       capsuleTargetStore,
       capsuleMissingStore,
-      capsuleCorruptStore
+      capsuleCorruptStore,
+      intentHandlerDefenseStore,
+      intentTargetStore,
+      intentIncompleteStore
     ]) {
       try { store?.close(); } catch { /* already closed */ }
     }

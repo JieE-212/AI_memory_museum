@@ -7,6 +7,7 @@ const vm = require("node:vm");
 const { webcrypto } = require("node:crypto");
 const { buildSafeSnapshot, validateSafeSnapshot } = require("../lib/capsule-service");
 const CapsuleCrypto = require("../public/assets/capsule-crypto");
+const SharePrivacy = require("../public/assets/share-privacy");
 
 require("../public/assets/capsules");
 const CapsuleUi = globalThis.TimeIsleCapsules;
@@ -22,10 +23,16 @@ main().catch((error) => {
 
 async function main() {
   const fixture = createFixture();
-  const payload = checkProductionPayload(fixture);
-  const envelope = await checkCrypto(payload);
-  await checkOfflineHtml(payload, envelope, fixture);
-  await checkStaticSafety(envelope);
+  const legacyPayload = checkProductionPayload(fixture);
+  const reviewed = checkReviewedProjection(fixture);
+  checkReviewedTampering(reviewed.payload);
+  const legacyEnvelope = await checkCrypto(legacyPayload);
+  await checkLegacyWhitespaceCompatibility(legacyPayload);
+  const reviewedEnvelope = await checkReviewedCrypto(reviewed);
+  await checkOfflineHtml(legacyPayload, legacyEnvelope, fixture);
+  await checkReviewedOfflineHtml(reviewed, reviewedEnvelope);
+  await checkAstralTextInOfflineRuntime(reviewed);
+  await checkStaticSafety(legacyEnvelope);
   console.log(`Offline exhibit checks passed: ${assertions} assertions.`);
 }
 
@@ -99,6 +106,224 @@ function checkProductionPayload(fixture) {
   return payload;
 }
 
+function checkReviewedProjection(fixture) {
+  const canaries = {
+    sourceTitle: "SOURCE-TITLE-CANARY",
+    sourceTheme: "SOURCE-THEME-CANARY",
+    sourceOpening: "SOURCE-OPENING-CANARY",
+    sourceDate: "2049-12-31T23:59:59.000Z",
+    internalId: "INTERNAL-ID-CANARY",
+    internalUrl: "/api/media/PRIVATE-URL-CANARY/display",
+    internalSha: "f".repeat(64),
+    unselectedItem: "UNSELECTED-ITEM-CANARY",
+    unselectedQuote: "UNSELECTED-QUOTE-CANARY",
+    unselectedTranscript: "UNSELECTED-TRANSCRIPT-CANARY",
+    unselectedMedia: "UNSELECTED-MEDIA-CANARY"
+  };
+  const mediaBase = {
+    mimeType: "image/webp",
+    width: 320,
+    height: 180,
+    byteSize: fixture.webp.length,
+    dataBase64: fixture.webp.toString("base64")
+  };
+  const source = {
+    format: "time-isle.offline-exhibit",
+    version: 1,
+    title: canaries.sourceTitle,
+    theme: canaries.sourceTheme,
+    opening: canaries.sourceOpening,
+    sourceId: canaries.internalId,
+    exportedAt: canaries.sourceDate,
+    sections: [{
+      key: "section-private-a",
+      title: "来源第一章",
+      summary: "来源第一章摘要",
+      items: [{
+        key: "item-private-a",
+        title: canaries.unselectedItem,
+        excerpt: "未选择摘录",
+        curatorNote: "未选择说明",
+        confirmedQuotes: [canaries.unselectedQuote],
+        confirmedTranscripts: [],
+        mediaKeys: ["media-private-a"]
+      }, {
+        key: "item-private-b",
+        title: "来源第二件",
+        excerpt: "来源第二件摘录",
+        curatorNote: "来源第二件说明",
+        confirmedQuotes: [],
+        confirmedTranscripts: ["保留的确认文字稿"],
+        mediaKeys: ["media-private-b"]
+      }]
+    }, {
+      key: "section-private-b",
+      title: "来源第二章",
+      summary: "来源第二章摘要",
+      items: [{
+        key: "item-private-c",
+        title: "来源第三件",
+        excerpt: "来源第三件摘录",
+        curatorNote: "来源第三件说明",
+        confirmedQuotes: ["保留的确认引用"],
+        confirmedTranscripts: [canaries.unselectedTranscript],
+        mediaKeys: ["media-private-c"]
+      }]
+    }],
+    media: [{
+      ...mediaBase,
+      key: "media-private-a",
+      itemKey: "item-1",
+      caption: canaries.unselectedMedia,
+      alt: "未选择图片",
+      contentUrl: canaries.internalUrl,
+      sha256: canaries.internalSha,
+      assetId: canaries.internalId
+    }, {
+      ...mediaBase,
+      key: "media-private-b",
+      itemKey: "item-2",
+      caption: "第二件图片但本次不选",
+      alt: "不选图片",
+      contentUrl: canaries.internalUrl,
+      sha256: canaries.internalSha
+    }, {
+      ...mediaBase,
+      key: "media-private-c",
+      itemKey: "item-3",
+      caption: "保留的安全展示图",
+      alt: "一张经过处理的安全展示图",
+      contentUrl: canaries.internalUrl,
+      sha256: canaries.internalSha
+    }]
+  };
+  const sourceBefore = clone(source);
+  const draft = SharePrivacy.createShareDraft({ payload: source });
+  equal(draft.publicTitle, SharePrivacy.DEFAULT_PUBLIC_TITLE, "公开标题使用通用默认值而不是来源标题");
+  equal(draft.publicNote, SharePrivacy.DEFAULT_PUBLIC_NOTE, "公开说明使用通用默认值");
+  equal(draft.fileTitle, SharePrivacy.DEFAULT_FILE_TITLE, "下载文件名使用稳定通用默认值");
+  check(draft.sections.every((section) => !section.selected), "所有章节初始均不分享");
+  check(draft.sections.flatMap((section) => section.items).every((item) => !item.selected), "所有展品初始均不分享");
+  check(draft.sections.flatMap((section) => section.items).flatMap((item) => [...item.quotes, ...item.transcripts, ...item.media]).every((entry) => !entry.selected), "引用、文字稿和图片初始均不分享");
+
+  draft.audience = "大学室友";
+  draft.purpose = "一起核对毕业旅行的记忆";
+  draft.title = "只给这次分享使用的标题";
+  draft.theme = "同行";
+  draft.opening = "这份副本只保留我们共同确认过的片段。";
+  draft.sections[0].selected = true;
+  draft.sections[0].title = "被选择的第一章";
+  draft.sections[0].summary = "只保留第二件展品。";
+  draft.sections[0].items[1].selected = true;
+  draft.sections[0].items[1].title = "重新命名的第一件展品";
+  draft.sections[0].items[1].transcripts[0].selected = true;
+  draft.sections[1].selected = true;
+  draft.sections[1].title = "被选择的第二章";
+  draft.sections[1].summary = "保留第三件展品与一张图。";
+  draft.sections[1].items[0].selected = true;
+  draft.sections[1].items[0].title = "重新命名的第二件展品";
+  draft.sections[1].items[0].quotes[0].selected = true;
+  draft.sections[1].items[0].media[0].selected = true;
+  const draftBeforeProjection = clone(draft);
+  const reviewed = SharePrivacy.projectSharePayload(draft);
+
+  equal(reviewed.payload.version, 2, "隐私编辑台投影生成 V2 离线载荷");
+  deepEqual(reviewed.payload.sections.map((section) => section.key), ["section-1", "section-2"], "已选章节连续重新编号");
+  deepEqual(reviewed.payload.sections.flatMap((section) => section.items.map((item) => item.key)), ["item-1", "item-2"], "跨章节已选展品连续重新编号");
+  deepEqual(reviewed.payload.media.map((media) => media.key), ["media-1"], "只保留的图片连续重新编号");
+  equal(reviewed.payload.media[0].itemKey, "item-2", "图片所有权改写到新的匿名展品键");
+  deepEqual(reviewed.payload.sections[0].items[0].confirmedTranscripts, ["保留的确认文字稿"], "只投影明确选择的文字稿");
+  deepEqual(reviewed.payload.sections[1].items[0].confirmedQuotes, ["保留的确认引用"], "只投影明确选择的引用");
+  deepEqual(reviewed.payload.sections[1].items[0].confirmedTranscripts, [], "未选择文字稿物理缺席");
+  deepEqual(reviewed.shell, {
+    title: SharePrivacy.DEFAULT_PUBLIC_TITLE,
+    note: SharePrivacy.DEFAULT_PUBLIC_NOTE,
+    opensAt: SharePrivacy.IMMEDIATE_OPEN_SENTINEL
+  }, "公开外壳保持通用默认值并固定立即开启哨兵");
+  equal(reviewed.fileTitle, SharePrivacy.DEFAULT_FILE_TITLE, "文件名不带来源标题或导出时间");
+  deepEqual(reviewed.payload.shareReceipt, {
+    audience: "大学室友",
+    purpose: "一起核对毕业旅行的记忆",
+    counts: { sections: 2, items: 2, quotes: 1, transcripts: 1, media: 1 },
+    boundary: SharePrivacy.RECEIPT_BOUNDARY
+  }, "加密收据精确记录受众、用途、计数与不可撤回边界");
+  deepEqual(Object.keys(reviewed.payload.shareReceipt).sort(), ["audience", "boundary", "counts", "purpose"], "分享收据没有额外元数据字段");
+  deepEqual(source, sourceBefore, "创建和投影分享副本不会改写来源载荷");
+  deepEqual(draft, draftBeforeProjection, "投影过程不会改写编辑草稿");
+
+  const serialized = JSON.stringify(reviewed);
+  for (const canary of Object.values(canaries)) {
+    check(!serialized.includes(canary), `V2 分享物理排除隐私金丝雀：${canary.slice(0, 30)}`);
+  }
+  for (const forbiddenKey of ["contentUrl", "sha256", "assetId", "sourceId", "exportedAt"]) {
+    check(!serialized.includes(`\"${forbiddenKey}\"`), `V2 分享不输出内部字段 ${forbiddenKey}`);
+  }
+
+  const empty = SharePrivacy.createShareDraft({ payload: source });
+  empty.audience = "朋友";
+  empty.purpose = "回看";
+  throwsCode("SHARE_SELECTION_EMPTY", () => SharePrivacy.projectSharePayload(empty), "没有选择章节和展品时拒绝继续");
+  const noEvidence = SharePrivacy.createShareDraft({ payload: source });
+  noEvidence.audience = "朋友";
+  noEvidence.purpose = "回看";
+  noEvidence.sections[0].selected = true;
+  noEvidence.sections[0].items[1].selected = true;
+  throwsCode("SHARE_EVIDENCE_REQUIRED", () => SharePrivacy.projectSharePayload(noEvidence), "没有选择引用或文字稿时拒绝继续");
+  const noAudience = clone(draft);
+  noAudience.audience = "";
+  throwsCode("SHARE_TEXT_INVALID", () => SharePrivacy.projectSharePayload(noAudience), "受众为空时拒绝继续");
+
+  deepEqual(CapsuleCrypto.validateOfflinePayload(reviewed.payload), reviewed.payload, "V2 载荷通过严格密码学模块结构校验");
+  return { ...reviewed, canaries };
+}
+
+function checkReviewedTampering(payload) {
+  const cases = [
+    ["收据计数", (value) => { value.shareReceipt.counts.items += 1; }],
+    ["收据边界", (value) => { value.shareReceipt.boundary = "可以撤回"; }],
+    ["额外内部字段", (value) => { value.internalId = "PRIVATE"; }],
+    ["章节断号", (value) => { value.sections[1].key = "section-3"; }],
+    ["展品断号", (value) => { value.sections[1].items[0].key = "item-9"; }],
+    ["孤儿媒体", (value) => { value.media = []; }],
+    ["媒体字节数", (value) => { value.media[0].byteSize += 1; }],
+    ["媒体归属", (value) => { value.media[0].itemKey = "item-1"; }],
+    ["最后一条文字证据", (value) => {
+      value.sections.forEach((section) => section.items.forEach((item) => {
+        item.confirmedQuotes = [];
+        item.confirmedTranscripts = [];
+      }));
+      value.shareReceipt.counts.quotes = 0;
+      value.shareReceipt.counts.transcripts = 0;
+    }]
+  ];
+  for (const [label, mutate] of cases) {
+    const changed = clone(payload);
+    mutate(changed);
+    throwsCode("CAPSULE_PAYLOAD_INVALID", () => CapsuleCrypto.validateOfflinePayload(changed), `V2 ${label}被篡改时拒绝载荷`);
+  }
+}
+
+async function checkLegacyWhitespaceCompatibility(payload) {
+  const legacy = clone(payload);
+  legacy.title = "  旧版标题保留空白  ";
+  legacy.sections[0].items[0].excerpt = " 旧版正文允许首尾空白\n";
+  deepEqual(CapsuleCrypto.validateOfflinePayload(legacy), legacy, "V1 旧文件继续接受历史首尾空白文本");
+  const envelope = await CapsuleCrypto.createEnvelope(legacy, PASSPHRASE, {
+    title: "旧版时间胶囊",
+    note: "兼容已经导出的 V1 文件。",
+    opensAt: "2035-06-01T00:00:00.000Z"
+  });
+  deepEqual(await CapsuleCrypto.openEnvelope(envelope, PASSPHRASE), legacy, "V1 历史文本仍可完整加密并解密");
+}
+
+async function checkReviewedCrypto(reviewed) {
+  const envelope = await CapsuleCrypto.createEnvelope(reviewed.payload, PASSPHRASE, reviewed.shell);
+  deepEqual(envelope.shell, reviewed.shell, "V2 信封只公开编辑台确认后的通用外壳");
+  equal(envelope.shell.opensAt, SharePrivacy.IMMEDIATE_OPEN_SENTINEL, "V2 信封固定立即开启而不近似导出时间");
+  deepEqual(await CapsuleCrypto.openEnvelope(envelope, PASSPHRASE), reviewed.payload, "V2 分享可由正确口令完整解密");
+  return envelope;
+}
+
 async function checkCrypto(payload) {
   const shell = {
     title: "2035 年的操场",
@@ -158,6 +383,8 @@ async function checkOfflineHtml(payload, envelope, fixture) {
   check(html.includes("URL.createObjectURL") && html.includes("URL.revokeObjectURL"), "图片 Blob URL 会及时回收");
   check(html.includes("item.confirmedQuotes") && html.includes('element("blockquote","quote",text)'), "确认引用只通过 textContent 渲染");
   check(html.includes("additionalData:aad") && html.includes("tagLength:128"), "离线解锁继续认证外壳与密码学头");
+  assert.doesNotThrow(() => new Function(extractRuntimeScript(html)), "离线阅读器内联脚本保持有效 JavaScript");
+  assertions += 1;
   check(!html.includes(PASSPHRASE), "单文件 HTML 不包含明文口令");
   check(!html.includes(payload.opening) && !html.includes(payload.sections[0].items[0].excerpt), "开启前 HTML 源码不包含展览正文");
   for (const canary of Object.values(fixture.canaries)) {
@@ -168,10 +395,42 @@ async function checkOfflineHtml(payload, envelope, fixture) {
   deepEqual(await CapsuleCrypto.openEnvelope(embedded, PASSPHRASE), payload, "从最终 HTML 提取的信封可独立解密");
 }
 
+async function checkReviewedOfflineHtml(reviewed, envelope) {
+  const html = CapsuleCrypto.createOfflineHtml(envelope);
+  check(html.includes("这次分享的加密收据") && html.includes("renderReceipt(data)"), "V2 离线阅读器解密后呈现分享收据");
+  check(html.includes("受众") && html.includes("用途") && html.includes("receipt-boundary"), "V2 阅读器包含收据三类说明位置");
+  check(!html.includes(reviewed.payload.shareReceipt.audience) && !html.includes(reviewed.payload.shareReceipt.purpose), "V2 受众与用途在解密前不出现在 HTML 明文");
+  check(!html.includes(reviewed.payload.title) && !html.includes(reviewed.payload.sections[0].items[0].title), "V2 加密叙事在开启前不出现在 HTML 明文");
+  for (const canary of Object.values(reviewed.canaries)) {
+    check(!html.includes(canary), `V2 单文件排除隐私金丝雀：${canary.slice(0, 30)}`);
+  }
+  const embedded = extractEnvelope(html);
+  equal(embedded.shell.opensAt, SharePrivacy.IMMEDIATE_OPEN_SENTINEL, "最终 V2 HTML 使用固定立即开启哨兵");
+  deepEqual(await CapsuleCrypto.openEnvelope(embedded, PASSPHRASE), reviewed.payload, "最终 V2 HTML 内嵌信封可独立解密");
+}
+
+async function checkAstralTextInOfflineRuntime(reviewed) {
+  const payload = clone(reviewed.payload);
+  payload.title = "记".repeat(1) + "😀".repeat(119);
+  payload.media = [];
+  payload.sections.forEach((section) => section.items.forEach((item) => { item.mediaKeys = []; }));
+  payload.shareReceipt.counts.media = 0;
+  equal(Array.from(payload.title).length, 120, "Astral Unicode 标题精确落在 120 码点边界");
+  const envelope = await CapsuleCrypto.createEnvelope(payload, PASSPHRASE, reviewed.shell);
+  const html = CapsuleCrypto.createOfflineHtml(envelope);
+  const runtime = await executeOfflineRuntime(html, PASSPHRASE);
+  equal(runtime.status, "", "离线运行时不会把合法 Astral Unicode 误报为坏文件或错误口令");
+  equal(runtime.exhibitHidden, false, "离线运行时按 Unicode 码点接受 120 字符 V2 标题");
+  const tooLong = clone(payload);
+  tooLong.title += "😀";
+  throwsCode("CAPSULE_PAYLOAD_INVALID", () => CapsuleCrypto.validateOfflinePayload(tooLong), "121 个 Unicode 码点仍被主验证器拒绝");
+}
+
 async function checkStaticSafety(envelope) {
   const root = path.resolve(__dirname, "..");
   const cryptoSource = fs.readFileSync(path.join(root, "public/assets/capsule-crypto.js"), "utf8");
   const capsulesSource = fs.readFileSync(path.join(root, "public/assets/capsules.js"), "utf8");
+  const privacySource = fs.readFileSync(path.join(root, "public/assets/share-privacy.js"), "utf8");
   check(cryptoSource.includes("iterations: PBKDF2_ITERATIONS") && cryptoSource.includes("false, usages"), "派生 AES 密钥不可提取且使用固定参数");
   check(cryptoSource.includes("additionalData") && cryptoSource.includes("authenticatedBytes(header, safeShell)"), "加密阶段把 header 与 shell 作为 AAD");
   check(!/\bfetch\b|XMLHttpRequest|WebSocket|sendBeacon|localStorage|sessionStorage|indexedDB/iu.test(cryptoSource), "密码学模块无联网与持久化能力");
@@ -180,10 +439,12 @@ async function checkStaticSafety(envelope) {
     'item.mimeType !== "image/webp"',
     "bytes.length !== item.byteSize",
     "hash !== item.sha256",
-    "assembleOfflinePayload(material.snapshot, packedMedia)"
+    "privacyModule.assembleLegacyPayload(material.snapshot, packedMedia)"
   ]) {
     check(capsulesSource.includes(token), `真实浏览器打包链保留安全检查：${token}`);
   }
+  check(!/\bfetch\b|XMLHttpRequest|WebSocket|sendBeacon|localStorage|sessionStorage|indexedDB/iu.test(privacySource), "分享隐私模块没有联网或持久化能力");
+  check(privacySource.includes("IMMEDIATE_OPEN_SENTINEL") && privacySource.includes("RECEIPT_BOUNDARY"), "分享隐私模块固定立即开启与不可撤回边界");
 
   const browserContext = vm.createContext({
     crypto: webcrypto,
@@ -310,6 +571,66 @@ function extractEnvelope(html) {
   return JSON.parse(match[1]);
 }
 
+function extractRuntimeScript(html) {
+  const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/giu)];
+  const runtime = scripts.find((match) => !/application\/json/iu.test(match[0]));
+  if (!runtime) throw new Error("offline runtime not found");
+  return runtime[1];
+}
+
+async function executeOfflineRuntime(html, passphrase) {
+  const envelope = extractEnvelope(html);
+  const nodes = new Map();
+  const createNode = (id = "") => {
+    const listeners = new Map();
+    return {
+      id,
+      textContent: "",
+      className: "",
+      hidden: id === "unlockForm" || id === "exhibit",
+      value: id === "passphrase" ? passphrase : "",
+      disabled: false,
+      children: [],
+      append(...children) { this.children.push(...children); },
+      replaceChildren(...children) { this.children = [...children]; },
+      addEventListener(type, handler) { listeners.set(type, handler); },
+      focus() { this.focused = true; },
+      listener(type) { return listeners.get(type); }
+    };
+  };
+  for (const id of ["capsuleEnvelope", "shellTitle", "shellNote", "dateGate", "opensAt", "unlockForm", "passphrase", "unlockButton", "unlockStatus", "exhibit"]) {
+    nodes.set(id, createNode(id));
+  }
+  nodes.get("capsuleEnvelope").textContent = JSON.stringify(envelope);
+  const documentRef = {
+    getElementById(id) { return nodes.get(id); },
+    createElement() { return createNode(); }
+  };
+  const windowRef = { addEventListener() {}, setInterval() { return 0; } };
+  const context = vm.createContext({
+    document: documentRef,
+    window: windowRef,
+    crypto: webcrypto,
+    TextEncoder,
+    TextDecoder,
+    Uint8Array,
+    Blob,
+    URL: { createObjectURL: () => "blob:test", revokeObjectURL() {} },
+    Intl,
+    Date,
+    atob,
+    btoa
+  });
+  vm.runInContext(extractRuntimeScript(html), context, { filename: "offline-runtime.js" });
+  const submit = nodes.get("unlockForm").listener("submit");
+  if (typeof submit !== "function") throw new Error("offline submit handler not found");
+  await submit({ preventDefault() {} });
+  return {
+    status: nodes.get("unlockStatus").textContent,
+    exhibitHidden: nodes.get("exhibit").hidden
+  };
+}
+
 function decodeBase64Url(value) {
   return Buffer.from(value.replace(/-/gu, "+").replace(/_/gu, "/"), "base64");
 }
@@ -333,6 +654,15 @@ function equal(actual, expected, message) {
 function deepEqual(actual, expected, message) {
   assertions += 1;
   assert.deepEqual(actual, expected, message);
+}
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function throwsCode(code, operation, message) {
+  assertions += 1;
+  assert.throws(operation, (error) => error?.code === code, message);
 }
 
 async function rejectsCode(code, operation, message) {

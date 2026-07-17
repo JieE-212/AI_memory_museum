@@ -163,7 +163,7 @@ async function initialize() {
     collectionHealthController = window.TimeIsleCollectionHealth?.createController({ demo: demo.interviewDemo }) || null;
     populateOptions();
     renderApp();
-    elements.footerVersion.textContent = `v${version.version || "7.2.0"}`;
+    elements.footerVersion.textContent = `v${version.version || "7.3.0"}`;
     setRuntimeStatus(demo.interviewDemo ? "Demo 已连接" : "本地馆藏已连接", "ready");
     const initialView = normalizeView(location.hash.replace("#", ""));
     switchView(initialView, { updateHash: false });
@@ -447,7 +447,7 @@ async function openMemory(id) {
       memory = (await requestJson(`/api/memories/${encodeURIComponent(id)}`)).memory;
     } catch (error) {
       showToast(error.message, true);
-      return;
+      return false;
     }
   }
   state.selectedMemoryId = memory.id;
@@ -469,6 +469,7 @@ async function openMemory(id) {
   elements.dialogEditButton.title = protectedDemoMemory ? "公开 Demo 的预置展品不可修改" : "编辑这件展品";
   if (!elements.memoryDialog.open) elements.memoryDialog.showModal();
   else if (updatingOpenDialog) elements.dialogTitle.focus({ preventScroll: true });
+  return true;
 }
 
 function renderMemoryDetail(memory) {

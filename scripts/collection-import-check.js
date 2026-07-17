@@ -2,16 +2,19 @@
 
 const assert = require("node:assert/strict");
 const { createCollectionImporter } = require("../lib/collection-import");
+const { createCollectionExporter } = require("../lib/collection-export");
 
 let assertionCount = 0;
 
 function run() {
+  checkSchema11Export();
   checkPrimitiveBodies();
   checkHardImportLimit();
   checkSchemaEnvelope();
   checkEntityRestoreModes();
   checkVoiceImportModes();
   checkCapsuleImportModes();
+  checkRevisitIntentImportModes();
   checkDuplicateReferenceIds();
   checkFeaturePrevalidation();
   checkConflictMapping();
@@ -19,6 +22,151 @@ function run() {
   checkSkippedRestores();
   checkSuccessfulResult();
   console.log(`Collection import checks passed: ${assertionCount} assertions.`);
+}
+
+function checkSchema11Export() {
+  const calls = [];
+  const store = {
+    buildExhibitionBackup: (mode) => ({ mode, exhibitions: [] }),
+    buildRevisitBackup: (mode) => ({ mode, states: [] }),
+    buildClueBackup: (mode) => ({ mode, entities: [] }),
+    buildVoiceBackup: (mode) => ({ mode, assets: [] }),
+    buildCapsuleBackup: (mode) => ({ mode, capsules: [] }),
+    buildRevisionBackup: (mode) => ({ mode, revisions: [] }),
+    buildRevisitIntentBackup(mode, memoryIds) {
+      calls.push({ mode, memoryIds });
+      return mode === "redacted"
+        ? { mode: "redacted-summary", intentCount: 0, note: "固定说明" }
+        : { mode: "full", schemaVersion: 11, intents: [] };
+    }
+  };
+  const build = createCollectionExporter({
+    store,
+    appVersion: "7.3.0",
+    schemaVersion: 11,
+    buildArchaeologyBackup: () => ({ mode: "full", events: [], claims: [], pairDecisions: [], questions: [] })
+  });
+  const memories = [memory("export-intent")];
+  const full = build(memories, "full");
+  same(full.revisitIntents, { mode: "full", schemaVersion: 11, intents: [] }, "schema 11 full JSON 即使零条意愿也显式导出 revisitIntents");
+  same(calls[0], { mode: "full", memoryIds: ["export-intent"] }, "完整回访意愿导出严格限制在本次展品边界");
+  const redacted = build(memories, "redacted");
+  same(Object.keys(redacted.revisitIntents).sort(), ["intentCount", "mode", "note"], "schema 11 脱敏 JSON 只导出总数与固定说明");
+  same(calls[1], { mode: "redacted", memoryIds: ["export-intent"] }, "脱敏回访意愿使用同一展品边界");
+
+  const missing = { ...store };
+  delete missing.buildRevisitIntentBackup;
+  const broken = createCollectionExporter({
+    store: missing,
+    appVersion: "7.3.0",
+    schemaVersion: 11,
+    buildArchaeologyBackup: () => ({})
+  });
+  assert.throws(() => broken(memories, "full"), /revisit intent backup support/u, "schema 11 导出缺少回访意愿处理器时 fail closed");
+  assertionCount += 1;
+}
+
+function checkRevisitIntentImportModes() {
+  const fullBackupValue = {
+    mode: "full",
+    schemaVersion: 11,
+    intents: [{
+      memoryId: "source-intent",
+      intent: "welcome",
+      notBeforeLocalDate: "",
+      notBeforeTimezone: "",
+      createdAt: "2026-07-18T09:00:00.000Z",
+      updatedAt: "2026-07-18T09:00:00.000Z"
+    }]
+  };
+  const required = {
+    entities: fullBackup(),
+    voices: { mode: "full", assetCount: 0, assets: [] },
+    capsules: { mode: "full", schemaVersion: 9, capsules: [] },
+    revisions: { mode: "full", schemaVersion: 10, revisions: [] }
+  };
+  const missing = createFixture({ schemaVersion: 11 });
+  const missingError = captureError(() => missing.importCollection({
+    schemaVersion: 11,
+    mode: "full",
+    memories: [memory("source-intent")],
+    ...required
+  }));
+  ok(missingError?.statusCode === 400 && missingError.message.includes("revisitIntents"), "schema 11 full 即使零条意愿也必须显式声明 revisitIntents");
+  ok(missing.calls.normalizes === 0 && missing.calls.transactions === 0, "缺失回访意愿在规范化和事务前拒绝");
+
+  const nullIntent = createFixture({ schemaVersion: 11 });
+  const nullIntentError = captureError(() => nullIntent.importCollection({
+    schemaVersion: 11,
+    mode: "full",
+    memories: [memory("source-intent")],
+    ...required,
+    revisitIntents: null
+  }));
+  ok(nullIntentError?.statusCode === 400 && nullIntentError.message.includes("revisitIntents"), "schema 11 full 不能用 null 冒充必需回访意愿 section");
+  ok(nullIntent.calls.normalizes === 0 && nullIntent.calls.transactions === 0, "null 回访意愿在规范化和事务前拒绝");
+
+  const full = createFixture({ schemaVersion: 11 });
+  const fullResult = full.importCollection({
+    schemaVersion: 11,
+    mode: "full",
+    memories: [memory("source-intent")],
+    ...required,
+    revisitIntents: fullBackupValue
+  });
+  ok(full.calls.validations.revisitIntents === 1 && full.calls.events.indexOf("validate-revisit-intents") < full.calls.events.indexOf("normalize"), "回访意愿在展品规范化前先验真");
+  ok(full.calls.restores.revisitIntents === 1 && fullResult.revisitIntents.intents === 1, "schema 11 JSON 在同一事务恢复完整回访意愿");
+  same(mapObject(full.calls.restoreMaps.revisitIntents), { "source-intent": "source-intent" }, "回访意愿复用无歧义展品 ID 映射");
+
+  const redacted = createFixture({ schemaVersion: 11 });
+  const redactedResult = redacted.importCollection({
+    schemaVersion: 11,
+    mode: "redacted",
+    memories: [memory("source-redacted")],
+    entities: { mode: "redacted-summary" },
+    voices: { mode: "redacted-summary", assetCount: 0 },
+    capsules: { mode: "redacted-summary", capsuleCount: 0 },
+    revisions: { mode: "redacted-summary", revisionCount: 0 },
+    revisitIntents: { mode: "redacted-summary", intentCount: 2, note: "固定脱敏说明" }
+  });
+  ok(redacted.calls.validations.revisitIntents === 1 && redacted.calls.restores.revisitIntents === 0, "脱敏回访意愿只验真且保持零写入");
+  ok(redactedResult.revisitIntents.summarized === true && redactedResult.revisitIntents.intents === 0, "脱敏 JSON 返回明确的计数摘要结果");
+
+  const legacy = createFixture({ schemaVersion: 10 });
+  const legacyError = captureError(() => legacy.importCollection({
+    schemaVersion: 10,
+    mode: "full",
+    memories: [memory("source-intent")],
+    ...required,
+    revisitIntents: fullBackupValue
+  }));
+  ok(legacyError?.statusCode === 400 && legacyError.message.includes("schema 11"), "schema 10 不得越级声明回访意愿");
+
+  const unknown = createFixture({ schemaVersion: 11 });
+  const unknownError = captureError(() => unknown.importCollection({
+    schemaVersion: 11,
+    mode: "full",
+    memories: [memory("source-intent")],
+    ...required,
+    revisitIntents: { mode: "full", schemaVersion: 11, intents: [] },
+    shareDrafts: [{ rawContent: "不能搭便车" }]
+  }));
+  ok(unknownError?.statusCode === 400 && unknownError.message.includes("shareDrafts"), "完整 JSON 根对象拒绝 shareDrafts 与未知字段");
+  ok(unknown.calls.normalizes === 0 && unknown.calls.transactions === 0, "未知根字段保持馆藏零写入");
+
+  const incomplete = createFixture({
+    schemaVersion: 11,
+    restoreHandlers: { revisitIntents: () => ({ intents: 0, skipped: 1, idMap: {} }) }
+  });
+  const incompleteError = captureError(() => incomplete.importCollection({
+    schemaVersion: 11,
+    mode: "full",
+    memories: [memory("source-intent")],
+    ...required,
+    revisitIntents: fullBackupValue
+  }));
+  ok(incompleteError?.statusCode === 400 && incompleteError.message.includes("回访意愿"), "回访意愿 skipped 会取消整次 JSON 恢复");
+  ok(incomplete.state.memories.size === 0, "回访意愿恢复不完整会回滚已导入展品");
 }
 
 function checkCapsuleImportModes() {
@@ -395,8 +543,11 @@ function createFixture(options = {}) {
     transactions: 0,
     deletes: [],
     importOptions: [],
-    validations: { archaeology: 0, exhibitions: 0, revisits: 0, entities: 0, voices: 0, capsules: 0 },
-    restores: { archaeology: 0, exhibitions: 0, revisits: 0, entities: 0 },
+    validations: {
+      archaeology: 0, exhibitions: 0, revisits: 0, entities: 0,
+      voices: 0, capsules: 0, revisions: 0, revisitIntents: 0
+    },
+    restores: { archaeology: 0, exhibitions: 0, revisits: 0, entities: 0, revisions: 0, revisitIntents: 0 },
     restoreMaps: {},
     events: []
   };
@@ -476,6 +627,30 @@ function createFixture(options = {}) {
       calls.events.push("validate-capsules");
       if (options.validationFailure === "capsules") throw new Error("invalid capsules");
       return Boolean(backup);
+    },
+    validateRevisionBackup(backup, sourceIds) {
+      calls.validations.revisions += 1;
+      calls.events.push("validate-revisions");
+      if (options.validationFailure === "revisions") throw new Error("invalid revisions");
+      return Boolean(backup && Array.isArray(sourceIds));
+    },
+    restoreRevisionBackup(backup, memoryIdMap) {
+      calls.restores.revisions += 1;
+      calls.events.push("restore-revisions");
+      calls.restoreMaps.revisions = new Map(memoryIdMap);
+      return callRestoreHandler("revisions", { backup, memoryIdMap });
+    },
+    validateRevisitIntentBackup(backup, sourceIds) {
+      calls.validations.revisitIntents += 1;
+      calls.events.push("validate-revisit-intents");
+      if (options.validationFailure === "revisitIntents") throw new Error("invalid revisit intents");
+      return Boolean(backup && Array.isArray(sourceIds));
+    },
+    restoreRevisitIntentBackup(backup, memoryIdMap) {
+      calls.restores.revisitIntents += 1;
+      calls.events.push("restore-revisit-intents");
+      calls.restoreMaps.revisitIntents = new Map(memoryIdMap);
+      return callRestoreHandler("revisitIntents", { backup, memoryIdMap });
     }
   };
 
@@ -500,6 +675,14 @@ function createFixture(options = {}) {
     if (feature === "archaeology") return { events: 0, claims: 0, decisions: 0, questions: 0, skipped: 0 };
     if (feature === "exhibitions") return { exhibitions: 0, skipped: 0, idMap: {} };
     if (feature === "entities") return emptyEntityResultFixture();
+    if (feature === "revisions") return { memories: 0, revisions: 0, skipped: 0, idMap: { memories: {}, revisions: {} } };
+    if (feature === "revisitIntents") {
+      return {
+        intents: Array.isArray(context.backup?.intents) ? context.backup.intents.length : 0,
+        skipped: 0,
+        idMap: Object.fromEntries(context.memoryIdMap)
+      };
+    }
     return { states: 0, skipped: 0, idMap: {} };
   }
 

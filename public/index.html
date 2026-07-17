@@ -10,20 +10,22 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="时屿" />
     <title>时屿｜AI 私人记忆策展工具</title>
-    <link rel="manifest" href="/manifest.webmanifest?v=7.2.0" />
+    <link rel="manifest" href="/manifest.webmanifest?v=7.3.0" />
     <link rel="icon" href="/assets/time-isle-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/assets/time-isle-apple-touch.png" />
     <link rel="stylesheet" href="/styles.css?v=7.2.0-touch5" />
-    <link rel="stylesheet" href="/pwa.css?v=7.2.0" />
+    <link rel="stylesheet" href="/pwa.css?v=7.3.0" />
     <link rel="stylesheet" href="/archaeology.css" />
     <link rel="stylesheet" href="/exhibitions.css?v=7.2.0" />
-    <link rel="stylesheet" href="/capsules.css?v=7.2.0" />
-    <link rel="stylesheet" href="/revisits.css?v=7.2.0" />
+    <link rel="stylesheet" href="/capsules.css?v=7.3.0" />
+    <link rel="stylesheet" href="/share-privacy.css?v=7.3.0" />
+    <link rel="stylesheet" href="/revisits.css?v=7.3.0" />
+    <link rel="stylesheet" href="/revisit-intents.css?v=7.3.0" />
     <link rel="stylesheet" href="/revisions.css?v=7.2.0-a11y2" />
     <link rel="stylesheet" href="/clues.css?v=7.2.0" />
     <link rel="stylesheet" href="/collection-health.css?v=7.2.0-a11y2" />
     <link rel="stylesheet" href="/media.css" />
-    <link rel="stylesheet" href="/voice.css?v=7.2.0" />
+    <link rel="stylesheet" href="/voice.css?v=7.2.0-align1" />
     <link rel="stylesheet" href="/media-evidence.css" />
     <link rel="stylesheet" href="/media-compare.css" />
     <link rel="stylesheet" href="/media-ocr.css" />
@@ -295,6 +297,16 @@
             </header>
             <p class="revisit-status" id="revisitStatus"></p>
             <div class="revisit-content" id="revisitContent"></div>
+            <details class="revisit-intent-manager" id="revisitIntentManager">
+              <summary>
+                <span><strong>管理回访意愿</strong><small>恢复暂停或延期的展品</small></span>
+                <span aria-hidden="true">＋</span>
+              </summary>
+              <div class="revisit-intent-manager-body">
+                <p class="revisit-intent-manager-status" id="revisitIntentManagerStatus" role="status" aria-live="polite">展开后读取已设置的长期回访意愿。</p>
+                <div class="revisit-intent-manager-list" id="revisitIntentManagerList"></div>
+              </div>
+            </details>
           </section>
 
           <details class="revision-timeline-card" id="revisionTimelineDetails">
@@ -583,7 +595,7 @@
                 <option value="">先选择一场已确认展览</option>
               </select>
             </label>
-            <p class="capsule-candidate-status" id="capsuleCandidateStatus">选择展览后，再决定哪些安全展示图和已确认文字稿可以进入胶囊或分享包。</p>
+            <p class="capsule-candidate-status" id="capsuleCandidateStatus">选择展览后，再决定哪些安全展示图和已确认文字稿可以带入隐私编辑台；带入不等于分享。</p>
             <div class="capsule-candidates" id="capsuleCandidateList"></div>
 
             <section class="capsule-seal-fields" aria-labelledby="capsuleSealTitle">
@@ -610,6 +622,71 @@
                 <button type="button" class="button secondary" id="capsulePrepareExportButton">准备加密离线展览</button>
               </div>
             </section>
+          </form>
+        </details>
+
+        <details class="share-privacy-panel" id="sharePrivacyPanel" hidden>
+          <summary>
+            <span><strong id="sharePrivacyTitle" tabindex="-1">分享隐私编辑台</strong><small>只把逐项确认的副本交给别人</small></span>
+            <span aria-hidden="true">＋</span>
+          </summary>
+          <form class="share-privacy-form" id="sharePrivacyForm">
+            <p class="share-privacy-status" id="sharePrivacyStatus" role="status" aria-live="polite" aria-atomic="true"></p>
+
+            <fieldset class="share-privacy-layer">
+              <legend>第一层 · 无需口令即可看到</legend>
+              <p>公开外壳使用通用默认值并固定立即开启，不会自动复制来源展览标题、胶囊标题或导出时间。</p>
+              <div class="share-privacy-grid">
+                <label for="sharePublicTitle">公开标题
+                  <input id="sharePublicTitle" type="text" maxlength="120" required />
+                </label>
+                <label for="shareFileTitle">下载文件名
+                  <input id="shareFileTitle" type="text" maxlength="80" required aria-describedby="shareFileTitleHint" />
+                  <small id="shareFileTitleHint">页面会安全处理文件名并自动添加 .html。</small>
+                </label>
+                <label class="share-privacy-wide" for="sharePublicNote">公开说明
+                  <textarea id="sharePublicNote" maxlength="240"></textarea>
+                </label>
+              </div>
+              <p class="share-immediate-note"><strong>开启状态：</strong>立即可打开 · 固定哨兵时间，不使用近似导出时间</p>
+            </fieldset>
+
+            <fieldset class="share-privacy-layer">
+              <legend>第二层 · 输入口令后才能看到</legend>
+              <p>叙事字段是本次分享副本，可以修改且不会回写来源展览；章节、展品和证据仍需逐项选择。</p>
+              <div class="share-privacy-grid">
+                <label for="shareAudience">给谁看（加密内）
+                  <input id="shareAudience" type="text" maxlength="120" required placeholder="例如：大学室友" />
+                </label>
+                <label for="sharePurpose">为什么分享（加密内）
+                  <input id="sharePurpose" type="text" maxlength="240" required placeholder="例如：一起核对毕业旅行的记忆" />
+                </label>
+                <label for="shareExhibitTitle">加密展览标题
+                  <input id="shareExhibitTitle" type="text" maxlength="120" required />
+                </label>
+                <label for="shareExhibitTheme">加密展览主题
+                  <input id="shareExhibitTheme" type="text" maxlength="120" />
+                </label>
+                <label class="share-privacy-wide" for="shareExhibitOpening">加密展览开场
+                  <textarea id="shareExhibitOpening" maxlength="1200"></textarea>
+                </label>
+              </div>
+              <div class="share-privacy-content" id="sharePrivacyContent" tabindex="-1"></div>
+            </fieldset>
+
+            <section class="share-privacy-layer" aria-labelledby="shareReceiptTitle">
+              <h4 id="shareReceiptTitle">第三层 · 最后核对</h4>
+              <div class="share-receipt-preview" id="shareReceiptPreview"></div>
+            </section>
+
+            <label class="share-privacy-acknowledge" for="sharePrivacyAcknowledge">
+              <input id="sharePrivacyAcknowledge" type="checkbox" />
+              <span>我已逐项核对公开外壳、解密后内容与固定排除边界。</span>
+            </label>
+            <div class="share-privacy-actions">
+              <button type="submit" class="button primary" id="sharePrivacyConfirm">确认内容并设置口令</button>
+              <button type="button" class="button text-button" id="sharePrivacyCancel">放弃本次分享并清空草稿</button>
+            </div>
           </form>
         </details>
 
@@ -643,7 +720,7 @@
 
     <footer class="site-footer">
       <span>时屿 · 让记忆可整理，也让 AI 的依据可回看。</span>
-      <span id="footerVersion">v7.2.0</span>
+      <span id="footerVersion">v7.3.0</span>
     </footer>
 
     <script src="/assets/portability.js"></script>
@@ -655,13 +732,15 @@
     <script src="/assets/media-ocr.js"></script>
     <script src="/assets/media-lab.js"></script>
     <script src="/assets/exhibitions.js?v=7.2.0"></script>
-    <script src="/assets/capsule-crypto.js?v=7.2.0"></script>
-    <script src="/assets/capsules.js?v=7.2.0"></script>
-    <script src="/assets/revisits.js?v=7.2.0"></script>
+    <script src="/assets/capsule-crypto.js?v=7.3.0"></script>
+    <script src="/assets/share-privacy.js?v=7.3.0"></script>
+    <script src="/assets/capsules.js?v=7.3.0"></script>
+    <script src="/assets/revisit-intents.js?v=7.3.0"></script>
+    <script src="/assets/revisits.js?v=7.3.0"></script>
     <script src="/assets/revisions.js?v=7.2.0-a11y2"></script>
     <script src="/assets/clues.js?v=7.2.0"></script>
     <script src="/assets/collection-health.js?v=7.2.0-a11y2"></script>
-    <script src="/assets/pwa.js?v=7.2.0"></script>
-    <script src="/assets/app.js?v=7.2.0"></script>
+    <script src="/assets/pwa.js?v=7.3.0"></script>
+    <script src="/assets/app.js?v=7.3.0"></script>
   </body>
 </html>

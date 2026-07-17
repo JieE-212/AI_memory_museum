@@ -39,6 +39,11 @@
     const sessionHidden = new Set();
     const requests = new Map();
     const listeners = [];
+    const intentController = global.TimeIsleRevisitIntents?.createController({
+      document: documentRef,
+      fetch: fetchImpl,
+      demo
+    }) || null;
 
     configureDom();
     bindEvents();
@@ -63,18 +68,24 @@
       listeners.push({ target, type, handler });
     }
 
-    async function load(kind) {
+    async function load(kind, options = {}) {
       if (destroyed) return null;
       const explicitKind = normalizeKind(kind);
-      if (!explicitKind && loaded && !busyLoad) return current;
-      const candidates = explicitKind ? [explicitKind] : KINDS;
+      if (explicitKind) activeKind = explicitKind;
+      loaded = true;
+      if (options.userInitiated !== true) {
+        current = null;
+        busyLoad = false;
+        renderModes();
+        renderInitial();
+        return null;
+      }
+      const candidates = [activeKind];
       const generation = ++loadGeneration;
       const run = session;
       busyLoad = true;
-      loaded = true;
-      if (explicitKind) activeKind = explicitKind;
       renderModes();
-      renderLoading(explicitKind ? `正在寻找“${KIND_LABELS[explicitKind]}”…` : "正在挑选今天最值得重逢的一件展品…");
+      renderLoading(`正在按“${KIND_LABELS[activeKind]}”读取一件符合条件的展品…`);
 
       try {
         for (const candidate of candidates) {
@@ -120,7 +131,7 @@
         const selected = button.dataset.revisitKind === activeKind;
         button.classList.toggle("is-active", selected);
         button.setAttribute("aria-pressed", String(selected));
-        button.disabled = busyAction;
+        button.disabled = busyAction || busyLoad;
       });
     }
 
@@ -130,8 +141,16 @@
     }
 
     function renderInitial() {
-      setStatus("进入回顾页后再从本地馆藏挑选，不影响其他页面加载。");
-      elements.content.innerHTML = '<div class="revisit-placeholder"><span aria-hidden="true">◇</span><p>今天只带回一件记忆，给它留一点安静的位置。</p></div>';
+      setStatus("尚未读取具体记忆。先选择一种方式，再由你决定是否开始。");
+      elements.content.innerHTML = `
+        <div class="revisit-placeholder revisit-intent-start">
+          <span aria-hidden="true">◇</span>
+          <strong>今天想怎样重逢？</strong>
+          <p>时屿只使用上方已选方式和可核对的本地字段；不开始也不会读取具体展品。</p>
+          <button type="button" class="button primary" data-revisit-start>按“${escapeHtml(KIND_LABELS[activeKind])}”找一件</button>
+        </div>`;
+      elements.content.setAttribute("aria-busy", "false");
+      renderAccess();
     }
 
     function renderLoading(text) {
@@ -160,12 +179,14 @@
           <div class="revisit-copy">
             <div class="revisit-kicker"><span>${escapeHtml(current.label)}</span>${context ? `<span>${escapeHtml(context)}</span>` : ""}</div>
             <h3 tabindex="-1" data-revisit-title>${escapeHtml(memory.title || "一件没有标题的展品")}</h3>
-            <p class="revisit-reason">${escapeHtml(current.reason || "今天适合再看它一眼。")}</p>
+            <p class="revisit-reason"><span>选择依据</span>${escapeHtml(current.reason || "按你刚才选择的方式，从符合条件的馆藏中带回这一件。")}</p>
             <p class="revisit-excerpt">${escapeHtml(excerpt)}</p>
             <div class="revisit-actions">
               <button type="button" class="button primary" data-revisit-open>打开这件展品</button>
-              <button type="button" class="button text-button" data-revisit-dismiss>今天先略过</button>
+              <button type="button" class="button secondary" data-revisit-next>换一件（仅本次）</button>
+              <button type="button" class="button text-button" data-revisit-dismiss>今天不再出现</button>
             </div>
+            ${intentController?.renderPanel(memory, current.intent) || ""}
           </div>
         </article>`;
       elements.content.setAttribute("aria-busy", "false");
@@ -192,23 +213,30 @@
         button.disabled = busyAction;
       });
       elements.content.querySelectorAll("button").forEach((button) => {
-        button.disabled = busyAction || busyLoad;
+        button.disabled = button.matches("[data-intent-demo-disabled]") || busyAction || busyLoad;
       });
     }
 
     function handleModeClick(event) {
       const button = event.target.closest("[data-revisit-kind]");
-      if (!button || busyAction) return;
+      if (!button || busyAction || busyLoad) return;
       const kind = normalizeKind(button.dataset.revisitKind);
       if (!kind) return;
       activeKind = kind;
+      current = null;
       renderModes();
-      load(kind);
+      renderInitial();
     }
 
     function handleContentClick(event) {
+      if (event.target.closest("[data-revisit-start]")) {
+        load(activeKind, { userInitiated: true }).then((result) => {
+          if (result) elements.content.querySelector("[data-revisit-title]")?.focus({ preventScroll: true });
+        });
+        return;
+      }
       if (event.target.closest("[data-revisit-retry]")) {
-        load(activeKind).then((result) => {
+        load(activeKind, { userInitiated: true }).then((result) => {
           if (result) elements.content.querySelector("[data-revisit-title]")?.focus({ preventScroll: true });
         });
         return;
@@ -217,20 +245,39 @@
         openCurrent();
         return;
       }
+      if (event.target.closest("[data-revisit-next]")) {
+        nextCurrent();
+        return;
+      }
       if (event.target.closest("[data-revisit-dismiss]")) dismissCurrent();
     }
 
     async function openCurrent() {
       if (!current || busyAction) return;
       const revisit = current;
-      hideCurrent(revisit, "正在打开展品并更新回访时间…");
+      busyAction = true;
+      setStatus("正在打开展品；成功后才会记录本次回访。");
+      renderAccess();
       try {
-        const result = options.onOpenMemory?.(revisit.memory.id);
-        Promise.resolve(result).catch(() => {});
-      } catch {
-        // The revisit history remains independent from the detail dialog.
+        const opened = await Promise.resolve(options.onOpenMemory?.(revisit.memory.id));
+        if (opened === false) throw new Error("展品详情没有成功打开。");
+      } catch (error) {
+        busyAction = false;
+        setStatus(`没有记录本次回访：${message(error)}`, true);
+        renderAccess();
+        return;
       }
+      hideCurrent(revisit, "展品已打开，正在记录本次回访…");
       await recordAction(revisit, "viewed");
+    }
+
+    async function nextCurrent() {
+      if (!current || busyAction) return;
+      const revisit = current;
+      hideCurrent(revisit, "这件只在当前会话略过，正在按同一方式找下一件…");
+      busyAction = false;
+      const next = await load(revisit.kind, { userInitiated: true });
+      if (next) elements.content.querySelector("[data-revisit-title]")?.focus({ preventScroll: true });
     }
 
     async function dismissCurrent() {
@@ -269,7 +316,7 @@
         renderModes();
       }
 
-      const next = await load(kind);
+      const next = await load(kind, { userInitiated: true });
       if (!isCurrentSession(run)) return;
       if (writeError) setStatus(`当前记忆已在本次会话中略过，但回访记录未能写入：${writeError}`, true);
       if (focusNext && next) elements.content.querySelector("[data-revisit-title]")?.focus({ preventScroll: true });
@@ -298,6 +345,7 @@
       current = null;
       busyLoad = false;
       busyAction = false;
+      intentController?.invalidate();
       renderModes();
       renderInitial();
     }
@@ -306,6 +354,7 @@
       const next = Boolean(value);
       if (next === demo) return;
       demo = next;
+      intentController?.setDemo(next);
       sessionHidden.clear();
       const reload = loaded;
       invalidate();
@@ -359,6 +408,7 @@
       if (destroyed) return;
       destroyed = true;
       startSession();
+      intentController?.destroy();
       listeners.forEach(({ target, type, handler }) => target.removeEventListener(type, handler));
       listeners.length = 0;
     }
@@ -380,7 +430,8 @@
       kind,
       label: String(value.label || KIND_LABELS[kind]),
       reason: String(value.reason || ""),
-      memory: value.memory
+      memory: value.memory,
+      intent: value.intent || null
     };
   }
 

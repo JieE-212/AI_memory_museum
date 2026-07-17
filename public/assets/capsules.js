@@ -5,6 +5,7 @@
   const MAX_PLAINTEXT_BYTES = 32 * 1024 * 1024;
   const MIN_PASSPHRASE = 12;
   const ID_PATTERN = /^[a-zA-Z0-9_-]{1,120}$/u;
+  const defaultSharePrivacy = global.TimeIsleSharePrivacy;
   const DEFAULT_IDS = Object.freeze({
     studioButton: "capsuleStudioButton",
     dialog: "capsuleDialog",
@@ -35,8 +36,9 @@
     const documentRef = options.document || global.document;
     const fetchImpl = options.fetch || global.fetch?.bind(global);
     const cryptoModule = options.cryptoModule || global.TimeIsleCapsuleCrypto;
+    const privacyModule = options.privacyModule || defaultSharePrivacy;
     const elements = resolveElements(documentRef, options.ids || DEFAULT_IDS);
-    if (!documentRef || typeof fetchImpl !== "function" || !elements || !cryptoModule) return null;
+    if (!documentRef || typeof fetchImpl !== "function" || !elements || !cryptoModule || !privacyModule) return null;
 
     let demo = Boolean(options.demo);
     let destroyed = false;
@@ -50,8 +52,16 @@
     let preparedMaterial = null;
     let readerReturnTarget = null;
     let materialRead = null;
+    const downloadUrls = new Set();
     const requests = new Map();
     const listeners = [];
+    const sharePrivacy = privacyModule.createController({
+      document: documentRef,
+      onConfirm: acceptReviewedShare,
+      onDirty: invalidateReviewedShare,
+      onCancel: cancelReviewedShare
+    });
+    if (!sharePrivacy) return null;
 
     initializeFields();
     bindEvents();
@@ -227,9 +237,9 @@
             confirm: true
           })
         }, run);
-        preparedMaterial = await hydrateMaterial(response?.material || response, run);
-        showExportPanel();
-        setStatus("安全素材已经读取完成；现在设置口令不会再发起网络请求。", false, true);
+        const hydrated = await hydrateMaterial(response?.material || response, run);
+        beginShareReview(hydrated, elements.prepareExportButton);
+        setStatus("安全素材已经读取完成；请在隐私编辑台逐项核对。", false, true);
       } catch (error) {
         if (!isExpectedCancellation(error) && isCurrent(run)) {
           clearPreparedExport();
@@ -240,16 +250,16 @@
       }
     }
 
-    async function prepareOpenedCapsuleExport(capsuleId) {
+    async function prepareOpenedCapsuleExport(capsuleId, trigger) {
       if (destroyed || busy || !openedMaterial || openedMaterial.capsuleId !== capsuleId) return;
       const run = session;
       clearPassphrases();
       setBusy(true);
       setStatus("正在读取胶囊中已封存的安全展示图；此阶段不会读取口令…");
       try {
-        preparedMaterial = await hydrateMaterial(openedMaterial.material, run);
-        showExportPanel();
-        setStatus("胶囊素材已经读取完成；现在设置口令不会再发起网络请求。", false, true);
+        const hydrated = await hydrateMaterial(openedMaterial.material, run);
+        beginShareReview(hydrated, trigger);
+        setStatus("胶囊素材已经读取完成；请在隐私编辑台重新确认分享范围。", false, true);
       } catch (error) {
         if (!isExpectedCancellation(error) && isCurrent(run)) {
           clearPreparedExport();
@@ -265,7 +275,7 @@
       const controller = new AbortController();
       const token = Symbol("capsule-material");
       materialRead = { controller, token };
-      const material = normalizeMaterial(value);
+      const material = normalizeMaterial(value, privacyModule);
       const media = material.media;
       if (media.length > MAX_IMAGES) throw new Error(`一次最多导出 ${MAX_IMAGES} 张安全展示图。`);
       let totalBytes = utf8Bytes(JSON.stringify(material.snapshot));
@@ -298,10 +308,34 @@
         });
       }
       assertCurrentMaterialRead(run, token);
-      const payload = assembleOfflinePayload(material.snapshot, packedMedia);
-      const result = { payload, shell: material.shell, fileTitle: material.shell.title || material.snapshot.title || "时屿离线展览" };
+      const payload = privacyModule.assembleLegacyPayload(material.snapshot, packedMedia);
+      const result = { payload };
       if (materialRead?.token === token) materialRead = null;
       return result;
+    }
+
+    function beginShareReview(hydrated, trigger) {
+      invalidateReviewedShare();
+      elements.createPanel.hidden = true;
+      sharePrivacy.begin(hydrated, trigger);
+    }
+
+    function acceptReviewedShare(result) {
+      preparedMaterial = result;
+      showExportPanel();
+      setStatus("分享内容已经确认；从现在起设置口令不会再发送网络请求。", false, true);
+    }
+
+    function invalidateReviewedShare() {
+      preparedMaterial = null;
+      elements.exportPanel.hidden = true;
+      clearPassphrases();
+    }
+
+    function cancelReviewedShare() {
+      invalidateReviewedShare();
+      elements.createPanel.hidden = Boolean(openedMaterial);
+      setStatus("已放弃本次分享；编辑草稿、素材副本与口令均已清空。", false);
     }
 
     function showExportPanel() {
@@ -311,10 +345,11 @@
 
     async function downloadPreparedExhibit() {
       if (destroyed || busy || !preparedMaterial) return;
+      const prepared = preparedMaterial;
       const run = session;
       const passphrase = String(elements.passphrase.value || "");
       const confirmation = String(elements.passphraseConfirm.value || "");
-      if (passphrase.length < MIN_PASSPHRASE) {
+      if (Array.from(passphrase).length < MIN_PASSPHRASE) {
         setStatus(`口令至少需要 ${MIN_PASSPHRASE} 个字符。`, true);
         elements.passphrase.focus();
         return;
@@ -327,13 +362,16 @@
       setBusy(true);
       setStatus("正在浏览器内加密单文件展览…");
       try {
-        const envelope = await encryptPrepared(preparedMaterial, passphrase);
-        if (!isCurrent(run)) throw staleRequest;
-        const html = createOfflineHtml(envelope);
-        if (!isCurrent(run)) throw staleRequest;
-        triggerDownload(html, `${safeFilename(preparedMaterial.fileTitle)}.html`);
+        const download = await buildPreparedDownload({
+          prepared,
+          passphrase,
+          encrypt: encryptPrepared,
+          createHtml: createOfflineHtml,
+          isCurrent: (candidate) => isCurrent(run) && preparedMaterial === candidate
+        });
+        triggerDownload(download.html, download.filename);
         setStatus("加密离线展览已生成；请通过另一条安全渠道告知收件人口令。", false, true);
-        clearPreparedExport();
+        clearPreparedExport(true);
       } catch (error) {
         if (!isExpectedCancellation(error) && isCurrent(run)) setStatus(`生成失败：${message(error)}`, true);
       } finally {
@@ -346,13 +384,13 @@
 
     async function encryptPrepared(prepared, passphrase) {
       if (typeof cryptoModule.encryptPayload === "function") {
-        return cryptoModule.encryptPayload(prepared.payload, passphrase, toCryptoShell(prepared.shell, prepared.fileTitle));
+        return cryptoModule.encryptPayload(prepared.payload, passphrase, toCryptoShell(prepared.shell, privacyModule));
       }
       if (typeof cryptoModule.encryptMaterial === "function") {
-        return cryptoModule.encryptMaterial(prepared.payload, { passphrase, shell: toCryptoShell(prepared.shell, prepared.fileTitle) });
+        return cryptoModule.encryptMaterial(prepared.payload, { passphrase, shell: toCryptoShell(prepared.shell, privacyModule) });
       }
       if (typeof cryptoModule.encrypt === "function") {
-        return cryptoModule.encrypt(prepared.payload, passphrase, toCryptoShell(prepared.shell, prepared.fileTitle));
+        return cryptoModule.encrypt(prepared.payload, passphrase, toCryptoShell(prepared.shell, privacyModule));
       }
       throw new Error("当前浏览器缺少时屿加密模块。");
     }
@@ -367,6 +405,7 @@
       const blob = new Blob([html], { type: "text/html;charset=utf-8" });
       const urlApi = options.URL || global.URL;
       const url = urlApi.createObjectURL(blob);
+      downloadUrls.add(url);
       const anchor = documentRef.createElement("a");
       anchor.href = url;
       anchor.download = filename;
@@ -374,7 +413,16 @@
       documentRef.body.append(anchor);
       anchor.click();
       anchor.remove();
-      global.setTimeout?.(() => urlApi.revokeObjectURL(url), 1500);
+      global.setTimeout?.(() => revokeDownloadUrl(url), 1500);
+    }
+
+    function revokeDownloadUrl(url) {
+      if (!downloadUrls.delete(url)) return;
+      (options.URL || global.URL).revokeObjectURL(url);
+    }
+
+    function releaseDownloadUrls() {
+      [...downloadUrls].forEach(revokeDownloadUrl);
     }
 
     async function openCapsule(id, trigger) {
@@ -391,7 +439,7 @@
       setStatus("正在开启胶囊…");
       try {
         const payload = await requestJson("capsule-content", `/api/capsules/${encodeURIComponent(capsuleId)}/content`, {}, run);
-        const material = normalizeCapsuleContent(payload, shell);
+        const material = normalizeCapsuleContent(payload, shell, privacyModule);
         openedMaterial = { capsuleId, material };
         renderReader(shell, material, trigger);
         setStatus("胶囊已经到期并打开。日期是仪式门槛；加密分享仍需另设口令。", false, true);
@@ -443,13 +491,14 @@
       }
       if (event.target.closest("[data-capsule-back]")) {
         const returnTarget = readerReturnTarget;
+        clearPreparedExport();
         clearReader();
         const focusTarget = returnTarget?.isConnected ? returnTarget : elements.shelf.querySelector("[data-capsule-open]");
         global.requestAnimationFrame?.(() => focusTarget?.focus({ preventScroll: true }));
         return;
       }
       const prepareButton = event.target.closest("[data-capsule-prepare-export]");
-      if (prepareButton) prepareOpenedCapsuleExport(safeId(prepareButton.dataset.capsulePrepareExport));
+      if (prepareButton) prepareOpenedCapsuleExport(safeId(prepareButton.dataset.capsulePrepareExport), prepareButton);
     }
 
     function renderShelf() {
@@ -582,11 +631,14 @@
       setStatus("已取消本次加密导出；口令输入已清空。", false);
     }
 
-    function clearPreparedExport() {
+    function clearPreparedExport(preserveDownloadUrls = false) {
       cancelMaterialRead();
       preparedMaterial = null;
+      sharePrivacy.clear();
       elements.exportPanel.hidden = true;
+      elements.createPanel.hidden = Boolean(openedMaterial);
       clearPassphrases();
+      if (!preserveDownloadUrls) releaseDownloadUrls();
       renderAccess();
     }
 
@@ -638,6 +690,7 @@
       destroyed = true;
       startSession();
       clearPreparedExport();
+      sharePrivacy.destroy();
       listeners.forEach(({ target, type, handler, listenerOptions }) => target.removeEventListener(type, handler, listenerOptions));
       listeners.length = 0;
       if (elements.dialog.open) elements.dialog.close();
@@ -692,6 +745,18 @@
   }
 
   const staleRequest = Object.freeze({ name: "StaleCapsuleRequest" });
+
+  async function buildPreparedDownload(options = {}) {
+    const prepared = options.prepared;
+    if (!prepared || typeof options.encrypt !== "function" || typeof options.createHtml !== "function" || typeof options.isCurrent !== "function") {
+      throw new TypeError("加密下载任务缺少已确认材料或处理器。");
+    }
+    const envelope = await options.encrypt(prepared, options.passphrase);
+    if (!options.isCurrent(prepared)) throw staleRequest;
+    const html = options.createHtml(envelope);
+    if (!options.isCurrent(prepared)) throw staleRequest;
+    return { html, filename: `${safeFilename(prepared.fileTitle)}.html` };
+  }
 
   function resolveElements(documentRef, ids) {
     if (!documentRef?.getElementById) return null;
@@ -751,20 +816,21 @@
     })).filter((item) => item.assetId);
   }
 
-  function normalizeCapsuleContent(value, shell) {
+  function normalizeCapsuleContent(value, shell, privacyModule = defaultSharePrivacy) {
     const source = value?.content || value?.material || value?.payload || value || {};
     const material = normalizeMaterial({
       ...source,
       shell: value?.capsule || source.shell || shell,
       snapshot: source.snapshot || source.exhibit || source.payload,
       media: source.media || value?.media
-    });
+    }, privacyModule);
     return material;
   }
 
-  function normalizeMaterial(value = {}) {
+  function normalizeMaterial(value = {}, privacyModule = defaultSharePrivacy) {
     const source = value && typeof value === "object" ? value : {};
-    const snapshot = normalizeSnapshot(source.snapshot || source.exhibit || source.payload || {});
+    if (typeof privacyModule?.normalizeSourceSnapshot !== "function") throw new Error("分享隐私模块不可用。");
+    const snapshot = privacyModule.normalizeSourceSnapshot(source.snapshot || source.exhibit || source.payload || {});
     const shellSource = source.shell || {};
     const shell = {
       title: String(shellSource.title || snapshot.title || "时屿离线展览"),
@@ -789,111 +855,11 @@
     return { snapshot, shell, media };
   }
 
-  function normalizeSnapshot(value = {}) {
-    const source = value && typeof value === "object" ? value : {};
-    let itemNumber = 0;
-    return {
-      format: "time-isle.offline-exhibit",
-      version: 1,
-      title: String(source.title || ""),
-      theme: String(source.theme || ""),
-      opening: String(source.opening || ""),
-      sections: (Array.isArray(source.sections) ? source.sections : []).map((section, sectionIndex) => ({
-        key: safeAnonymousKey(section?.key) || `section-${sectionIndex + 1}`,
-        title: String(section?.title || ""),
-        summary: String(section?.summary || ""),
-        items: (Array.isArray(section?.items) ? section.items : []).map((item) => {
-          itemNumber += 1;
-          const hasConfirmedTranscripts = Array.isArray(item?.confirmedTranscripts) || item?.confirmedTranscript !== undefined;
-          const transcriptSource = item?.confirmedTranscripts || (item?.confirmedTranscript ? [item.confirmedTranscript] : item?.transcripts || []);
-          const hasConfirmedQuotes = Array.isArray(item?.confirmedQuotes);
-          const quoteSource = item?.confirmedQuotes || item?.citations || [];
-          return {
-            key: safeAnonymousKey(item?.key) || `item-${itemNumber}`,
-            title: String(item?.title || ""),
-            excerpt: String(item?.excerpt || ""),
-            curatorNote: String(item?.curatorNote || ""),
-            confirmedQuotes: (Array.isArray(quoteSource) ? quoteSource : [])
-              .filter((quote) => hasConfirmedQuotes || quote?.evidenceValid === true)
-              .map((quote) => String(typeof quote === "string" ? quote : quote?.quote || quote?.text || ""))
-              .filter(Boolean),
-            confirmedTranscripts: (Array.isArray(transcriptSource) ? transcriptSource : [])
-              .filter((transcript) => hasConfirmedTranscripts || (typeof transcript === "object" && (transcript?.status === "confirmed" || transcript?.confirmed === true)))
-              .map((transcript) => String(typeof transcript === "string" ? transcript : transcript?.text || ""))
-              .filter(Boolean),
-            mediaKeys: []
-          };
-        })
-      }))
-    };
-  }
-
-  function assembleOfflinePayload(snapshotValue, packedMediaValue) {
-    const copy = JSON.parse(JSON.stringify(normalizeSnapshot(snapshotValue)));
-    const itemKeys = new Set(copy.sections.flatMap((section) => section.items.map((item) => item.key)));
-    const media = (Array.isArray(packedMediaValue) ? packedMediaValue : []).map((item, index) => {
-      const itemKey = safeAnonymousKey(item?.itemKey);
-      const width = positiveInteger(item?.width), height = positiveInteger(item?.height);
-      const byteSize = positiveInteger(item?.byteSize), dataBase64 = String(item?.dataBase64 || "");
-      if (!itemKey || !itemKeys.has(itemKey) || item?.mimeType !== "image/webp" ||
-          !width || !height || !byteSize || !dataBase64) {
-        throw new Error("离线展览包含无效的安全展示图。");
-      }
-      return {
-        key: `media-${index + 1}`, itemKey,
-        caption: String(item?.caption || ""), alt: String(item?.alt || item?.altText || ""),
-        mimeType: "image/webp", width, height, byteSize, dataBase64
-      };
-    });
-    const keysByItem = new Map();
-    media.forEach((entry) => {
-      const keys = keysByItem.get(entry.itemKey) || [];
-      keys.push(entry.key);
-      keysByItem.set(entry.itemKey, keys);
-    });
-    copy.sections.forEach((section) => section.items.forEach((item) => {
-      item.mediaKeys = keysByItem.get(item.key) || [];
-    }));
-    return { ...copy, media };
-  }
-
-  function toCryptoShell(shell, fallbackTitle) {
-    const title = String(shell?.title || fallbackTitle || "时屿离线展览").trim().slice(0, 120) || "时屿离线展览";
-    const note = String(shell?.shellMessage || shell?.note || "这是一份来自时屿的口令加密离线展览。").trim().slice(0, 240);
-    let opensAt = String(shell?.opensAt || "");
-    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(opensAt)) {
-      opensAt = shell?.opensOn
-        ? zonedMidnightIso(shell.opensOn, shell.timezone || resolvedTimezone())
-        : new Date(Date.now() - 1000).toISOString();
-    }
+  function toCryptoShell(shell, privacyModule = defaultSharePrivacy) {
+    const title = truncateCodePoints(String(shell?.title || privacyModule?.DEFAULT_PUBLIC_TITLE || "时屿加密分享").trim(), 120) || "时屿加密分享";
+    const note = truncateCodePoints(String(shell?.note || privacyModule?.DEFAULT_PUBLIC_NOTE || "这是一份口令加密的离线展览。").trim(), 240);
+    const opensAt = privacyModule?.IMMEDIATE_OPEN_SENTINEL || "1970-01-01T00:00:00.000Z";
     return { title, note, opensAt };
-  }
-
-  function zonedMidnightIso(dateText, timezone) {
-    const match = String(dateText || "").match(/^(\d{4})-(\d{2})-(\d{2})$/u);
-    if (!match) return new Date(Date.now() - 1000).toISOString();
-    const desired = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 0, 0, 0);
-    let guess = desired;
-    try {
-      const formatter = new Intl.DateTimeFormat("en-CA", {
-        timeZone: timezone,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hourCycle: "h23"
-      });
-      for (let iteration = 0; iteration < 3; iteration += 1) {
-        const parts = Object.fromEntries(formatter.formatToParts(new Date(guess)).map((part) => [part.type, part.value]));
-        const represented = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute), Number(parts.second));
-        guess += desired - represented;
-      }
-      return new Date(guess).toISOString();
-    } catch {
-      return new Date(desired).toISOString();
-    }
   }
 
   function resolvedTimezone() {
@@ -957,9 +923,12 @@
       .normalize("NFKC")
       .replace(/[<>:"/\\|?*\u0000-\u001f]/gu, "-")
       .replace(/\s+/gu, " ")
-      .trim()
-      .slice(0, 80);
-    return name || "时屿离线展览";
+      .trim();
+    return truncateCodePoints(name, 80) || "时屿离线展览";
+  }
+
+  function truncateCodePoints(value, limit) {
+    return Array.from(String(value ?? "")).slice(0, limit).join("");
   }
 
   function formatDate(value) {
@@ -986,10 +955,12 @@
   }
 
   global.TimeIsleCapsules = Object.freeze({
-    assembleOfflinePayload,
+    assembleOfflinePayload: defaultSharePrivacy?.assembleLegacyPayload,
+    buildPreparedDownload,
     createController,
     normalizeCapsule,
     normalizeMaterial,
-    normalizeSnapshot
+    normalizeSnapshot: defaultSharePrivacy?.normalizeSourceSnapshot,
+    toCryptoShell
   });
 })(typeof window !== "undefined" ? window : globalThis);

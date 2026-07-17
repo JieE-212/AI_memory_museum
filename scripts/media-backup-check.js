@@ -16,6 +16,7 @@ const {
   FEATURE_ARCHIVE_SECTIONS
 } = require("../lib/media-backup");
 const { buildClueBackup } = require("../lib/clue-backup");
+const { REVISIT_INTENT_REDACTED_NOTE } = require("../lib/revisit-intent-database");
 const { MEDIA_ARCHIVE_LIMITS } = require("../lib/media-policy");
 
 let assertions = 0;
@@ -359,9 +360,10 @@ async function checkFeatureSections(temporaryRoot, fixture, sourceCollection) {
       { name: "revisits", path: ARCHIVE_PATHS.revisits, sinceSchemaVersion: 6 },
       { name: "entities", path: ARCHIVE_PATHS.entities, sinceSchemaVersion: 7 },
       { name: "capsules", path: ARCHIVE_PATHS.capsules, sinceSchemaVersion: 9 },
-      { name: "revisions", path: ARCHIVE_PATHS.revisions, sinceSchemaVersion: 10 }
+      { name: "revisions", path: ARCHIVE_PATHS.revisions, sinceSchemaVersion: 10 },
+      { name: "revisit-intents", path: ARCHIVE_PATHS.revisitIntents, sinceSchemaVersion: 11 }
     ],
-    "功能 section 注册表应按 schema 顺序声明展览、回访、实体线索、时间胶囊与记忆年轮"
+    "功能 section 注册表应按 schema 顺序声明展览、回访、实体线索、时间胶囊、记忆年轮与回访意愿"
   );
 
   const exhibitions = { mode: "full", schemaVersion: 5, exhibitions: [] };
@@ -743,6 +745,189 @@ async function checkFeatureSections(temporaryRoot, fixture, sourceCollection) {
     }),
     "脱敏胶囊摘要不得夹带完整胶囊数组"
   );
+
+  const revisions = { mode: "full", schemaVersion: 10, revisions: [] };
+  const revisitIntents = {
+    mode: "full",
+    schemaVersion: 11,
+    intents: [{
+      memoryId: "memory-one",
+      intent: "later",
+      notBeforeLocalDate: "2026-12-24",
+      notBeforeTimezone: "Asia/Shanghai",
+      createdAt: "2026-07-18T09:00:00.000Z",
+      updatedAt: "2026-07-18T09:30:00.000Z"
+    }]
+  };
+  const schema10Collection = {
+    ...schema9Collection,
+    version: "7.2.0",
+    schemaVersion: 10,
+    revisions
+  };
+  throwsCode(
+    "MEDIA_ARCHIVE_FEATURE_SCHEMA_INVALID",
+    () => buildMediaArchive({
+      collection: { ...schema10Collection, revisitIntents },
+      store: voiceAwareStore,
+      storage: fixture.storage,
+      voiceStorage: emptyVoiceStorage,
+      appVersion: "7.2.0",
+      schemaVersion: 10
+    }),
+    "schema 10 不得越级声明回访意愿 section"
+  );
+  throwsCode(
+    "MEDIA_ARCHIVE_REQUIRED_SECTION_MISSING",
+    () => buildMediaArchive({
+      collection: { ...schema10Collection, version: "7.3.0", schemaVersion: 11 },
+      store: voiceAwareStore,
+      storage: fixture.storage,
+      voiceStorage: emptyVoiceStorage,
+      appVersion: "7.3.0",
+      schemaVersion: 11
+    }),
+    "schema 11 full 即使没有回访意愿也必须显式携带 section"
+  );
+  throwsCode(
+    "MEDIA_ARCHIVE_COLLECTION_FIELDS_INVALID",
+    () => buildMediaArchive({
+      collection: {
+        ...schema10Collection,
+        version: "7.3.0",
+        schemaVersion: 11,
+        revisitIntents,
+        shareDrafts: [{ rawContent: "绝不能搭便车的分享草稿" }]
+      },
+      store: voiceAwareStore,
+      storage: fixture.storage,
+      voiceStorage: emptyVoiceStorage,
+      appVersion: "7.3.0",
+      schemaVersion: 11
+    }),
+    "schema 11 完整归档根对象拒绝 shareDrafts 与未知字段"
+  );
+
+  const schema11Collection = {
+    ...schema10Collection,
+    version: "7.3.0",
+    schemaVersion: 11,
+    revisitIntents
+  };
+  const schema11Archive = buildMediaArchive({
+    collection: schema11Collection,
+    store: voiceAwareStore,
+    storage: fixture.storage,
+    voiceStorage: emptyVoiceStorage,
+    appVersion: "7.3.0",
+    schemaVersion: 11
+  });
+  const schema11Entries = await readArchiveEntries(
+    schema11Archive,
+    path.join(temporaryRoot, "unpack-schema11-revisit-intents")
+  );
+  const schema11Manifest = parseJson(schema11Entries.get(ARCHIVE_PATHS.manifest));
+  deepEqual(
+    schema11Manifest.sections.find((section) => section.name === "revisit-intents"),
+    { name: "revisit-intents", path: "revisits/intents.json", count: 1, required: true, version: 1 },
+    "schema 11 full 以独立 required section 声明回访意愿"
+  );
+  deepEqual(parseJson(schema11Entries.get(ARCHIVE_PATHS.revisitIntents)), revisitIntents, "回访意愿 section 无损保存完整合同");
+  check(!Object.hasOwn(parseJson(schema11Entries.get(ARCHIVE_PATHS.collection)), "revisitIntents"), "回访意愿不得在 collection 与独立 section 重复");
+  const schema11Prepared = await prepareMediaArchive(schema11Archive, {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-schema11-revisit-intents"),
+    validateVoiceBackup: validateEmptyVoices,
+    supportedSchemaVersion: 11
+  });
+  deepEqual(schema11Prepared.revisitIntents, revisitIntents, "prepare 顶层暴露回访意愿完整备份");
+  deepEqual(schema11Prepared.collection.revisitIntents, revisitIntents, "prepare 把回访意愿安全重挂回 collection");
+
+  const malformedIntentEntries = cloneEntries(schema11Entries);
+  const malformedIntentPayload = parseJson(malformedIntentEntries.get(ARCHIVE_PATHS.revisitIntents));
+  malformedIntentPayload.intents[0].notBeforeLocalDate = "2026-02-30";
+  replaceJsonAndRefreshManifest(malformedIntentEntries, ARCHIVE_PATHS.revisitIntents, malformedIntentPayload);
+  await rejectsCode(
+    "MEDIA_ARCHIVE_FEATURE_INVALID",
+    () => prepareMediaArchive(repack(malformedIntentEntries), {
+      stagingRoot: path.join(temporaryRoot, "reject-malformed-schema11-revisit-intent"),
+      validateVoiceBackup: validateEmptyVoices,
+      supportedSchemaVersion: 11
+    }),
+    "只读 prepare 必须在标记可恢复前拒绝哈希自洽但日期畸形的回访意愿"
+  );
+
+  const missingRevisitIntents = cloneEntries(schema11Entries);
+  const missingIntentManifest = parseJson(missingRevisitIntents.get(ARCHIVE_PATHS.manifest));
+  missingIntentManifest.sections = missingIntentManifest.sections.filter((section) => section.name !== "revisit-intents");
+  missingIntentManifest.entries = missingIntentManifest.entries.filter((entry) => entry.path !== ARCHIVE_PATHS.revisitIntents);
+  missingIntentManifest.entryCount = missingIntentManifest.entries.length;
+  missingRevisitIntents.delete(ARCHIVE_PATHS.revisitIntents);
+  missingRevisitIntents.set(ARCHIVE_PATHS.manifest, jsonBuffer(missingIntentManifest));
+  await rejectsCode(
+    "MEDIA_ARCHIVE_REQUIRED_SECTION_MISSING",
+    () => prepareMediaArchive(repack(missingRevisitIntents), {
+      stagingRoot: path.join(temporaryRoot, "reject-missing-schema11-revisit-intents"),
+      validateVoiceBackup: validateEmptyVoices,
+      supportedSchemaVersion: 11
+    }),
+    "schema 11 full reader 不得把缺失回访意愿 section 静默降级为空"
+  );
+
+  const unknownRoot = cloneEntries(schema11Entries);
+  const unknownCollection = parseJson(unknownRoot.get(ARCHIVE_PATHS.collection));
+  unknownCollection.shareDrafts = [{ secret: "share-draft-canary" }];
+  replaceJsonAndRefreshManifest(unknownRoot, ARCHIVE_PATHS.collection, unknownCollection);
+  await rejectsCode(
+    "MEDIA_ARCHIVE_COLLECTION_FIELDS_INVALID",
+    () => prepareMediaArchive(repack(unknownRoot), {
+      stagingRoot: path.join(temporaryRoot, "reject-schema11-unknown-root"),
+      validateVoiceBackup: validateEmptyVoices,
+      supportedSchemaVersion: 11
+    }),
+    "即使重算 manifest，collection 根对象也不能夹带分享草稿"
+  );
+
+  const redactedRevisitIntents = {
+    mode: "redacted-summary",
+    intentCount: 1,
+    note: REVISIT_INTENT_REDACTED_NOTE
+  };
+  const redactedIntentArchive = buildMediaArchive({
+    collection: {
+      ...sourceCollection,
+      version: "7.3.0",
+      schemaVersion: 11,
+      mode: "redacted",
+      memories: sourceCollection.memories.map((memory) => ({
+        ...memory,
+        rawContent: "[已隐藏原始记忆]",
+        media: [],
+        attachments: [],
+        coverImage: ""
+      })),
+      revisitIntents: redactedRevisitIntents
+    },
+    appVersion: "7.3.0",
+    schemaVersion: 11
+  });
+  const redactedIntentEntries = await readArchiveEntries(
+    redactedIntentArchive,
+    path.join(temporaryRoot, "unpack-redacted-schema11-revisit-intents")
+  );
+  const redactedIntentText = redactedIntentEntries.get(ARCHIVE_PATHS.revisitIntents).toString("utf8");
+  deepEqual(
+    Object.keys(JSON.parse(redactedIntentText)).sort(),
+    ["intentCount", "mode", "note"],
+    "脱敏回访意愿只保留总数、模式与固定说明"
+  );
+  for (const canary of ["memory-one", "later", "2026-12-24", "Asia/Shanghai", "2026-07-18T09:30:00.000Z"]) {
+    check(!redactedIntentText.includes(canary), `脱敏回访意愿物理排除 ${canary}`);
+  }
+  const redactedIntentPrepared = await prepareMediaArchive(redactedIntentArchive, {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-redacted-schema11-revisit-intents"),
+    supportedSchemaVersion: 11
+  });
+  deepEqual(redactedIntentPrepared.revisitIntents, redactedRevisitIntents, "脱敏回访意愿摘要可安全回环");
 
   const redactedExhibitions = {
     mode: "redacted-summary",

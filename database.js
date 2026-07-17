@@ -8,6 +8,7 @@ const { initializeClueDatabase } = require("./lib/clue-database");
 const { initializeVoiceDatabase } = require("./lib/voice-database");
 const { initializeCapsuleDatabase } = require("./lib/capsule-database");
 const { initializeRevisionDatabase } = require("./lib/revision-database");
+const { initializeRevisitIntentDatabase } = require("./lib/revisit-intent-database");
 const { createDatabaseHealthReader } = require("./lib/database-health");
 
 function createMemoryStore({ dbPath, halls, schemaVersion }) {
@@ -268,6 +269,14 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
         schemaVersion,
         now: () => new Date().toISOString(),
         createId
+      })
+    : null;
+  const revisitIntentDatabase = Number(schemaVersion) >= 11
+    ? initializeRevisitIntentDatabase({
+        db,
+        withTransaction,
+        schemaVersion,
+        now: () => new Date().toISOString()
       })
     : null;
   const databaseHealth = createDatabaseHealthReader({ db, schemaVersion });
@@ -649,6 +658,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
       const voiceCleanup = voiceDatabase.clearVoiceData();
       const clueCleanup = clueDatabase.clearClues();
       const revisitStatesDeleted = revisitDatabase.clearRevisitStates().revisitStatesDeleted;
+      const revisitIntentsDeleted = revisitIntentDatabase?.clearRevisitIntents().revisitIntentsDeleted || 0;
       const exhibitionsDeleted = exhibitionDatabase.clearExhibitions().exhibitionsDeleted;
       db.exec(`
         DELETE FROM media_observations;
@@ -668,7 +678,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
         DELETE FROM agent_runs;
         DELETE FROM memories;
       `);
-      return { memoriesDeleted, agentRunsDeleted, memoryEventsDeleted, exhibitionsDeleted, revisitStatesDeleted, ...capsuleCleanup, ...clueCleanup, ...voiceCleanup };
+      return { memoriesDeleted, agentRunsDeleted, memoryEventsDeleted, exhibitionsDeleted, revisitStatesDeleted, revisitIntentsDeleted, ...capsuleCleanup, ...clueCleanup, ...voiceCleanup };
     });
   }
 
@@ -1113,6 +1123,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
       agentRuns: Number(statements.countAgentRuns.get()?.count) || 0,
       exhibitions: exhibitionDatabase.getExhibitionStats().exhibitions,
       revisitStates: revisitDatabase.getRevisitStats().states,
+      revisitIntents: revisitIntentDatabase?.getRevisitIntentStats().intents || 0,
       entities: clueStats.entities,
       entityAliases: clueStats.aliases,
       searchDocuments: clueStats.searchDocuments,
@@ -1611,6 +1622,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     ...voiceDatabase,
     ...capsuleDatabase,
     ...(revisionDatabase || {}),
+    ...(revisitIntentDatabase || {}),
     listRecentMemoryRevisions,
     searchClues,
     searchMemories,
