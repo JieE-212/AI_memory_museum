@@ -1,12 +1,12 @@
 # 时屿（TIME ISLE）V7.0.0 Vercel 面试 Demo 发布说明
 
-线上 Demo（当前仍是已发布的 V4.0.0）：
+线上 Demo（已发布 V7.0.0）：
 
 ```text
 https://ai-memory-museum-demo.vercel.app
 ```
 
-本文记录 V7.0.0（schema 9）的发布配置与验收口径。当前工作区中的 V7 已完成本地实现和检查，现为尚待线上部署与部署后验收的发布候选；线上域名在 V7 部署成功前仍保持 V4，实际版本始终以 `/api/health` 返回值为准。V7 部署成功后，`/api/health` 应核验 `version: 7.0.0`、`schemaVersion: 9`、`mode: interview-demo`、`storage: ephemeral-sqlite` 和 `aiMode: mock-fallback`。
+本文记录 V7.0.0（schema 9）的发布配置与验收口径。V7 已于 2026-07-17 完成本地检查、双远端推送和 Vercel 部署后验收；线上 `/api/health` 已核验 `version: 7.0.0`、`schemaVersion: 9`、`mode: interview-demo`、`storage: ephemeral-sqlite` 和 `aiMode: mock-fallback`。实际部署状态始终以该接口返回值为准。
 
 V7 Demo 仍是公开、临时、只用于面试演示的环境：它不接收私人图片或声音，不保存展览、回访、实体变更或时间胶囊，也不允许 `.time-isle` 归档恢复。完整媒体保存、胶囊封存和归档恢复应在具有持久磁盘的本地 Node.js 环境体验；浏览器端加密流程可以使用公开示例预览，但不要输入私人内容。
 
@@ -143,7 +143,7 @@ https://ai-memory-museum-demo.vercel.app/api/demo/status
 https://ai-memory-museum-demo.vercel.app/api/privacy
 ```
 
-V7 部署完成后，`/api/version` 应返回 `"version": "7.0.0"`，健康接口应返回 `"schemaVersion": 9`。`/api/demo/status` 应包含：
+当前 V7 部署的 `/api/version` 已返回 `"version": "7.0.0"`，健康接口已返回 `"schemaVersion": 9`。后续重新部署时，`/api/demo/status` 还应包含：
 
 ```json
 {

@@ -4,13 +4,13 @@
 
 把散落的日记、聊天片段、照片与声音整理成一座可检索、可回顾的私人记忆岛屿；再把用户确认过的展览封存到未来，或生成口令加密、断网可读的单文件。
 
-- Live Demo（V4.0.0）: https://ai-memory-museum-demo.vercel.app
+- Live Demo（V7.0.0）: https://ai-memory-museum-demo.vercel.app
 - GitHub: https://github.com/JieE-212/AI_memory_museum
 - Demo 状态: https://ai-memory-museum-demo.vercel.app/api/demo/status
 
-> 版本状态（2026-07-17）：当前工作区为 V7.0.0（schema 9）发布候选，V5–V7 的实现、检查、迁移副本核对与文档收口已经完成；V7 尚待完成线上部署与部署后验收。上方公开 Demo 仍是已发布的 V4.0.0（schema 4），请以其 `/api/health` 返回值为准。
+> 版本状态（2026-07-17）：V7.0.0（schema 9）已经完成实现、完整检查、迁移副本核对、本地验收、双远端推送与 Vercel 部署后验收；公开 Demo 的 `/api/version` 与 `/api/health` 已确认返回 V7.0.0 / schema 9。
 
-当前线上 V4 公开 Demo 只使用示例数据和临时 SQLite。它禁止私人图片上传、媒体修改、归档恢复、导入、删除与清空；访客新增的文本可能在同一临时实例中被其他访客看到，因此也请勿提交私人信息。Demo 在代码层强制使用本地 Mock，即使环境误配 `AI_API_KEY` 也不会调用外部模型；共享文本、整理运行、时光拼图与补问分别受 SQLite 事务内的固定硬上限保护。
+当前线上 V7 公开 Demo 只使用示例数据和临时 SQLite。它禁止私人图片或声音上传、媒体修改、展览与胶囊持久化、归档恢复、导入、删除与清空；访客新增的文本可能在同一临时实例中被其他访客看到，因此也请勿提交私人信息。Demo 在代码层强制使用本地 Mock，即使环境误配 `AI_API_KEY` 也不会调用外部模型；共享文本、整理运行、时光拼图与补问分别受 SQLite 事务内的固定硬上限保护。
 
 ## 项目解决什么问题
 
