@@ -32,22 +32,64 @@
     async function exportArchive(mode) {
       if (busy) return;
       const run = ++session;
+      const suffix = mode === "redacted" ? "?mode=redacted" : "";
+      const exportUrl = `/api/archive/export${suffix}`;
+      const suggestedName = `time-isle-${mode}-${new Date().toISOString().slice(0, 10)}.time-isle`;
+      let writable = null;
       setBusy(true);
       setStatus(mode === "redacted" ? "正在准备不含照片的脱敏归档…" : "正在校验并打包馆藏与照片…");
       try {
-        const suffix = mode === "redacted" ? "?mode=redacted" : "";
-        const response = await fetchImpl(`/api/archive/export${suffix}`, { headers: { Accept: "application/vnd.time-isle" } });
-        if (!response.ok) throw new Error(await responseError(response));
-        const blob = await response.blob();
+        const savePicker = typeof options.showSaveFilePicker === "function"
+          ? options.showSaveFilePicker
+          : typeof global.showSaveFilePicker === "function"
+            ? global.showSaveFilePicker.bind(global)
+            : null;
+        if (typeof savePicker !== "function") {
+          triggerNativeDownload(exportUrl, suggestedName, documentRef);
+          setStatus("归档已交给浏览器流式下载；完成前请勿关闭下载任务。", false, true);
+          return;
+        }
+        const handle = await savePicker({
+          suggestedName,
+          types: [{
+            description: "时屿完整归档",
+            accept: { "application/vnd.time-isle": [".time-isle"] }
+          }]
+        });
         if (run !== session) return;
-        downloadBlob(blob, archiveFilename(response, mode), documentRef);
+        activeRequest?.abort();
+        activeRequest = new AbortController();
+        writable = await handle.createWritable();
+        const response = await fetchImpl(exportUrl, {
+          headers: { Accept: "application/vnd.time-isle" },
+          signal: activeRequest.signal
+        });
+        if (!response.ok) throw new Error(await responseError(response));
+        if (!response.body || typeof response.body.pipeTo !== "function") {
+          try { await writable?.abort?.(); } catch { /* browser may already have aborted it */ }
+          writable = null;
+          activeRequest.abort();
+          triggerNativeDownload(exportUrl, suggestedName, documentRef);
+          setStatus("当前浏览器不支持直接写入文件，已改用浏览器原生流式下载；完成前请勿关闭下载任务。", false, true);
+          return;
+        }
+        await response.body.pipeTo(writable, { signal: activeRequest.signal });
+        writable = null;
+        if (run !== session) return;
         setStatus(mode === "redacted"
           ? "脱敏 .time-isle 已下载；归档物理上不包含图片文件。"
           : "完整 .time-isle 已下载，包含馆藏、照片、图片线索与时光拼图，请妥善保管。", false, true);
       } catch (error) {
-        if (run === session) setStatus(`导出失败：${message(error)}`, true);
+        try { await writable?.abort?.(); } catch { /* browser may already have aborted it */ }
+        if (run === session) {
+          if (error?.name === "AbortError") setStatus("已取消归档导出。", false, false);
+          else setStatus(`导出失败：${message(error)}`, true);
+        }
       } finally {
-        if (run === session) setBusy(false);
+        if (run === session) {
+          activeRequest = null;
+          setBusy(false);
+        }
       }
     }
 
@@ -150,21 +192,13 @@
     try { return await response.json(); } catch { return {}; }
   }
 
-  function archiveFilename(response, mode) {
-    const disposition = String(response.headers.get("content-disposition") || "");
-    const match = /filename="([^"]+)"/i.exec(disposition);
-    return match?.[1] || `time-isle-${mode}-${new Date().toISOString().slice(0, 10)}.time-isle`;
-  }
-
-  function downloadBlob(blob, filename, documentRef) {
-    const url = global.URL.createObjectURL(blob);
+  function triggerNativeDownload(url, filename, documentRef) {
     const link = documentRef.createElement("a");
     link.href = url;
     link.download = filename;
     documentRef.body.appendChild(link);
     link.click();
     link.remove();
-    global.URL.revokeObjectURL(url);
   }
 
   function message(error) {

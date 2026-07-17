@@ -123,14 +123,8 @@ const sampleMemories = [
 let searchTimer = null;
 let toastTimer = null;
 let mediaController = null, voiceController = null;
-let mediaEvidenceController = null;
-let portabilityController = null;
-let mediaCompareControllers = [];
-let mediaLabController = null;
-let exhibitionsController = null;
-let capsulesController = null;
-let revisitsController = null;
-let cluesController = null;
+let mediaEvidenceController = null, portabilityController = null, mediaCompareControllers = [], mediaLabController = null;
+let exhibitionsController = null, capsulesController = null, revisitsController = null, cluesController = null, revisionsController = null, collectionHealthController = null;
 
 bindEvents();
 initialize();
@@ -165,9 +159,11 @@ async function initialize() {
     capsulesController = window.TimeIsleCapsules?.createController({ demo: demo.interviewDemo }) || null;
     revisitsController = window.TimeIsleRevisits?.createController({ demo: demo.interviewDemo, onOpenMemory: openMemory }) || null;
     cluesController = window.TimeIsleClues?.createEntityDialogController({ demo: demo.interviewDemo, onOpenMemory: openMemory, onDataChanged: reloadMemories }) || null;
+    revisionsController = window.TimeIsleRevisions?.createController({ demo: demo.interviewDemo, onOpenMemory: openMemory, onRestored: async (memory) => { await reloadMemories(); await openMemory(memory.id); } }) || null;
+    collectionHealthController = window.TimeIsleCollectionHealth?.createController({ demo: demo.interviewDemo }) || null;
     populateOptions();
     renderApp();
-    elements.footerVersion.textContent = `v${version.version || "7.1.0"}`;
+    elements.footerVersion.textContent = `v${version.version || "7.2.0"}`;
     setRuntimeStatus(demo.interviewDemo ? "Demo 已连接" : "本地馆藏已连接", "ready");
     const initialView = normalizeView(location.hash.replace("#", ""));
     switchView(initialView, { updateHash: false });
@@ -305,6 +301,7 @@ function renderDemoStatus() {
   capsulesController?.setDemo(demo);
   revisitsController?.setDemo(demo);
   cluesController?.setDemo(demo);
+  revisionsController?.setDemo(demo); collectionHealthController?.setDemo(demo);
   elements.demoNotice.hidden = !demo;
   elements.purgeButton.disabled = demo;
   elements.purgeButton.title = demo ? "公开 Demo 已禁用清空操作" : "永久清空本地 SQLite 馆藏";
@@ -460,6 +457,7 @@ async function openMemory(id) {
   elements.dialogBody.scrollTop = 0;
   mediaEvidenceController?.open(memory, elements.dialogBody);
   mediaLabController?.open(memory, elements.dialogBody);
+  revisionsController?.open(memory, elements.dialogBody);
   elements.dialogRouteButton.disabled = state.memories.length < 2;
   elements.dialogRouteButton.title = state.memories.length < 2 ? "至少需要两件展品才能生成航线" : "查看与这件展品有关的记忆";
   elements.dialogTraceButton.disabled = !memory.agentRunId;
@@ -587,7 +585,7 @@ async function saveDraft(event) {
   const targetMemoryId = state.editingMemoryId || state.pendingSaveMemoryId;
   let contentSaved = false;
   let attachmentsSaved = Boolean(state.demo?.interviewDemo);
-  if (targetMemoryId) memory.id = targetMemoryId;
+  if (targetMemoryId) { memory.id = targetMemoryId; memory.expectedUpdatedAt = state.draft.updatedAt || ""; }
   try {
     await runAttachmentControllers("waitForReady");
     const saved = await requestJson(targetMemoryId ? `/api/memories/${encodeURIComponent(targetMemoryId)}` : "/api/memories", {
@@ -595,7 +593,7 @@ async function saveDraft(event) {
       body: JSON.stringify(memory)
     });
     contentSaved = true;
-    state.pendingSaveMemoryId = saved.memory.id;
+    state.draft = { ...saved.memory }; state.pendingSaveMemoryId = saved.memory.id;
     if (!state.demo?.interviewDemo) {
       await runAttachmentControllers("saveToMemory", saved.memory.id);
       attachmentsSaved = true;
@@ -1304,8 +1302,8 @@ async function requestJson(url, options = {}) {
   const contentType = response.headers.get("content-type") || "";
   const payload = contentType.includes("application/json") ? await response.json() : await response.text();
   if (!response.ok) {
-    const message = typeof payload === "object" ? payload.error : payload;
-    throw new Error(message || `请求失败（${response.status}）`);
+    const error = new Error((typeof payload === "object" ? payload.error : payload) || `请求失败（${response.status}）`);
+    Object.assign(error, { status: response.status, code: payload?.code || "", updatedAt: payload?.updatedAt || "" }); throw error;
   }
   return payload;
 }

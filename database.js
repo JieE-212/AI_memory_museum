@@ -7,6 +7,8 @@ const { initializeRevisitDatabase } = require("./lib/revisit-database");
 const { initializeClueDatabase } = require("./lib/clue-database");
 const { initializeVoiceDatabase } = require("./lib/voice-database");
 const { initializeCapsuleDatabase } = require("./lib/capsule-database");
+const { initializeRevisionDatabase } = require("./lib/revision-database");
+const { createDatabaseHealthReader } = require("./lib/database-health");
 
 function createMemoryStore({ dbPath, halls, schemaVersion }) {
   const normalizedDbPath = path.resolve(dbPath);
@@ -259,6 +261,16 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     now: () => new Date().toISOString(),
     createId
   });
+  const revisionDatabase = Number(schemaVersion) >= 10
+    ? initializeRevisionDatabase({
+        db,
+        withTransaction,
+        schemaVersion,
+        now: () => new Date().toISOString(),
+        createId
+      })
+    : null;
+  const databaseHealth = createDatabaseHealthReader({ db, schemaVersion });
 
   const upsertHall = db.prepare(`
     INSERT INTO halls (id, name, description) VALUES (?, ?, ?)
@@ -323,7 +335,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     getAgentRun: db.prepare("SELECT * FROM agent_runs WHERE id = ?"),
     getAgentRunForMemory: db.prepare("SELECT * FROM agent_runs WHERE memory_id = ? ORDER BY datetime(created_at) DESC LIMIT 1"),
     updateAgentRunMemory: db.prepare("UPDATE agent_runs SET memory_id = ?, updated_at = ? WHERE id = ?"),
-    updateMemoryAgentRun: db.prepare("UPDATE memories SET agent_run_id = ?, updated_at = ? WHERE id = ?"),
+    updateMemoryAgentRun: db.prepare("UPDATE memories SET agent_run_id = ? WHERE id = ?"),
     deleteAgentRun: db.prepare("DELETE FROM agent_runs WHERE id = ?"),
     deleteAgentSteps: db.prepare("DELETE FROM agent_steps WHERE run_id = ?"),
     deleteAgentEvents: db.prepare("DELETE FROM agent_events WHERE run_id = ?"),
@@ -490,16 +502,125 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
   function saveMemory(memory, options = {}) {
     const transaction = options.transaction !== false;
     const writeMemory = () => {
-      saveMemoryRow(memory, options);
-      return getMemory(memory.id);
+      const existing = getMemory(memory.id);
+      if (options.requireExisting && !existing) {
+        throw memoryWriteError("没有找到这件展品。", "MEMORY_NOT_FOUND", 404);
+      }
+      if (options.requireNew && existing) {
+        throw memoryWriteError("这条记忆已经存在。", "MEMORY_ALREADY_EXISTS", 409);
+      }
+      if (existing && options.expectedUpdatedAt !== undefined) {
+        assertExpectedMemoryVersion(existing, options.expectedUpdatedAt);
+      }
+
+      if (!existing) {
+        const timestamp = normalizeStoredTimestamp(memory.updatedAt || memory.createdAt);
+        const created = { ...memory, updatedAt: timestamp };
+        saveMemoryRow(created, options);
+        const saved = getMemory(created.id);
+        revisionDatabase?.recordMemoryCreation(saved, {
+          changeKind: options.changeKind === "imported" ? "imported" : "created",
+          changeNote: normalizeRevisionNote(options.changeNote)
+        });
+        return getMemory(created.id);
+      }
+
+      const next = {
+        ...memory,
+        id: existing.id,
+        createdAt: existing.createdAt,
+        updatedAt: nextMemoryUpdatedAt(existing.updatedAt)
+      };
+      const transition = revisionDatabase?.recordMemoryTransition(existing, next, {
+        changeKind: options.changeKind === "restored" ? "restored" : "edited",
+        changeNote: normalizeRevisionNote(options.changeNote),
+        restoredFromRevisionId: options.restoredFromRevisionId
+      });
+      if (revisionDatabase && !transition.changed) {
+        if ((next.agentRunId || "") !== (existing.agentRunId || "")) {
+          saveMemoryRow(next, options);
+        }
+        return getMemory(existing.id);
+      }
+      saveMemoryRow(next, options);
+      return getMemory(next.id);
     };
     return transaction ? withTransaction(writeMemory) : writeMemory();
   }
 
   function importMemories(memories, options = {}) {
     return withTransaction(() => {
-      memories.forEach((memory) => saveMemoryRow(memory, options));
+      memories.forEach((memory) => {
+        const timestamp = normalizeStoredTimestamp(memory.updatedAt || memory.createdAt);
+        const imported = { ...memory, updatedAt: timestamp };
+        saveMemoryRow(imported, options);
+        if (revisionDatabase && options.revisionMode !== "defer") {
+          revisionDatabase.recordMemoryCreation(getMemory(imported.id), {
+            changeKind: "imported",
+            changeNote: normalizeRevisionNote(options.changeNote)
+          });
+        }
+      });
       return { imported: memories.length, memories: listMemories() };
+    });
+  }
+
+  function listRecentMemoryRevisions(options = {}) {
+    if (!revisionDatabase) return [];
+    const limit = Math.min(100, Math.max(1, Number(options.limit) || 30));
+    return revisionDatabase.listRecentMemoryRevisions({ limit });
+  }
+
+  function runDatabaseHealthChecks(options = {}) {
+    options.signal?.throwIfAborted?.();
+    const snapshot = databaseHealth.snapshot();
+    if (!revisionDatabase) return snapshot;
+    let revisionOk = true;
+    try {
+      const memories = listMemories();
+      const memoryIds = memories.map((memory) => memory.id);
+      const backup = revisionDatabase.buildRevisionBackup("full", memoryIds);
+      revisionDatabase.validateRevisionBackup(backup, memoryIds);
+      revisionOk = memories.every((memory) => revisionDatabase.verifyMemoryHead(memory).matches);
+    } catch {
+      revisionOk = false;
+    }
+    snapshot.checks.push({ code: "DATABASE_REVISION_CHAIN", ok: revisionOk });
+    snapshot.ok = snapshot.ok && revisionOk;
+    options.signal?.throwIfAborted?.();
+    return snapshot;
+  }
+
+  function restoreMemoryRevision(memoryId, revisionId, options = {}) {
+    if (!revisionDatabase) throw memoryWriteError("当前数据库尚未启用记忆年轮。", "REVISION_SCHEMA_NOT_READY", 409);
+    return withTransaction(() => {
+      const existing = getMemory(String(memoryId || ""));
+      if (!existing) throw memoryWriteError("没有找到这件展品。", "MEMORY_NOT_FOUND", 404);
+      assertExpectedMemoryVersion(existing, options.expectedUpdatedAt);
+      const source = revisionDatabase.getMemoryRevision(existing.id, String(revisionId || ""));
+      if (!source) throw memoryWriteError("没有找到要恢复的历史版本。", "REVISION_NOT_FOUND", 404);
+      const beforeHead = revisionDatabase.getMemoryRevisionHead(existing.id);
+      const next = {
+        ...existing,
+        ...source.snapshot,
+        id: existing.id,
+        schemaVersion,
+        agentRunId: existing.agentRunId,
+        createdAt: existing.createdAt
+      };
+      const memory = saveMemory(next, {
+        transaction: false,
+        expectedUpdatedAt: existing.updatedAt,
+        changeKind: "restored",
+        restoredFromRevisionId: source.id,
+        changeNote: options.changeNote || `恢复到第 ${source.revisionNo} 版`
+      });
+      const head = revisionDatabase.getMemoryRevisionHead(existing.id);
+      return {
+        changed: Boolean(head && head.id !== beforeHead?.id),
+        memory,
+        revision: head
+      };
     });
   }
 
@@ -607,7 +728,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     const now = new Date().toISOString();
     return withTransaction(() => {
       statements.updateAgentRunMemory.run(memoryId, now, runId);
-      statements.updateMemoryAgentRun.run(runId, now, memoryId);
+      statements.updateMemoryAgentRun.run(runId, memoryId);
       return getAgentRun(runId);
     });
   }
@@ -1230,7 +1351,8 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
         evidenceValid = true;
       } else {
         const locatedAt = rawContent.indexOf(quote);
-        if (locatedAt >= 0) {
+        const repeatedAt = locatedAt < 0 ? -1 : rawContent.indexOf(quote, locatedAt + 1);
+        if (locatedAt >= 0 && repeatedAt < 0) {
           startOffset = locatedAt;
           endOffset = locatedAt + quote.length;
           evidenceValid = true;
@@ -1434,12 +1556,33 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     return /^[a-zA-Z0-9_-]{1,120}$/.test(id) ? id : "";
   }
 
+  function assertExpectedMemoryVersion(memory, expectedUpdatedAt) {
+    const expected = String(expectedUpdatedAt ?? "").trim();
+    if (!expected) throw memoryWriteError("缺少展品版本条件。", "MEMORY_PRECONDITION_REQUIRED", 428);
+    if (expected !== String(memory.updatedAt || "")) {
+      const error = memoryWriteError("这件展品已在别处更新，请刷新后再修改。", "MEMORY_VERSION_CONFLICT", 412);
+      error.currentUpdatedAt = memory.updatedAt || "";
+      throw error;
+    }
+  }
+
+  function normalizeStoredTimestamp(value) {
+    const parsed = new Date(value || "");
+    return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+  }
+
+  function normalizeRevisionNote(value) {
+    return String(value || "").trim().slice(0, 500);
+  }
+
   return {
     dbPath: normalizedDbPath,
     listMemories,
     getMemory,
     saveMemory,
     importMemories,
+    runDatabaseHealthChecks,
+    restoreMemoryRevision,
     deleteMemory,
     purgeAll,
     saveAgentRun,
@@ -1467,10 +1610,26 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     ...clueDatabase,
     ...voiceDatabase,
     ...capsuleDatabase,
+    ...(revisionDatabase || {}),
+    listRecentMemoryRevisions,
     searchClues,
     searchMemories,
     close: () => db.close()
   };
+}
+
+function memoryWriteError(message, code, statusCode) {
+  const error = new Error(message);
+  error.code = code;
+  error.statusCode = statusCode;
+  return error;
+}
+
+function nextMemoryUpdatedAt(previousValue) {
+  const previous = Date.parse(String(previousValue || ""));
+  const current = Date.now();
+  const next = Number.isFinite(previous) ? Math.max(current, previous + 1) : current;
+  return new Date(next).toISOString();
 }
 
 const searchVocabulary = [

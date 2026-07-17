@@ -97,6 +97,7 @@ async function runChecks(temporaryRoot) {
   const pristineEntries = await readArchiveEntries(archive, path.join(temporaryRoot, "unpack-pristine"));
   const imagePath = prepared.assets[0].variants.find((variant) => variant.kind === "display").archivePath;
   await checkArchiveVersioning(temporaryRoot, pristineEntries);
+  await checkArchiveMetadataContract(temporaryRoot, pristineEntries, fixture, collection);
   await checkFeatureSections(temporaryRoot, fixture, collection);
 
   const corruptedEntries = cloneEntries(pristineEntries);
@@ -229,6 +230,127 @@ async function checkArchiveVersioning(temporaryRoot, pristineEntries) {
   );
 }
 
+async function checkArchiveMetadataContract(temporaryRoot, pristineEntries, fixture, sourceCollection) {
+  const supportedPrepared = await prepareMediaArchive(repack(pristineEntries), {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-supported-schema"),
+    supportedSchemaVersion: 4
+  });
+  equal(supportedPrepared.manifest.schemaVersion, 4, "prepare 应接受不高于调用方支持上限的 schema");
+
+  const futureEntries = cloneEntries(pristineEntries);
+  const futureManifest = parseJson(futureEntries.get(ARCHIVE_PATHS.manifest));
+  futureManifest.schemaVersion = 11;
+  futureEntries.set(ARCHIVE_PATHS.manifest, jsonBuffer(futureManifest));
+  await rejectsCode(
+    "MEDIA_ARCHIVE_SCHEMA_UNSUPPORTED",
+    () => prepareMediaArchive(repack(futureEntries), {
+      stagingRoot: path.join(temporaryRoot, "reject-future-schema"),
+      supportedSchemaVersion: 10
+    }),
+    "高于当前应用支持上限的 future schema 必须在业务数据读取前拒绝"
+  );
+
+  const mismatchCases = [
+    ["schema-version", (value) => { value.schemaVersion = 3; }],
+    ["mode", (value) => { value.mode = "redacted"; }],
+    ["app-version", (value) => { value.version = "4.0.1"; }],
+    ["exported-at", (value) => { value.exportedAt = "2026-07-12T20:00:00+08:00"; }]
+  ];
+  for (const [label, mutate] of mismatchCases) {
+    const entries = cloneEntries(pristineEntries);
+    const collection = parseJson(entries.get(ARCHIVE_PATHS.collection));
+    mutate(collection);
+    replaceJsonAndRefreshManifest(entries, ARCHIVE_PATHS.collection, collection);
+    await rejectsCode(
+      "MEDIA_ARCHIVE_METADATA_MISMATCH",
+      () => prepareMediaArchive(repack(entries), {
+        stagingRoot: path.join(temporaryRoot, `reject-metadata-mismatch-${label}`),
+        supportedSchemaVersion: 10
+      }),
+      `V2 collection ${label} 与 manifest 不一致时必须拒绝`
+    );
+  }
+
+  for (const field of ["schemaVersion", "mode", "version", "exportedAt"]) {
+    const entries = cloneEntries(pristineEntries);
+    const collection = parseJson(entries.get(ARCHIVE_PATHS.collection));
+    delete collection[field];
+    replaceJsonAndRefreshManifest(entries, ARCHIVE_PATHS.collection, collection);
+    await rejectsCode(
+      "MEDIA_ARCHIVE_METADATA_MISMATCH",
+      () => prepareMediaArchive(repack(entries), {
+        stagingRoot: path.join(temporaryRoot, `reject-v2-missing-${field}`),
+        supportedSchemaVersion: 10
+      }),
+      `V2 collection 缺少 ${field} 时必须拒绝`
+    );
+  }
+
+  const invalidTimestampEntries = cloneEntries(pristineEntries);
+  const invalidTimestampManifest = parseJson(invalidTimestampEntries.get(ARCHIVE_PATHS.manifest));
+  invalidTimestampManifest.exportedAt = "not-a-timestamp";
+  invalidTimestampEntries.set(ARCHIVE_PATHS.manifest, jsonBuffer(invalidTimestampManifest));
+  await rejectsCode(
+    "MEDIA_ARCHIVE_VALUE_INVALID",
+    () => prepareMediaArchive(repack(invalidTimestampEntries), {
+      stagingRoot: path.join(temporaryRoot, "reject-invalid-manifest-exported-at"),
+      supportedSchemaVersion: 10
+    }),
+    "manifest.exportedAt 必须是可解析的时间戳"
+  );
+
+  const legacySparseEntries = cloneEntries(pristineEntries);
+  const legacyManifest = parseJson(legacySparseEntries.get(ARCHIVE_PATHS.manifest));
+  legacyManifest.formatVersion = 1;
+  delete legacyManifest.sections;
+  legacySparseEntries.set(ARCHIVE_PATHS.manifest, jsonBuffer(legacyManifest));
+  const legacyCollection = parseJson(legacySparseEntries.get(ARCHIVE_PATHS.collection));
+  for (const field of ["schemaVersion", "mode", "version", "exportedAt"]) delete legacyCollection[field];
+  replaceJsonAndRefreshManifest(legacySparseEntries, ARCHIVE_PATHS.collection, legacyCollection);
+  const legacySparsePrepared = await prepareMediaArchive(repack(legacySparseEntries), {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-v1-sparse-metadata"),
+    supportedSchemaVersion: 10
+  });
+  check(
+    ["schemaVersion", "mode", "version", "exportedAt"].every((field) => !Object.hasOwn(legacySparsePrepared.collection, field)),
+    "V1 collection 历史缺失的重复元数据可兼容读取"
+  );
+
+  const legacyMismatchEntries = cloneEntries(legacySparseEntries);
+  const legacyMismatchCollection = parseJson(legacyMismatchEntries.get(ARCHIVE_PATHS.collection));
+  legacyMismatchCollection.version = "4.0.1";
+  replaceJsonAndRefreshManifest(legacyMismatchEntries, ARCHIVE_PATHS.collection, legacyMismatchCollection);
+  await rejectsCode(
+    "MEDIA_ARCHIVE_METADATA_MISMATCH",
+    () => prepareMediaArchive(repack(legacyMismatchEntries), {
+      stagingRoot: path.join(temporaryRoot, "reject-v1-present-metadata-mismatch"),
+      supportedSchemaVersion: 10
+    }),
+    "V1 collection 已存在的元数据仍必须与 manifest 严格一致"
+  );
+
+  const sparseForWrite = structuredClone(sourceCollection);
+  for (const field of ["schemaVersion", "mode", "version", "exportedAt"]) delete sparseForWrite[field];
+  const canonicalArchive = buildMediaArchive({
+    collection: sparseForWrite,
+    store: fixture.store,
+    storage: fixture.storage,
+    appVersion: "4.0.0",
+    schemaVersion: 4
+  });
+  const canonicalPrepared = await prepareMediaArchive(canonicalArchive, {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-writer-canonical-metadata"),
+    supportedSchemaVersion: 4
+  });
+  check(
+    canonicalPrepared.collection.version === canonicalPrepared.manifest.appVersion &&
+      canonicalPrepared.collection.schemaVersion === canonicalPrepared.manifest.schemaVersion &&
+      canonicalPrepared.collection.mode === canonicalPrepared.manifest.mode &&
+      canonicalPrepared.collection.exportedAt === canonicalPrepared.manifest.exportedAt,
+    "V2 writer 应从同一组规范值写入 manifest 与 collection 元数据"
+  );
+}
+
 async function checkFeatureSections(temporaryRoot, fixture, sourceCollection) {
   deepEqual(
     FEATURE_ARCHIVE_SECTIONS.map(({ name, path: sectionPath, sinceSchemaVersion }) => ({ name, path: sectionPath, sinceSchemaVersion })),
@@ -236,9 +358,10 @@ async function checkFeatureSections(temporaryRoot, fixture, sourceCollection) {
       { name: "exhibitions", path: ARCHIVE_PATHS.exhibitions, sinceSchemaVersion: 5 },
       { name: "revisits", path: ARCHIVE_PATHS.revisits, sinceSchemaVersion: 6 },
       { name: "entities", path: ARCHIVE_PATHS.entities, sinceSchemaVersion: 7 },
-      { name: "capsules", path: ARCHIVE_PATHS.capsules, sinceSchemaVersion: 9 }
+      { name: "capsules", path: ARCHIVE_PATHS.capsules, sinceSchemaVersion: 9 },
+      { name: "revisions", path: ARCHIVE_PATHS.revisions, sinceSchemaVersion: 10 }
     ],
-    "功能 section 注册表应按 schema 顺序声明展览、回访、实体线索与时间胶囊"
+    "功能 section 注册表应按 schema 顺序声明展览、回访、实体线索、时间胶囊与记忆年轮"
   );
 
   const exhibitions = { mode: "full", schemaVersion: 5, exhibitions: [] };
@@ -1194,12 +1317,22 @@ async function checkRedactedArchive(temporaryRoot, fullCollection) {
     ...fullCollection,
     mode: "redacted",
     privacy: "已隐藏媒体",
+    archaeology: {
+      mode: "redacted-summary",
+      eventCount: 0,
+      questionCount: 0,
+      note: "版本关系、原文证据和补充回答已从脱敏导出中移除。"
+    },
     memories: fullCollection.memories.map((memory) => ({
       ...memory,
       rawContent: "[已隐藏原始记忆]",
       coverImage: "private.jpg",
       attachments: [{ name: "不应进入归档.jpg" }],
-      media: [{ assetId: "asset-should-not-leak" }]
+      media: [{ assetId: "asset-should-not-leak" }],
+      agentRunId: "agent-redacted-canary",
+      entityRefs: [{ id: "entity-redacted-canary", canonicalName: "不应出现的实体姓名" }],
+      voices: [{ id: "voice-redacted-canary", transcript: "不应出现的文字稿" }],
+      privateField: "unknown-redacted-canary"
     }))
   };
   const forbiddenDependency = new Proxy({}, {
@@ -1217,6 +1350,8 @@ async function checkRedactedArchive(temporaryRoot, fullCollection) {
   const entries = await readArchiveEntries(archive, path.join(temporaryRoot, "unpack-redacted"));
   deepEqual([...entries.keys()].sort(), [ARCHIVE_PATHS.collection, ARCHIVE_PATHS.manifest].sort(), "脱敏 .time-isle 只能包含 manifest 和 collection");
   check([...entries.keys()].every((entryPath) => !entryPath.startsWith("media/")), "脱敏归档不得物理包含任何媒体条目");
+  const redactedCollectionBytes = entries.get(ARCHIVE_PATHS.collection).toString("utf8");
+  check(!["agent-redacted-canary", "entity-redacted-canary", "不应出现的实体姓名", "voice-redacted-canary", "不应出现的文字稿", "unknown-redacted-canary"].some((canary) => redactedCollectionBytes.includes(canary)), "脱敏 collection 必须以字段白名单物理排除实体、Agent、声音和未知扩展");
 
   const prepared = await prepareMediaArchive(archive, { stagingRoot: path.join(temporaryRoot, "roundtrip-redacted") });
   deepEqual(prepared.manifest.sections, [
@@ -1226,6 +1361,26 @@ async function checkRedactedArchive(temporaryRoot, fullCollection) {
   equal(prepared.manifest.media.included, false, "脱敏 manifest 应明确媒体未包含");
   deepEqual(prepared.assets, [], "脱敏恢复 descriptor 不应包含资产");
   check(prepared.collection.memories.every((memory) => memory.media.length === 0 && memory.attachments.length === 0 && memory.coverImage === ""), "脱敏 collection 应清空关联、附件和封面路径");
+
+  const leakyMemoryEntries = cloneEntries(entries);
+  const leakyMemoryCollection = parseJson(leakyMemoryEntries.get(ARCHIVE_PATHS.collection));
+  leakyMemoryCollection.memories[0].entityRefs = [{ id: "entity-injected", canonicalName: "注入姓名" }];
+  replaceJsonAndRefreshManifest(leakyMemoryEntries, ARCHIVE_PATHS.collection, leakyMemoryCollection);
+  await rejectsCode(
+    "MEDIA_ARCHIVE_REDACTED_PRIVACY_INVALID",
+    () => prepareMediaArchive(repack(leakyMemoryEntries), { stagingRoot: path.join(temporaryRoot, "reject-redacted-entity-ref") }),
+    "即使重算 manifest，脱敏展品也不能夹带实体引用"
+  );
+
+  const leakyArchaeologyEntries = cloneEntries(entries);
+  const leakyArchaeologyCollection = parseJson(leakyArchaeologyEntries.get(ARCHIVE_PATHS.collection));
+  leakyArchaeologyCollection.archaeology.claims = [{ memoryId: "memory-one", quote: "夹带原文" }];
+  replaceJsonAndRefreshManifest(leakyArchaeologyEntries, ARCHIVE_PATHS.collection, leakyArchaeologyCollection);
+  await rejectsCode(
+    "MEDIA_ARCHIVE_REDACTED_PRIVACY_INVALID",
+    () => prepareMediaArchive(repack(leakyArchaeologyEntries), { stagingRoot: path.join(temporaryRoot, "reject-redacted-archaeology") }),
+    "脱敏记忆考古摘要必须拒绝夹带 claims 或任意额外字段"
+  );
 }
 
 function createFixture(temporaryRoot, options = {}) {

@@ -388,14 +388,16 @@ async function assertDedupeDeletionIsSerialized(assetId, label, forceLateCollisi
 
 function createAsset(id, label) {
   const seed = crypto.createHash("sha256").update(label).digest().readUInt16BE(0);
-  const data = createWebp(12 + (seed % 400), 8 + (seed % 37));
+  const width = 12 + (seed % 400);
+  const height = 8 + (seed % 37);
+  const data = createWebp(width, height);
   const hash = sha256(data);
   const variants = ["original", "display", "thumb"].map((kind) => {
     const storageKey = `assets/${hash.slice(0, 2)}/${id}/${kind}.webp`;
     const filePath = storage.resolveStorageKey(storageKey);
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, data);
-    return { assetId: id, kind, storageKey, mimeType: "image/webp", byteSize: data.length, width: 12, height: 8, sha256: hash };
+    return { assetId: id, kind, storageKey, mimeType: "image/webp", byteSize: data.length, width, height, sha256: hash };
   });
   return store.createMediaAsset({
     id,
@@ -403,8 +405,8 @@ function createAsset(id, label) {
     originalName: `${label}.webp`,
     sourceMimeType: "image/webp",
     sourceByteSize: data.length,
-    width: 12,
-    height: 8,
+    width,
+    height,
     privacyMode: "preserve_original",
     status: "ready",
     safeMetadata: {}

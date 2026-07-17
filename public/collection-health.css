@@ -1,0 +1,245 @@
+.collection-health-panel {
+  margin: 18px 0 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+}
+
+.collection-health-panel > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 58px;
+  padding: 14px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.collection-health-panel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.collection-health-panel > summary span:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.collection-health-panel > summary small,
+.collection-health-description,
+.collection-health-phase,
+.archive-inspect-status {
+  color: var(--ink-soft);
+  font-size: 0.79rem;
+}
+
+.collection-health-state {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--accent-dark);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.collection-health-state::after {
+  content: "  ＋";
+}
+
+.collection-health-panel[open] .collection-health-state::after {
+  content: "  −";
+}
+
+.collection-health-state.is-error,
+.collection-health-description.is-error,
+.archive-inspect-status.is-error {
+  color: var(--danger);
+}
+
+.collection-health-panel[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.collection-health-body {
+  padding: 16px;
+}
+
+.collection-health-description {
+  margin: 0 0 12px;
+  line-height: 1.6;
+}
+
+.collection-health-controls,
+.archive-inspect-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.collection-health-progress-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.collection-health-progress-row progress {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.collection-health-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.collection-health-metric {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+}
+
+.collection-health-metric small {
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+}
+
+.collection-health-metric strong {
+  font-size: 0.86rem;
+}
+
+.collection-health-metric.has-attention {
+  border-color: var(--warm);
+}
+
+.collection-health-issues {
+  margin-top: 12px;
+}
+
+.collection-health-issues > summary {
+  min-height: 44px;
+  color: var(--accent-dark);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.collection-health-issues ul {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.collection-health-issues li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+}
+
+.collection-health-issues li span,
+.collection-health-issues code {
+  color: var(--ink-soft);
+  font-size: 0.7rem;
+}
+
+.collection-health-issues li p {
+  min-width: 0;
+  margin: 0;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.collection-health-issues code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.archive-inspect {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.archive-inspect strong,
+.archive-inspect small {
+  display: block;
+}
+
+.archive-inspect small {
+  margin: 3px 0 10px;
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+}
+
+.archive-inspect-status {
+  margin: 9px 0 0;
+  overflow-wrap: anywhere;
+}
+
+#archiveInspectFile:focus-visible + label {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 650px) {
+  .collection-health-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .collection-health-controls .button,
+  .archive-inspect-row .button {
+    min-height: 44px;
+  }
+
+  .collection-health-issues li {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .collection-health-issues code {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 360px) {
+  .collection-health-panel > summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .collection-health-state {
+    align-self: flex-start;
+  }
+
+  .collection-health-controls,
+  .archive-inspect-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .collection-health-controls .button,
+  .archive-inspect-row .button {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .collection-health-panel * {
+    scroll-behavior: auto !important;
+  }
+}

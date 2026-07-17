@@ -7,6 +7,7 @@ const {
   buildCuratorQuestion,
   buildFeaturedRoute
 } = require("../lib/archaeology");
+const { buildArchaeologyBackup, validateArchaeologyBackup } = require("../lib/archaeology-backup");
 
 const memories = [
   {
@@ -170,5 +171,21 @@ assert.equal(route.transitions.length, route.items.length - 1);
 assert.ok(route.transitions.every((transition) => transition.sameEvent === "unassessed"));
 
 assert.doesNotThrow(() => JSON.stringify({ connections, puzzle, curatorQuestion, route }));
+
+const redactedBackup = buildArchaeologyBackup({
+  listMemoryEvents: () => [{ id: "private-event" }],
+  listCuratorQuestions: () => [{ id: "private-question" }]
+}, [], "redacted");
+assert.doesNotThrow(() => validateArchaeologyBackup(redactedBackup, []), "规范脱敏摘要可独立验真");
+assert.throws(
+  () => validateArchaeologyBackup({ ...redactedBackup, claims: [{ quote: "不应夹带原文" }] }, []),
+  /字段集合无效/u,
+  "脱敏考古摘要拒绝夹带 claims 或未知字段"
+);
+assert.throws(
+  () => validateArchaeologyBackup({ ...redactedBackup, note: "自定义说明" }, []),
+  /说明无效/u,
+  "脱敏考古摘要固定说明不能被替换"
+);
 
 console.log("archaeology-check: all assertions passed");

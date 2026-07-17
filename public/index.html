@@ -10,18 +10,20 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="时屿" />
     <title>时屿｜AI 私人记忆策展工具</title>
-    <link rel="manifest" href="/manifest.webmanifest?v=7.1.0" />
+    <link rel="manifest" href="/manifest.webmanifest?v=7.2.0" />
     <link rel="icon" href="/assets/time-isle-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/assets/time-isle-apple-touch.png" />
-    <link rel="stylesheet" href="/styles.css?v=7.1.0" />
-    <link rel="stylesheet" href="/pwa.css?v=7.1.0" />
+    <link rel="stylesheet" href="/styles.css?v=7.2.0-touch5" />
+    <link rel="stylesheet" href="/pwa.css?v=7.2.0" />
     <link rel="stylesheet" href="/archaeology.css" />
-    <link rel="stylesheet" href="/exhibitions.css?v=7.1.0" />
-    <link rel="stylesheet" href="/capsules.css?v=7.1.0" />
-    <link rel="stylesheet" href="/revisits.css?v=7.1.0" />
-    <link rel="stylesheet" href="/clues.css?v=7.1.0" />
+    <link rel="stylesheet" href="/exhibitions.css?v=7.2.0" />
+    <link rel="stylesheet" href="/capsules.css?v=7.2.0" />
+    <link rel="stylesheet" href="/revisits.css?v=7.2.0" />
+    <link rel="stylesheet" href="/revisions.css?v=7.2.0-a11y2" />
+    <link rel="stylesheet" href="/clues.css?v=7.2.0" />
+    <link rel="stylesheet" href="/collection-health.css?v=7.2.0-a11y2" />
     <link rel="stylesheet" href="/media.css" />
-    <link rel="stylesheet" href="/voice.css?v=7.1.0" />
+    <link rel="stylesheet" href="/voice.css?v=7.2.0" />
     <link rel="stylesheet" href="/media-evidence.css" />
     <link rel="stylesheet" href="/media-compare.css" />
     <link rel="stylesheet" href="/media-ocr.css" />
@@ -295,6 +297,17 @@
             <div class="revisit-content" id="revisitContent"></div>
           </section>
 
+          <details class="revision-timeline-card" id="revisionTimelineDetails">
+            <summary>
+              <span><strong>记忆年轮</strong><small>只在展开后读取可校验的编辑记录</small></span>
+              <span aria-hidden="true">＋</span>
+            </summary>
+            <div class="revision-timeline-body">
+              <p class="revision-timeline-status" id="revisionTimelineStatus" role="status">尚未读取版本记录。</p>
+              <div class="revision-timeline-list" id="revisionTimelineList"></div>
+            </div>
+          </details>
+
           <section class="guide-card" aria-labelledby="guideTitle">
             <div class="section-heading compact-heading">
               <div>
@@ -369,6 +382,30 @@
               </div>
             </div>
             <div class="data-location-list" id="dataLocationList"></div>
+            <details class="collection-health-panel" id="collectionHealthDetails">
+              <summary>
+                <span><strong>馆藏体检</strong><small id="collectionHealthDescription">只读核对数据库、图片、声音与待复核事项</small></span>
+                <span class="collection-health-state" id="collectionHealthState" role="status" aria-live="polite" aria-atomic="true">尚未体检</span>
+              </summary>
+              <div class="collection-health-body">
+                <p class="collection-health-description">体检不会自动删除、修复或重写内容，结果只保留在本次运行内。</p>
+                <div class="collection-health-controls">
+                  <button type="button" class="button secondary compact" id="collectionHealthStart">开始馆藏体检</button>
+                  <button type="button" class="button text-button compact" id="collectionHealthStop" hidden>停止体检</button>
+                </div>
+                <div class="collection-health-progress-row"><progress id="collectionHealthProgress" max="1" value="0" aria-label="馆藏体检进度" hidden></progress><span class="collection-health-phase" id="collectionHealthPhase" role="status" aria-live="polite" aria-atomic="true"></span></div>
+                <div id="collectionHealthResult" aria-live="polite" aria-atomic="true"></div>
+                <div class="archive-inspect">
+                  <strong>验一份现有备份</strong>
+                  <small>只验证能否安全恢复，不把内容写入当前馆藏。</small>
+                  <div class="archive-inspect-row">
+                    <input id="archiveInspectFile" class="sr-only" type="file" accept="application/vnd.time-isle,.time-isle" />
+                    <label class="button text-button compact file-button" for="archiveInspectFile">选择 .time-isle 验真</label>
+                  </div>
+                  <p class="archive-inspect-status" id="archiveInspectStatus" role="status"></p>
+                </div>
+              </div>
+            </details>
             <div class="data-actions">
               <button type="button" class="button primary" id="exportButton">导出完整备份（含照片）</button>
               <button type="button" class="button secondary" id="exportRedactedButton">导出脱敏备份</button>
@@ -397,10 +434,10 @@
               <a class="text-link" href="https://github.com/JieE-212/AI_memory_museum" target="_blank" rel="noreferrer">查看 GitHub ↗</a>
             </div>
             <ol class="project-points">
-              <li><strong>本地影像保险箱</strong><span>原图流式校验、浏览器生成安全展示图，SHA-256 内容寻址并自动回收孤儿文件。</span></li>
-              <li><strong>照片成为证据</strong><span>用户可圈选画面区域并锚定原图哈希，让时光拼图同时回看文字与图片依据。</span></li>
-              <li><strong>克制的智能线索</strong><span>EXIF、近似图片与本机文字摘录只给待核对建议，不自动写地点、合并照片或改正文。</span></li>
-              <li><strong>可携带且可恢复</strong><span>.time-isle 归档逐项验真，损坏零写入；脱敏版物理排除照片，公开 Demo 禁止私人上传。</span></li>
+              <li><strong>可验证的记忆年轮</strong><span>每次有效修改都进入 SHA-256 父链，旧版可以核对、预览并恢复为新的当前版本。</span></li>
+              <li><strong>多模态来源可回看</strong><span>原文、照片区域与确认文字稿各自保留来源，策展结论可以回到真实材料复核。</span></li>
+              <li><strong>克制的人机协作</strong><span>AI、EXIF 与本机识别只生成待确认草稿，不替用户改写记忆或制造确定事实。</span></li>
+              <li><strong>可体检、可携带</strong><span>馆藏与备份可只读验真；归档损坏零写入，脱敏版本从结构上排除私人内容。</span></li>
             </ol>
             <div class="tech-line" aria-label="技术栈">
               <span>Vanilla JS</span><span>Node.js</span><span>SQLite</span><span>Canvas</span><span>Vercel</span>
@@ -606,23 +643,25 @@
 
     <footer class="site-footer">
       <span>时屿 · 让记忆可整理，也让 AI 的依据可回看。</span>
-      <span id="footerVersion">v7.1.0</span>
+      <span id="footerVersion">v7.2.0</span>
     </footer>
 
     <script src="/assets/portability.js"></script>
     <script src="/assets/media-intelligence.js"></script>
     <script src="/assets/media.js"></script>
-    <script src="/assets/voice.js?v=7.1.0"></script>
+    <script src="/assets/voice.js?v=7.2.0"></script>
     <script src="/assets/media-evidence.js"></script>
     <script src="/assets/media-compare.js"></script>
     <script src="/assets/media-ocr.js"></script>
     <script src="/assets/media-lab.js"></script>
-    <script src="/assets/exhibitions.js?v=7.1.0"></script>
-    <script src="/assets/capsule-crypto.js?v=7.1.0"></script>
-    <script src="/assets/capsules.js?v=7.1.0"></script>
-    <script src="/assets/revisits.js?v=7.1.0"></script>
-    <script src="/assets/clues.js?v=7.1.0"></script>
-    <script src="/assets/pwa.js?v=7.1.0"></script>
-    <script src="/assets/app.js?v=7.1.0"></script>
+    <script src="/assets/exhibitions.js?v=7.2.0"></script>
+    <script src="/assets/capsule-crypto.js?v=7.2.0"></script>
+    <script src="/assets/capsules.js?v=7.2.0"></script>
+    <script src="/assets/revisits.js?v=7.2.0"></script>
+    <script src="/assets/revisions.js?v=7.2.0-a11y2"></script>
+    <script src="/assets/clues.js?v=7.2.0"></script>
+    <script src="/assets/collection-health.js?v=7.2.0-a11y2"></script>
+    <script src="/assets/pwa.js?v=7.2.0"></script>
+    <script src="/assets/app.js?v=7.2.0"></script>
   </body>
 </html>

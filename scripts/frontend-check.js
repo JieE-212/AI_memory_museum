@@ -15,7 +15,9 @@ const mediaOcrCss = read("public/media-ocr.css");
 const mediaLabCss = read("public/media-lab.css");
 const exhibitionsCss = read("public/exhibitions.css");
 const revisitsCss = read("public/revisits.css");
+const revisionsCss = read("public/revisions.css");
 const cluesCss = read("public/clues.css");
+const collectionHealthCss = read("public/collection-health.css");
 const app = read("public/assets/app.js");
 const pwaApp = read("public/assets/pwa.js");
 const mediaApp = read("public/assets/media.js");
@@ -29,7 +31,9 @@ const mediaLabApp = read("public/assets/media-lab.js");
 const portabilityApp = read("public/assets/portability.js");
 const exhibitionsApp = read("public/assets/exhibitions.js");
 const revisitsApp = read("public/assets/revisits.js");
+const revisionsApp = read("public/assets/revisions.js");
 const cluesApp = read("public/assets/clues.js");
+const collectionHealthApp = read("public/assets/collection-health.js");
 const server = read("server.js");
 const archaeology = read("lib/archaeology.js");
 const archaeologyBackup = read("lib/archaeology-backup.js");
@@ -77,15 +81,20 @@ const compactButtonRule = ruleDeclarations(compactMobileCss, ".nav-button");
 
 const checks = [
   ["V7.1 PWA stays inside the four-view information architecture", (html.match(/class="nav-button/g) || []).length === 4 && html.includes('id="pwaInstallPanel" hidden') && html.indexOf('id="pwaInstallPanel"') > html.indexOf('data-view-panel="data"') && !html.includes('data-view="pwa"')],
-  ["PWA resources load in manifest-style-controller-app order", html.includes('/manifest.webmanifest?v=7.1.0') && html.indexOf('/styles.css?v=7.1.0') < html.indexOf('/pwa.css?v=7.1.0') && html.indexOf('/assets/pwa.js?v=7.1.0') < html.indexOf('/assets/app.js?v=7.1.0')],
+  ["PWA resources load in manifest-style-controller-app order", html.includes('/manifest.webmanifest?v=7.2.0') && html.indexOf('/styles.css?v=7.2.0') < html.indexOf('/pwa.css?v=7.2.0') && html.indexOf('/assets/pwa.js?v=7.2.0') < html.indexOf('/assets/app.js?v=7.2.0')],
   ["PWA install uses progressive disclosure without private persistence", pwaApp.includes('beforeinstallprompt') && pwaApp.includes('appinstalled') && pwaApp.includes('updateViaCache: "none"') && !/localStorage|sessionStorage|indexedDB|\bcaches\b/iu.test(pwaApp) && pwaCss.includes('.pwa-install-panel [hidden]')],
+  ["V7.2 记忆年轮保持四导航并默认按需展开", (html.match(/class="nav-button/g) || []).length === 4 && html.includes('id="revisionTimelineDetails"') && !html.includes('<details class="revision-timeline-card" id="revisionTimelineDetails" open') && !html.includes('data-view="revisions"') && html.indexOf('/assets/revisions.js?v=7.2.0') < html.indexOf('/assets/app.js?v=7.2.0') && app.includes("TimeIsleRevisions?.createController")],
+  ["记忆年轮提供并发保护、二次确认与不覆盖恢复", revisionsApp.includes('"If-Match"') && revisionsApp.includes("data-revision-confirm") && revisionsApp.includes("当前版本不会被删除") && revisionsApp.includes("restoredFromRevisionId") && revisionsApp.includes("error.status === 412") && !/localStorage|sessionStorage|indexedDB/iu.test(revisionsApp)],
+  ["记忆年轮移动端克制且不使用渐变", revisionsCss.includes("@media (max-width: 650px)") && revisionsCss.includes("@media (max-width: 360px)") && revisionsCss.includes("min-height: 44px") && !/gradient\s*\(/iu.test(revisionsCss)],
+  ["馆藏体检位于归档入口之前且保持只读渐进披露", html.includes('id="collectionHealthDetails"') && html.indexOf('id="collectionHealthDetails"') < html.indexOf('id="exportButton"') && !html.includes('<details class="collection-health-panel" id="collectionHealthDetails" open') && collectionHealthApp.includes("/api/collection-health/scans") && collectionHealthApp.includes("/api/archive/inspect") && collectionHealthApp.includes("不会自动删除或改写") && !/localStorage|sessionStorage|indexedDB/iu.test(collectionHealthApp)],
+  ["馆藏体检明确 Demo 与移动端安全边界", collectionHealthApp.includes("共享临时示例不提供本机馆藏体检") && collectionHealthApp.includes("不会恢复到当前馆藏") && collectionHealthCss.includes("@media (max-width: 650px)") && collectionHealthCss.includes("@media (max-width: 360px)") && !/gradient\s*\(/iu.test(collectionHealthCss) && app.includes("TimeIsleCollectionHealth?.createController")],
   ["V7 capsule stays inside the four-view information architecture", (html.match(/class="nav-button/g) || []).length === 4 && html.includes('id="capsuleStudioButton"') && !html.includes('data-view="capsule"') && html.indexOf('id="capsuleStudioButton"') > html.indexOf('id="insightsTitle"')],
   ["Capsule resources load in crypto-controller-app order", (html.match(/\/capsules\.css/g) || []).length === 1 && (html.match(/\/assets\/capsule-crypto\.js/g) || []).length === 1 && (html.match(/\/assets\/capsules\.js/g) || []).length === 1 && html.indexOf('/assets/capsule-crypto.js') < html.indexOf('/assets/capsules.js') && html.indexOf('/assets/capsules.js') < html.indexOf('/assets/app.js')],
   ["Capsule creation and passphrase use progressive disclosure", html.includes('<details class="capsule-create-panel" id="capsuleCreatePanel">') && html.includes('id="capsuleExportPanel"') && !html.includes('<details class="capsule-create-panel" id="capsuleCreatePanel" open') && capsuleApp.indexOf("preparedMaterial = await hydrateMaterial") < capsuleApp.indexOf("showExportPanel();")],
   ["Capsule passphrases stay browser-only and are cleared", !/localStorage|sessionStorage|indexedDB/iu.test(capsuleApp) && !/JSON\.stringify\([^\n]{0,200}passphrase/iu.test(capsuleApp) && capsuleApp.includes('elements.passphrase.value = ""') && capsuleApp.includes('elements.passphraseConfirm.value = ""')],
   ["Offline exhibit crypto and no-network container are fixed", capsuleCryptoApp.includes("PBKDF2_ITERATIONS = 310000") && capsuleCryptoApp.includes("KEY_BITS = 256") && capsuleCryptoApp.includes("TAG_BITS = 128") && capsuleCryptoApp.includes("createOfflineHtml") && capsuleCryptoApp.includes("connect-src 'none'")],
   ["Capsule mobile dialog keeps safe areas and touch targets", capsuleCss.includes("height: 100dvh;") && capsuleCss.includes("max-height: 100dvh;") && capsuleCss.includes("min-height: 44px;") && capsuleCss.includes("min-width: 44px;") && ["safe-area-inset-top", "safe-area-inset-right", "safe-area-inset-bottom", "safe-area-inset-left"].every((token) => capsuleCss.includes(token)) && capsuleCss.includes("@media (max-width: 650px)") && capsuleCss.includes("@media (max-width: 390px)") && capsuleCss.includes("@media (max-width: 320px)")],
-  ["Demo voice controls keep native hidden state", /\.voice-field\s+\[hidden\],\s*\.memory-voice-detail\s+\[hidden\]\s*\{[^}]*display:\s*none\s*!important;/s.test(voiceCss) && html.includes('/voice.css?v=7.1.0')],
+  ["Demo voice controls keep native hidden state", /\.voice-field\s+\[hidden\],\s*\.memory-voice-detail\s+\[hidden\]\s*\{[^}]*display:\s*none\s*!important;/s.test(voiceCss) && html.includes('/voice.css?v=7.2.0')],
   ["页面包含四个清晰主视图", ["collection", "compose", "reflect", "data"].every((view) => html.includes(`data-view-panel="${view}"`))],
   ["主导航仍严格保持单一四项", (html.match(/<nav class="main-nav"/g) || []).length === 1 && (html.match(/class="nav-button/g) || []).length === 4],
   ["主导航暴露受控视图和唯一当前项", ["collection", "compose", "reflect", "data"].every((view) => new RegExp(`data-view="${view}"[^>]*aria-controls="view-${view}"`).test(html)) && (html.match(/aria-current="page"/g) || []).length === 1 && app.includes('button.setAttribute("aria-current", active ? "page" : "false")')],
@@ -164,7 +173,7 @@ const checks = [
   ["考古结论保留人工确认边界", archaeology.includes('sameEvent: "unassessed"') && archaeology.includes("requiresConfirmation") && archaeology.includes("sourceQuote")],
   ["服务端不再加载旧运维治理模块", !server.includes("createOperationsService") && !server.includes("phase29") && !server.includes("phase30")],
   ["npm 命令保持精简", Object.keys(pkg.scripts || {}).length <= 7],
-  ["核心文件规模已收敛", lineCount(server) < 1400 && lineCount(app) < 1340 && lineCount(pwaApp) < 250 && lineCount(mediaApp) < 1150 && lineCount(voiceApp) < 900 && lineCount(capsuleApp) < 1000 && lineCount(mediaEvidenceApp) < 850 && lineCount(mediaCompareApp) < 850 && lineCount(mediaOcrApp) < 750 && lineCount(mediaLabApp) < 500 && lineCount(portabilityApp) < 250 && lineCount(exhibitionsApp) < 850 && lineCount(revisitsApp) < 550 && lineCount(cluesApp) < 750 && lineCount(css) < 1600 && lineCount(pwaCss) < 250 && lineCount(archaeologyCss) < 400 && lineCount(mediaCss) < 700 && lineCount(voiceCss) < 450 && lineCount(capsuleCss) < 650 && lineCount(mediaEvidenceCss) < 500 && lineCount(exhibitionsCss) < 800 && lineCount(revisitsCss) < 450 && lineCount(cluesCss) < 550 && lineCount(archaeology) < 900 && lineCount(archaeologyBackup) < 300]
+  ["核心文件规模已收敛", lineCount(server) < 1400 && lineCount(app) < 1340 && lineCount(pwaApp) < 250 && lineCount(mediaApp) < 1150 && lineCount(voiceApp) < 900 && lineCount(capsuleApp) < 1000 && lineCount(mediaEvidenceApp) < 850 && lineCount(mediaCompareApp) < 850 && lineCount(mediaOcrApp) < 750 && lineCount(mediaLabApp) < 500 && lineCount(portabilityApp) < 250 && lineCount(exhibitionsApp) < 850 && lineCount(revisitsApp) < 550 && lineCount(revisionsApp) < 400 && lineCount(cluesApp) < 750 && lineCount(collectionHealthApp) < 350 && lineCount(css) < 1600 && lineCount(pwaCss) < 250 && lineCount(archaeologyCss) < 400 && lineCount(mediaCss) < 700 && lineCount(voiceCss) < 450 && lineCount(capsuleCss) < 650 && lineCount(mediaEvidenceCss) < 500 && lineCount(exhibitionsCss) < 800 && lineCount(revisitsCss) < 450 && lineCount(revisionsCss) < 350 && lineCount(cluesCss) < 550 && lineCount(collectionHealthCss) < 300 && lineCount(archaeology) < 900 && lineCount(archaeologyBackup) < 300]
 ];
 
 let failed = 0;

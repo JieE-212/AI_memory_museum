@@ -11,6 +11,7 @@ const { createRevisitApi } = require("./lib/revisit-api");
 const { createClueApi } = require("./lib/clue-api");
 const { createCapsuleApi } = require("./lib/capsule-api");
 const { createOfflineExhibitApi } = require("./lib/offline-exhibit-api");
+const { createRevisionApi, memoryEtag, requireMemoryPrecondition } = require("./lib/revision-api");
 const { buildSafeSnapshot } = require("./lib/capsule-service");
 const { createPrivacySummary } = require("./lib/privacy-summary");
 const { createMediaStorage } = require("./lib/media-storage");
@@ -25,10 +26,15 @@ const {
   buildFeaturedRoute
 } = require("./lib/archaeology");
 const { buildArchaeologyBackup, restoreArchaeologyBackup, validateArchaeologyBackup } = require("./lib/archaeology-backup");
-const { buildMediaArchive, prepareMediaArchive } = require("./lib/media-backup");
+const { buildMediaArchiveFile, prepareMediaArchive } = require("./lib/media-backup");
 const { restorePreparedArchive } = require("./lib/media-restore");
+const { sendArchiveFile, withRequestAbort } = require("./lib/archive-http");
+const { cleanupArchiveStaging } = require("./lib/archive-staging");
 const { resetDemoStorage, createDemoCapacityGuard } = require("./lib/demo-safety");
 const { createRequestSecurity, platformHostsFromEnv } = require("./lib/request-security");
+const { createRuntimeMetadata } = require("./lib/runtime-metadata");
+const { createCollectionHealthApi } = require("./lib/collection-health-api");
+const { createArchiveInspectionApi } = require("./lib/archive-inspection-api");
 
 const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
@@ -45,10 +51,11 @@ const MEDIA_ROOT = process.env.MEDIA_ROOT || (INTERVIEW_DEMO
   ? path.join(os.tmpdir(), "ai-memory-museum-interview-demo-media")
   : path.join(path.dirname(DB_PATH), "media"));
 const VOICE_ROOT = INTERVIEW_DEMO ? path.join(MEDIA_ROOT, "voice") : (process.env.VOICE_ROOT || path.join(MEDIA_ROOT, "voice"));
-const APP_VERSION = "7.1.0";
-const SCHEMA_VERSION = 9;
+const APP_VERSION = "7.2.0";
+const SCHEMA_VERSION = 10;
 const MAX_RAW_LENGTH = 4000;
 const MAX_BODY_LENGTH = 2 * 1024 * 1024;
+const MAX_IMPORT_BODY_LENGTH = 64 * 1024 * 1024;
 const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS) || 20000;
 const AI_ENABLED = Boolean(process.env.AI_API_KEY) && !INTERVIEW_DEMO;
 const halls = [
@@ -68,6 +75,7 @@ const hallIds = new Set(halls.map((hall) => hall.id));
 if (INTERVIEW_DEMO) resetDemoStorage({ dbPath: DB_PATH, mediaRoot: MEDIA_ROOT });
 const store = createMemoryStore({ dbPath: DB_PATH, halls, schemaVersion: SCHEMA_VERSION });
 const demoCapacity = createDemoCapacityGuard({ enabled: INTERVIEW_DEMO, withTransaction: store.withTransaction, errorFactory: httpError });
+const runtimeMetadata = createRuntimeMetadata({ appVersion: APP_VERSION, interviewDemo: INTERVIEW_DEMO, aiEnabled: AI_ENABLED, demoLimits: demoCapacity.limits });
 const mediaStorage = createMediaStorage({ root: MEDIA_ROOT });
 const mediaApi = createMediaApi({ store, storage: mediaStorage, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
 const voiceStorage = createVoiceStorage({ root: VOICE_ROOT });
@@ -77,6 +85,9 @@ const revisitApi = createRevisitApi({ database: store, store, interviewDemo: INT
 const clueApi = createClueApi({ database: store, store, interviewDemo: INTERVIEW_DEMO, decorateMemory: withMemoryMedia, sendJson, readJsonBody, httpError });
 const capsuleApi = createCapsuleApi({ database: store, store, buildSafeSnapshot, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
 const offlineExhibitApi = createOfflineExhibitApi({ database: store, store, buildSafeSnapshot, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
+const revisionApi = createRevisionApi({ store, sendJson, readJsonBody, httpError, decorateMemory: withMemoryMedia, normalizeNote: (value) => limitText(value, 500) });
+const collectionHealthApi = createCollectionHealthApi({ store, mediaStorage, voiceStorage, mediaApi, voiceApi, sendJson, readJsonBody, httpError });
+const archiveInspectionApi = createArchiveInspectionApi({ mediaRoot: MEDIA_ROOT, prepareMediaArchive, validateVoiceBackup: store.validateVoiceBackup, supportedSchemaVersion: SCHEMA_VERSION, sendJson, httpError });
 const buildCollectionExport = createCollectionExporter({ store, appVersion: APP_VERSION, schemaVersion: SCHEMA_VERSION, buildArchaeologyBackup });
 const importCollection = createCollectionImporter({
   store,
@@ -92,12 +103,13 @@ const buildPrivacySummary = createPrivacySummary({
   interviewDemo: INTERVIEW_DEMO,
   aiEnabled: AI_ENABLED,
   featureLocations: [
+    { name: "记忆年轮与并发保护", location: "正文历史以可校验快照保存在本机 SQLite；每次恢复都会生成新的 head，不覆盖旧版本" },
     { name: "时光胶囊与加密离线展览", location: "胶囊外壳与安全快照分表保存在本机 SQLite；分享口令只在浏览器内用于加密，不发送给服务端，也不写入导出文件" },
     { name: "记忆回访状态", location: "仅保存于本机 SQLite，用于避免同一天重复推荐，不生成心理判断" },
     { name: "实体线索、别名与检索索引", location: "仅保存于本机 SQLite；同名默认只是线索，只有明确确认后才会新增别名或合并档案" },
     { name: "声音片段与人工文字稿", location: "声音文件仅保存在本机内容寻址目录；只有人工确认的文字稿会进入本地检索，不发送给外部模型" }
   ],
-  featureControls: ["实体别名与合并必须先预览，再由用户明确确认", "声音文字稿只有人工确认后才会公开展示并进入检索"]
+  featureControls: ["编辑与历史恢复必须匹配当前展品版本，冲突时不会覆盖较新的内容", "实体别名与合并必须先预览，再由用户明确确认", "声音文字稿只有人工确认后才会公开展示并进入检索"]
 });
 seedInterviewDemoData();
 let mediaMaintenancePromise = null;
@@ -111,6 +123,7 @@ function runMediaMaintenance(minimumAgeMs = 0) {
 
 async function performMediaMaintenance(minimumAgeMs = 0) {
   const before = minimumAgeMs ? new Date(Date.now() - minimumAgeMs).toISOString() : "";
+  cleanupArchiveStaging({ mediaRoot: MEDIA_ROOT, minimumAgeMs: Math.max(60 * 60 * 1000, Number(minimumAgeMs) || 0) });
   await mediaApi.withMediaOperation(() => mediaStorage.cleanupStaleStages());
   await mediaApi.reconcileQuarantine({ minimumAgeMs });
   await mediaApi.reconcileAssetDirectories();
@@ -133,7 +146,7 @@ async function handleRequest(request, response) {
       ["POST", "PUT"].includes(request.method) &&
       !mediaApi.isRawMediaRequest(request, url) &&
       !voiceApi.isRawVoiceRequest(request, url) &&
-      !isArchiveRestoreRequest(request, url) &&
+      !isArchiveBinaryRequest(request, url) &&
       !String(request.headers["content-type"] || "").toLowerCase().includes("application/json")
     ) {
       throw httpError(415, "写入接口只接受 application/json。");
@@ -161,25 +174,11 @@ async function handleRequest(request, response) {
     }
 
     if (request.method === "GET" && url.pathname === "/api/version") {
-      return sendJson(response, 200, {
-        name: "时屿",
-        englishName: "TIME ISLE",
-        tagline: "AI 私人记忆策展工具",
-        version: APP_VERSION,
-        runtime: `Node.js ${process.version}`,
-        architecture: ["Vanilla JS", "Node.js HTTP", "SQLite", "FTS5 Trigram + LIKE 回退", "实体线索档案", "内容寻址影像与声音", "人工确认转写", "证据锚点", "迁移账本"],
-        productFlow: ["记录", "AI 整理", "照片与声音归档", "语义线索检索与讲解", "主题策展", "记忆回访", "时光胶囊与加密分享", "记忆考古", "安全导出"],
-        v7: {
-          timeCapsules: "未到期只返回外壳；本地日期是仪式门槛，不是密码学时间锁",
-          offlineSharing: "浏览器端 PBKDF2-SHA-256 + AES-256-GCM，口令不上传、不持久化",
-          offlineFile: "单个 HTML、无外链、可断网阅读", pwa: "可安装外壳只提供离线边界页，不缓存私人馆藏"
-        },
-        demo: buildInterviewDemoStatus()
-      });
+      return sendJson(response, 200, runtimeMetadata.version());
     }
 
     if (request.method === "GET" && url.pathname === "/api/demo/status") {
-      return sendJson(response, 200, buildInterviewDemoStatus());
+      return sendJson(response, 200, runtimeMetadata.demoStatus());
     }
 
     if (isInterviewDemoBlockedMutation(request, url)) {
@@ -204,62 +203,55 @@ async function handleRequest(request, response) {
     if (capsuleHandled !== false) return capsuleHandled;
     const offlineExhibitHandled = await offlineExhibitApi.handle(request, response, url);
     if (offlineExhibitHandled !== false) return offlineExhibitHandled;
+    const revisionHandled = await revisionApi.handle(request, response, url);
+    if (revisionHandled !== false) return revisionHandled;
+    const collectionHealthHandled = await collectionHealthApi.handle(request, response, url);
+    if (collectionHealthHandled !== false) return collectionHealthHandled;
+    const archiveInspectionHandled = await archiveInspectionApi.handle(request, response, url);
+    if (archiveInspectionHandled !== false) return archiveInspectionHandled;
 
     if (request.method === "GET" && url.pathname === "/api/archive/export") {
       const mode = url.searchParams.get("mode") === "redacted" ? "redacted" : "full";
-      const archive = await mediaApi.withMediaOperation(() => voiceApi.withVoiceOperation(() => {
-        const collection = buildCollectionExport(store.listMemories().map(withMemoryMedia), mode);
-        return buildMediaArchive({
-          collection,
-          store,
-          storage: mediaStorage,
-          voiceStorage,
-          appVersion: APP_VERSION,
-          schemaVersion: SCHEMA_VERSION
-        });
-      }));
-      return sendArchive(response, archive, mode);
+      return await withRequestAbort(request, response, async (signal) => {
+        const archive = await mediaApi.withMediaOperation(() => voiceApi.withVoiceOperation(() => {
+          const collection = buildCollectionExport(store.listMemories().map(withMemoryMedia), mode);
+          return buildMediaArchiveFile({ collection, store, storage: mediaStorage, voiceStorage, appVersion: APP_VERSION, schemaVersion: SCHEMA_VERSION, outputRoot: path.join(MEDIA_ROOT, ".exports"), signal });
+        }));
+        try { return await sendArchiveFile(response, archive, mode, { signal }); }
+        finally { await archive.cleanup(); try { fs.rmdirSync(path.join(MEDIA_ROOT, ".exports")); } catch { /* another export may still use it */ } }
+      });
     }
 
     if (request.method === "POST" && url.pathname === "/api/archive/restore") {
       assertArchiveContentType(request);
-      const restoreParent = path.join(MEDIA_ROOT, ".restore");
-      const stagingRoot = path.join(restoreParent, `restore-${randomUUID()}`);
-      try {
-        const prepared = await prepareMediaArchive(request, {
-          stagingRoot,
-          validateVoiceBackup: store.validateVoiceBackup
-        });
-        const restored = await mediaApi.withMediaOperation(() => voiceApi.withVoiceOperation(() => restorePreparedArchive({
-          prepared,
-          store,
-          storage: mediaStorage,
-          voiceStorage,
-          normalizeMemory,
-          validateArchaeologyBackup,
-          restoreArchaeologyBackup,
-          validateExhibitionBackup: store.validateExhibitionBackup,
-          restoreExhibitionBackup: store.restoreExhibitionBackup,
-          validateRevisitBackup: store.validateRevisitBackup,
-          restoreRevisitBackup: store.restoreRevisitBackup,
-          validateEntityBackup: store.validateClueBackup,
-          restoreEntityBackup: store.restoreClueBackup,
-          validateVoiceBackup: store.validateVoiceBackup,
-          restoreVoiceBackup: store.restoreVoiceBackup,
-          validateCapsuleBackup: store.validateCapsuleBackup,
-          restoreCapsuleBackup: store.restoreCapsuleBackup,
-          createId
-        })));
-        return sendJson(response, 200, { ok: true, ...restored });
-      } catch (error) {
-        if (/^(ARCHIVE|MEDIA_ARCHIVE|MEDIA_RESTORE)_/.test(String(error?.code || ""))) {
-          throw httpError(400, String(error.code).startsWith("ARCHIVE_") ? "备份文件损坏、未完整传输或格式不受支持。" : error.message);
+      return await withRequestAbort(request, response, async (signal) => {
+        const restoreParent = path.join(MEDIA_ROOT, ".restore");
+        const stagingRoot = path.join(restoreParent, `restore-${randomUUID()}`);
+        try {
+          const prepared = await prepareMediaArchive(request, { stagingRoot, validateVoiceBackup: store.validateVoiceBackup, supportedSchemaVersion: SCHEMA_VERSION, signal });
+          signal.throwIfAborted();
+          const restored = await mediaApi.withMediaOperation(() => voiceApi.withVoiceOperation(() => {
+            signal.throwIfAborted();
+            return restorePreparedArchive({
+              prepared, store, storage: mediaStorage, voiceStorage, normalizeMemory,
+              validateArchaeologyBackup, restoreArchaeologyBackup,
+              validateExhibitionBackup: store.validateExhibitionBackup, restoreExhibitionBackup: store.restoreExhibitionBackup,
+              validateRevisitBackup: store.validateRevisitBackup, restoreRevisitBackup: store.restoreRevisitBackup,
+              validateEntityBackup: store.validateClueBackup, restoreEntityBackup: store.restoreClueBackup,
+              validateVoiceBackup: store.validateVoiceBackup, restoreVoiceBackup: store.restoreVoiceBackup,
+              validateCapsuleBackup: store.validateCapsuleBackup, restoreCapsuleBackup: store.restoreCapsuleBackup,
+              validateRevisionBackup: store.validateRevisionBackup, restoreRevisionBackup: store.restoreRevisionBackup, createId
+            });
+          }));
+          return sendJson(response, 200, { ok: true, ...restored });
+        } catch (error) {
+          if (/^(ARCHIVE|MEDIA_ARCHIVE|MEDIA_RESTORE)_/.test(String(error?.code || ""))) throw httpError(400, String(error.code).startsWith("ARCHIVE_") ? "备份文件损坏、未完整传输或格式不受支持。" : error.message);
+          throw error;
+        } finally {
+          fs.rmSync(stagingRoot, { recursive: true, force: true });
+          try { fs.rmdirSync(restoreParent); } catch { /* another restore may still use it */ }
         }
-        throw error;
-      } finally {
-        fs.rmSync(stagingRoot, { recursive: true, force: true });
-        try { fs.rmdirSync(restoreParent); } catch { /* another restore may still use it */ }
-      }
+      });
     }
 
     if (request.method === "GET" && url.pathname === "/api/options") {
@@ -269,7 +261,7 @@ async function handleRequest(request, response) {
         emotions,
         sourceTypes,
         importanceLabels,
-        limits: { rawContent: MAX_RAW_LENGTH, body: MAX_BODY_LENGTH },
+        limits: { rawContent: MAX_RAW_LENGTH, body: MAX_BODY_LENGTH, importBody: MAX_IMPORT_BODY_LENGTH },
         mediaPolicy: mediaStorage.policy,
         voicePolicy: voiceApi.policy
       });
@@ -285,7 +277,7 @@ async function handleRequest(request, response) {
     }
 
     if (request.method === "POST" && url.pathname === "/api/memories/import") {
-      const body = await readJsonBody(request);
+      const body = await readJsonBody(request, MAX_IMPORT_BODY_LENGTH);
       return sendJson(response, 200, importCollection(body));
     }
 
@@ -478,12 +470,12 @@ async function handleRequest(request, response) {
       const memory = normalizeMemory(body);
       if (memory.agentRunId && !store.getAgentRun(memory.agentRunId)) memory.agentRunId = "";
       const saved = demoCapacity.write("memories", () => store.getStats().memories, () => {
-        if (store.getMemory(memory.id)) throw httpError(409, "这条记忆已经存在。");
-        const item = store.saveMemory(memory);
+        const item = store.saveMemory(memory, { requireNew: true });
         if (item.agentRunId) store.attachAgentRunToMemory(item.agentRunId, item.id);
         return item;
       });
-      return sendJson(response, 201, { schemaVersion: SCHEMA_VERSION, memory: withMemoryMedia(store.getMemory(saved.id)) });
+      const created = withMemoryMedia(store.getMemory(saved.id));
+      return sendMemoryJson(response, 201, { schemaVersion: SCHEMA_VERSION, memory: created }, created);
     }
 
     const memoryAgentRunMatch = url.pathname.match(/^\/api\/memories\/([a-zA-Z0-9_-]{1,120})\/agent-run$/);
@@ -501,15 +493,24 @@ async function handleRequest(request, response) {
       const existing = store.getMemory(id);
       if (!existing) throw httpError(404, "没有找到这件展品。");
 
-      if (request.method === "GET") return sendJson(response, 200, { memory: withMemoryMedia(existing) });
+      if (request.method === "GET") {
+        const memory = withMemoryMedia(existing);
+        return sendMemoryJson(response, 200, { memory }, memory);
+      }
 
       if (request.method === "PUT") {
         const body = await readJsonBody(request);
+        const expectedUpdatedAt = requireMemoryPrecondition(request, body, existing, httpError);
         const memory = normalizeMemory({ ...existing, ...body, id, createdAt: existing.createdAt, updatedAt: new Date().toISOString() });
         if (memory.agentRunId && !store.getAgentRun(memory.agentRunId)) memory.agentRunId = "";
-        const saved = store.saveMemory(memory);
+        const saved = store.saveMemory(memory, {
+          requireExisting: true,
+          expectedUpdatedAt,
+          changeNote: limitText(body.changeNote, 500)
+        });
         if (saved.agentRunId) store.attachAgentRunToMemory(saved.agentRunId, saved.id);
-        return sendJson(response, 200, { memory: withMemoryMedia(store.getMemory(saved.id)) });
+        const updated = withMemoryMedia(store.getMemory(saved.id));
+        return sendMemoryJson(response, 200, { memory: updated }, updated);
       }
 
       if (request.method === "DELETE") {
@@ -1172,26 +1173,17 @@ function seedInterviewDemoData() {
   });
 }
 
-function buildInterviewDemoStatus() {
-  return {
-    interviewDemo: INTERVIEW_DEMO,
-    mode: INTERVIEW_DEMO ? "interview-demo" : "local",
-    storage: INTERVIEW_DEMO ? "ephemeral-sqlite-on-tmp" : "local-sqlite",
-    seededExamples: INTERVIEW_DEMO ? 4 : 0,
-    destructiveActionsBlocked: INTERVIEW_DEMO,
-    aiMode: AI_ENABLED ? "configured" : "mock-fallback",
-    limits: INTERVIEW_DEMO ? { ...demoCapacity.limits } : null
-  };
-}
-
 function isInterviewDemoBlockedMutation(request, url) {
   if (!INTERVIEW_DEMO) return false;
   if (request.method === "DELETE" || url.pathname === "/api/memories/purge" || url.pathname === "/api/memories/import" || url.pathname === "/api/archive/restore") return true;
-  return request.method === "PUT" && /^\/api\/memories\/demo-[a-zA-Z0-9_-]+$/.test(url.pathname);
+  if (request.method === "POST" && /^\/api\/memories\/[a-zA-Z0-9_-]+\/revisions\/[a-zA-Z0-9_-]+\/restore$/.test(url.pathname)) return true;
+  if ((request.method === "POST" || request.method === "DELETE") && url.pathname.startsWith("/api/collection-health/")) return true;
+  if (request.method === "POST" && url.pathname === "/api/archive/inspect") return true;
+  return request.method === "PUT" && /^\/api\/memories\/[a-zA-Z0-9_-]+$/.test(url.pathname);
 }
 
-function isArchiveRestoreRequest(request, url) {
-  return request.method === "POST" && url.pathname === "/api/archive/restore";
+function isArchiveBinaryRequest(request, url) {
+  return request.method === "POST" && ["/api/archive/restore", "/api/archive/inspect"].includes(url.pathname);
 }
 
 function assertArchiveContentType(request) {
@@ -1201,12 +1193,13 @@ function assertArchiveContentType(request) {
   }
 }
 
-async function readJsonBody(request) {
+async function readJsonBody(request, maximumBytes = MAX_BODY_LENGTH) {
+  const limit = Number.isSafeInteger(maximumBytes) && maximumBytes > 0 ? maximumBytes : MAX_BODY_LENGTH;
   let total = 0;
   const chunks = [];
   for await (const chunk of request) {
     total += chunk.length;
-    if (total > MAX_BODY_LENGTH) throw httpError(413, "请求内容过大。");
+    if (total > limit) throw httpError(413, "请求内容过大。");
     chunks.push(chunk);
   }
   if (!chunks.length) return {};
@@ -1268,15 +1261,7 @@ function sendJson(response, statusCode, payload) {
   response.end(JSON.stringify(payload));
 }
 
-function sendArchive(response, archive, mode) {
-  const date = new Date().toISOString().slice(0, 10);
-  response.statusCode = 200;
-  response.setHeader("Content-Type", "application/vnd.time-isle");
-  response.setHeader("Content-Length", String(archive.length));
-  response.setHeader("Content-Disposition", `attachment; filename="time-isle-${mode}-${date}.time-isle"`);
-  response.setHeader("Cache-Control", "no-store");
-  response.end(archive);
-}
+function sendMemoryJson(response, statusCode, payload, memory) { response.setHeader("ETag", memoryEtag(memory)); return sendJson(response, statusCode, payload); }
 
 function sendError(response, error) {
   const statusCode = Number(error.statusCode) || 500;
@@ -1284,6 +1269,10 @@ function sendError(response, error) {
   const payload = { error: statusCode >= 500 ? "服务器暂时无法完成请求。" : error.message };
   if (error.interviewDemo === true) payload.interviewDemo = true;
   if (/^[A-Z0-9_]{3,80}$/.test(String(error.code || ""))) payload.code = error.code;
+  if (statusCode === 412 && error.currentUpdatedAt) {
+    payload.updatedAt = error.currentUpdatedAt;
+    response.setHeader("ETag", memoryEtag({ updatedAt: error.currentUpdatedAt }));
+  }
   return sendJson(response, statusCode, payload);
 }
 

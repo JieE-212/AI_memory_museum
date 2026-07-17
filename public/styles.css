@@ -26,6 +26,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html {
   scroll-behavior: smooth;
 }
@@ -1313,6 +1317,34 @@ form label textarea {
   body {
     min-width: 0;
     padding-bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom));
+  }
+
+  .brand,
+  .button.compact,
+  .quick-questions button,
+  .insight-tabs button {
+    min-height: 44px;
+  }
+
+  .insight-tabs button,
+  .memory-links button,
+  .icon-button {
+    min-width: 44px;
+  }
+
+  .memory-links button,
+  .icon-button {
+    min-height: 44px;
+  }
+
+  .compatibility-backup summary,
+  .text-link {
+    min-height: 44px;
+  }
+
+  .text-link {
+    display: inline-flex;
+    align-items: center;
   }
 
   .shell {

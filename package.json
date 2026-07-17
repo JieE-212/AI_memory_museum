@@ -1,6 +1,6 @@
 {
   "name": "ai-memory-museum",
-  "version": "7.1.0",
+  "version": "7.2.0",
   "private": true,
   "description": "时屿（TIME ISLE）：本地优先的 AI 私人记忆策展工具",
   "engines": {

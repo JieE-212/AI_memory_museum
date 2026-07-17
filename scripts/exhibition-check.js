@@ -156,6 +156,12 @@ function checkDatabase() {
     ok(true, "完整备份在媒体落盘前深层拒绝无效引用结构");
     const redacted = fixture.exhibitions.buildExhibitionBackup("redacted");
     ok(redacted.mode === "redacted-summary" && !redacted.exhibitions, "脱敏备份物理移除展览叙事与原文引用");
+    ok(fixture.exhibitions.validateExhibitionBackup(redacted, []) === true, "规范脱敏展览摘要可独立验真");
+    assert.throws(
+      () => fixture.exhibitions.validateExhibitionBackup({ ...redacted, exhibitions: [{ title: "夹带叙事" }] }, []),
+      (error) => error.code === "EXHIBITION_BACKUP_INVALID"
+    );
+    ok(true, "脱敏展览摘要拒绝夹带完整记录或未知字段");
 
     const idMap = new Map(fixture.memories.map((memory, index) => [memory.id, target.memories[index].id]));
     const restored = target.exhibitions.restoreExhibitionBackup(backup, idMap);
