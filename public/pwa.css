@@ -1,0 +1,223 @@
+.pwa-install-panel {
+  margin-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.pwa-install-panel [hidden] {
+  display: none !important;
+}
+
+.pwa-install-panel > summary {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 2px 3px;
+  list-style: none;
+}
+
+.pwa-install-copy {
+  min-width: 0;
+}
+
+.pwa-install-meta {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 9px;
+}
+
+.pwa-install-state {
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-soft);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.pwa-install-panel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.pwa-install-panel > summary strong,
+.pwa-install-panel > summary small {
+  display: block;
+}
+
+.pwa-install-panel > summary strong {
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.pwa-install-panel > summary small {
+  margin-top: 1px;
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.pwa-install-chevron {
+  flex: 0 0 auto;
+  color: var(--accent-dark);
+  font-size: 1.08rem;
+  transition: transform 160ms ease;
+}
+
+.pwa-install-panel[open] .pwa-install-chevron {
+  transform: rotate(45deg);
+}
+
+.pwa-install-panel > summary:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--accent);
+}
+
+.pwa-install-body {
+  padding: 12px 0 2px;
+}
+
+.pwa-install-body > p:first-child {
+  margin-bottom: 12px;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+}
+
+.pwa-install-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+}
+
+.pwa-install-actions .button {
+  min-height: 44px;
+}
+
+.pwa-install-status {
+  margin-top: 10px;
+}
+
+.pwa-install-status[data-state="error"] {
+  color: var(--danger);
+}
+
+.pwa-install-status[data-state="success"] {
+  color: var(--accent-dark);
+}
+
+.pwa-install-instructions {
+  margin: 12px 0 0;
+  padding-left: 1.25rem;
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+}
+
+.pwa-install-instructions li + li {
+  margin-top: 3px;
+}
+
+@media (display-mode: standalone) {
+  .site-header {
+    padding-top: max(10px, env(safe-area-inset-top));
+    padding-right: max(20px, calc((100vw - var(--shell)) / 2), env(safe-area-inset-right));
+    padding-left: max(20px, calc((100vw - var(--shell)) / 2), env(safe-area-inset-left));
+  }
+}
+
+.offline-page {
+  display: grid;
+  min-width: 320px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0;
+  padding: max(24px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  place-items: center;
+  background: #f4f1ea;
+  color: #1e2926;
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+  line-height: 1.65;
+}
+
+.offline-card {
+  width: min(100%, 560px);
+  padding: clamp(26px, 7vw, 48px);
+  border: 1px solid #d7d1c5;
+  border-radius: 18px;
+  background: #fffdf8;
+  box-shadow: 0 14px 36px rgba(39, 47, 43, 0.08);
+}
+
+.offline-mark {
+  display: block;
+  margin-bottom: 20px;
+}
+
+.offline-eyebrow {
+  margin: 0 0 8px;
+  color: #24685f;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.offline-card h1 {
+  margin: 0 0 16px;
+  font-family: "Noto Serif SC", "Songti SC", Georgia, serif;
+  font-size: clamp(1.8rem, 7vw, 2.8rem);
+  line-height: 1.2;
+}
+
+.offline-card p {
+  margin: 0 0 12px;
+  color: #56615d;
+}
+
+.offline-retry {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 10px;
+  padding: 9px 17px;
+  border: 1px solid #24685f;
+  border-radius: 7px;
+  background: #24685f;
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.offline-retry:focus-visible {
+  outline: 2px solid #174b45;
+  outline-offset: 3px;
+}
+
+.offline-card small {
+  display: block;
+  margin-top: 16px;
+  color: #56615d;
+}
+
+@media (max-width: 390px) {
+  .pwa-install-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pwa-install-actions .button {
+    width: 100%;
+  }
+
+  .offline-card {
+    border-radius: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pwa-install-chevron {
+    transition: none;
+  }
+}

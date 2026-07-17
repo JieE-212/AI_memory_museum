@@ -4,15 +4,24 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="时屿（TIME ISLE）——把散落的生活片段整理成可检索、可回顾的私人展览。" />
+    <meta name="theme-color" content="#f4f1ea" />
+    <meta name="application-name" content="时屿" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="时屿" />
     <title>时屿｜AI 私人记忆策展工具</title>
-    <link rel="stylesheet" href="/styles.css?v=7.0.0" />
+    <link rel="manifest" href="/manifest.webmanifest?v=7.1.0" />
+    <link rel="icon" href="/assets/time-isle-icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/assets/time-isle-apple-touch.png" />
+    <link rel="stylesheet" href="/styles.css?v=7.1.0" />
+    <link rel="stylesheet" href="/pwa.css?v=7.1.0" />
     <link rel="stylesheet" href="/archaeology.css" />
-    <link rel="stylesheet" href="/exhibitions.css?v=7.0.0" />
-    <link rel="stylesheet" href="/capsules.css?v=7.0.0" />
-    <link rel="stylesheet" href="/revisits.css?v=7.0.0" />
-    <link rel="stylesheet" href="/clues.css?v=7.0.0" />
+    <link rel="stylesheet" href="/exhibitions.css?v=7.1.0" />
+    <link rel="stylesheet" href="/capsules.css?v=7.1.0" />
+    <link rel="stylesheet" href="/revisits.css?v=7.1.0" />
+    <link rel="stylesheet" href="/clues.css?v=7.1.0" />
     <link rel="stylesheet" href="/media.css" />
-    <link rel="stylesheet" href="/voice.css?v=7.0.0" />
+    <link rel="stylesheet" href="/voice.css?v=7.1.0" />
     <link rel="stylesheet" href="/media-evidence.css" />
     <link rel="stylesheet" href="/media-compare.css" />
     <link rel="stylesheet" href="/media-ocr.css" />
@@ -396,6 +405,30 @@
             <div class="tech-line" aria-label="技术栈">
               <span>Vanilla JS</span><span>Node.js</span><span>SQLite</span><span>Canvas</span><span>Vercel</span>
             </div>
+            <details class="pwa-install-panel" id="pwaInstallPanel" hidden>
+              <summary>
+                <span class="pwa-install-copy">
+                  <strong>添加到设备</strong>
+                  <small id="pwaInstallHint">从桌面或主屏幕直接打开时屿</small>
+                </span>
+                <span class="pwa-install-meta">
+                  <span class="pwa-install-state" id="pwaInstallState" aria-hidden="true">可安装</span>
+                  <span class="pwa-install-chevron" aria-hidden="true">＋</span>
+                </span>
+              </summary>
+              <div class="pwa-install-body">
+                <p>安装只增加启动入口，不移动、不上传馆藏；完整馆藏功能仍需当前数据服务可用。</p>
+                <div class="pwa-install-actions">
+                  <button type="button" class="button secondary" id="pwaInstallButton" hidden>安装到此设备</button>
+                </div>
+                <ol class="pwa-install-instructions" id="pwaInstallInstructions" hidden>
+                  <li>打开 Safari 的分享菜单。</li>
+                  <li>选择“添加到主屏幕”。</li>
+                  <li>确认添加。</li>
+                </ol>
+                <p class="action-note pwa-install-status" id="pwaInstallStatus" role="status" aria-live="polite" aria-atomic="true"></p>
+              </div>
+            </details>
           </section>
         </div>
       </section>
@@ -573,22 +606,23 @@
 
     <footer class="site-footer">
       <span>时屿 · 让记忆可整理，也让 AI 的依据可回看。</span>
-      <span id="footerVersion">v7.0.0</span>
+      <span id="footerVersion">v7.1.0</span>
     </footer>
 
     <script src="/assets/portability.js"></script>
     <script src="/assets/media-intelligence.js"></script>
     <script src="/assets/media.js"></script>
-    <script src="/assets/voice.js?v=7.0.0"></script>
+    <script src="/assets/voice.js?v=7.1.0"></script>
     <script src="/assets/media-evidence.js"></script>
     <script src="/assets/media-compare.js"></script>
     <script src="/assets/media-ocr.js"></script>
     <script src="/assets/media-lab.js"></script>
-    <script src="/assets/exhibitions.js?v=7.0.0"></script>
-    <script src="/assets/capsule-crypto.js?v=7.0.0"></script>
-    <script src="/assets/capsules.js?v=7.0.0"></script>
-    <script src="/assets/revisits.js?v=7.0.0"></script>
-    <script src="/assets/clues.js?v=7.0.0"></script>
-    <script src="/assets/app.js?v=7.0.0"></script>
+    <script src="/assets/exhibitions.js?v=7.1.0"></script>
+    <script src="/assets/capsule-crypto.js?v=7.1.0"></script>
+    <script src="/assets/capsules.js?v=7.1.0"></script>
+    <script src="/assets/revisits.js?v=7.1.0"></script>
+    <script src="/assets/clues.js?v=7.1.0"></script>
+    <script src="/assets/pwa.js?v=7.1.0"></script>
+    <script src="/assets/app.js?v=7.1.0"></script>
   </body>
 </html>

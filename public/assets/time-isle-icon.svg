@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
+  <title id="title">时屿</title>
+  <desc id="description">深绿色圆形中的岛屿与水纹标记</desc>
+  <rect width="512" height="512" rx="112" fill="#f4f1ea"/>
+  <circle cx="256" cy="256" r="178" fill="#24685f"/>
+  <path d="M198 294c11-31 30-50 58-50s47 19 58 50H198Z" fill="#fffdf8"/>
+  <path d="M256 244c-17-20-24-43-21-70 25 12 40 35 42 65-7 1-14 3-21 5Z" fill="#dce9e5"/>
+  <path d="M151 328c29-13 58-13 87 0s58 13 87 0 58-13 87 0" fill="none" stroke="#fffdf8" stroke-linecap="round" stroke-width="18"/>
+  <path d="M176 372c23-9 47-9 70 0s47 9 70 0 47-9 70 0" fill="none" stroke="#dce9e5" stroke-linecap="round" stroke-width="13"/>
+</svg>

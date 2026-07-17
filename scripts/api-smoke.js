@@ -260,8 +260,18 @@ async function runLocalFlow() {
     const app = await fetch(`${baseUrl}/assets/app.js`);
     assert("静态资源可访问", styles.ok && archaeologyStyles.ok && app.ok);
 
+    const manifestResponse = await fetch(`${baseUrl}/manifest.webmanifest`);
+    const manifest = await manifestResponse.json();
+    assert("PWA Manifest 可安装且保持四视图起点", manifestResponse.ok && manifestResponse.headers.get("content-type") === "application/manifest+json; charset=utf-8" && manifestResponse.headers.get("cache-control") === "no-cache, no-store, must-revalidate" && manifest.start_url === "/#collection" && manifest.display === "standalone" && manifest.icons.length === 2);
+    const workerResponse = await fetch(`${baseUrl}/sw.js`);
+    const workerSource = await workerResponse.text();
+    assert("Service Worker 根作用域禁缓存且只声明公开离线壳", workerResponse.ok && workerResponse.headers.get("service-worker-allowed") === "/" && workerResponse.headers.get("cache-control") === "no-cache, no-store, must-revalidate" && workerSource.includes('const OFFLINE_URL = "/offline.html"') && !workerSource.includes("cache.put"));
+    const offlineResponse = await fetch(`${baseUrl}/offline.html`);
+    const offlineText = await offlineResponse.text();
+    assert("离线页明确不缓存或展示私人馆藏", offlineResponse.ok && offlineText.includes("不会展示馆藏、照片、声音或导出内容") && !offlineText.includes("<script"));
+
     const health = await getJson(`${baseUrl}/api/health`);
-    assert("健康检查返回时屿品牌与版本", health.response.ok && health.payload.ok && health.payload.version === "7.0.0" && health.payload.schemaVersion === 9 && health.payload.name === "时屿" && health.payload.englishName === "TIME ISLE" && health.payload.tagline === "AI 私人记忆策展工具" && health.payload.stats.capsules === 0);
+    assert("健康检查返回时屿品牌与版本", health.response.ok && health.response.headers.get("cache-control") === "no-store" && health.payload.ok && health.payload.version === "7.1.0" && health.payload.schemaVersion === 9 && health.payload.name === "时屿" && health.payload.englishName === "TIME ISLE" && health.payload.tagline === "AI 私人记忆策展工具" && health.payload.stats.capsules === 0);
     assert("本地模式使用 SQLite", health.payload.mode === "local" && health.payload.storage === "local-sqlite");
     assert("健康检查声明本地语义线索检索与短词回退", health.payload.search?.engine === "fts5-trigram" && health.payload.search?.shortQueryFallback === "parameterized-like" && health.payload.search?.externalModelRequired === false);
 
@@ -286,7 +296,7 @@ async function runLocalFlow() {
     assert("写请求以 403 拒绝恶意 Origin", maliciousOrigin === 403);
 
     const version = await getJson(`${baseUrl}/api/version`);
-    assert("版本接口描述核心产品流程", version.response.ok && version.payload.productFlow.join(",") === "记录,AI 整理,照片与声音归档,语义线索检索与讲解,主题策展,记忆回访,时光胶囊与加密分享,记忆考古,安全导出" && version.payload.v7.offlineSharing.includes("AES-256-GCM"));
+    assert("版本接口描述核心产品流程", version.response.ok && version.payload.productFlow.join(",") === "记录,AI 整理,照片与声音归档,语义线索检索与讲解,主题策展,记忆回访,时光胶囊与加密分享,记忆考古,安全导出" && version.payload.v7.offlineSharing.includes("AES-256-GCM") && version.payload.v7.pwa.includes("不缓存私人馆藏"));
 
     const demo = await getJson(`${baseUrl}/api/demo/status`);
     assert("本地模式未伪装成公开 Demo", demo.response.ok && demo.payload.interviewDemo === false);
@@ -698,10 +708,11 @@ async function runLocalMediaFlow(baseUrl, memoryId, relatedId, mediaRoot) {
   const displayBody = Buffer.from(await displayResponse.arrayBuffer());
   const etag = displayResponse.headers.get("etag");
   assert(
-    "GET 可读取派生图并返回内容型 ETag",
+    "GET 可读取派生图、返回内容型 ETag 且禁浏览器缓存",
     displayResponse.ok &&
       displayResponse.headers.get("content-type") === "image/webp" &&
       displayResponse.headers.get("content-length") === String(display.length) &&
+      displayResponse.headers.get("cache-control") === "private, no-store" &&
       displayBody.equals(display) &&
       etag === `"sha256-${sha256(display)}"`
   );

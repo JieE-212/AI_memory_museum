@@ -4,6 +4,7 @@ const path = require("path");
 const root = path.resolve(__dirname, "..");
 const html = read("public/index.html");
 const css = read("public/styles.css");
+const pwaCss = read("public/pwa.css");
 const archaeologyCss = read("public/archaeology.css");
 const mediaCss = read("public/media.css");
 const voiceCss = read("public/voice.css");
@@ -16,6 +17,7 @@ const exhibitionsCss = read("public/exhibitions.css");
 const revisitsCss = read("public/revisits.css");
 const cluesCss = read("public/clues.css");
 const app = read("public/assets/app.js");
+const pwaApp = read("public/assets/pwa.js");
 const mediaApp = read("public/assets/media.js");
 const voiceApp = read("public/assets/voice.js");
 const capsuleCryptoApp = read("public/assets/capsule-crypto.js");
@@ -45,7 +47,7 @@ const voiceDetailMarkup = globalThis.TimeIsleVoice.renderDetailVoices({ voices: 
   { assetId: "voice-confirmed", position: 0, label: "窗边的雨", asset: { id: "voice-confirmed", durationMs: 3100, contentUrl: "/api/voice/assets/voice-confirmed/content" }, transcript: { status: "confirmed", text: "这是人工确认的文字。" } },
   { assetId: "voice-draft", position: 1, asset: { id: "voice-draft", contentUrl: "/api/voice/assets/voice-draft/content" }, transcript: { status: "draft", text: "普通详情不能出现的草稿。" } }
 ] });
-const queriedIds = [app, mediaApp, voiceApp, capsuleApp, mediaEvidenceApp, portabilityApp, exhibitionsApp, revisitsApp, cluesApp].flatMap((source) => [
+const queriedIds = [app, pwaApp, mediaApp, voiceApp, capsuleApp, mediaEvidenceApp, portabilityApp, exhibitionsApp, revisitsApp, cluesApp].flatMap((source) => [
   ...source.matchAll(/(?:querySelector\("#|getElementById\(")([a-zA-Z0-9_-]+)"\)/g)
 ].map((match) => match[1]));
 const htmlIds = [...html.matchAll(/\sid="([a-zA-Z0-9_-]+)"/g)].map((match) => match[1]);
@@ -74,13 +76,16 @@ const compactNavRule = ruleDeclarations(compactMobileCss, ".main-nav");
 const compactButtonRule = ruleDeclarations(compactMobileCss, ".nav-button");
 
 const checks = [
+  ["V7.1 PWA stays inside the four-view information architecture", (html.match(/class="nav-button/g) || []).length === 4 && html.includes('id="pwaInstallPanel" hidden') && html.indexOf('id="pwaInstallPanel"') > html.indexOf('data-view-panel="data"') && !html.includes('data-view="pwa"')],
+  ["PWA resources load in manifest-style-controller-app order", html.includes('/manifest.webmanifest?v=7.1.0') && html.indexOf('/styles.css?v=7.1.0') < html.indexOf('/pwa.css?v=7.1.0') && html.indexOf('/assets/pwa.js?v=7.1.0') < html.indexOf('/assets/app.js?v=7.1.0')],
+  ["PWA install uses progressive disclosure without private persistence", pwaApp.includes('beforeinstallprompt') && pwaApp.includes('appinstalled') && pwaApp.includes('updateViaCache: "none"') && !/localStorage|sessionStorage|indexedDB|\bcaches\b/iu.test(pwaApp) && pwaCss.includes('.pwa-install-panel [hidden]')],
   ["V7 capsule stays inside the four-view information architecture", (html.match(/class="nav-button/g) || []).length === 4 && html.includes('id="capsuleStudioButton"') && !html.includes('data-view="capsule"') && html.indexOf('id="capsuleStudioButton"') > html.indexOf('id="insightsTitle"')],
   ["Capsule resources load in crypto-controller-app order", (html.match(/\/capsules\.css/g) || []).length === 1 && (html.match(/\/assets\/capsule-crypto\.js/g) || []).length === 1 && (html.match(/\/assets\/capsules\.js/g) || []).length === 1 && html.indexOf('/assets/capsule-crypto.js') < html.indexOf('/assets/capsules.js') && html.indexOf('/assets/capsules.js') < html.indexOf('/assets/app.js')],
   ["Capsule creation and passphrase use progressive disclosure", html.includes('<details class="capsule-create-panel" id="capsuleCreatePanel">') && html.includes('id="capsuleExportPanel"') && !html.includes('<details class="capsule-create-panel" id="capsuleCreatePanel" open') && capsuleApp.indexOf("preparedMaterial = await hydrateMaterial") < capsuleApp.indexOf("showExportPanel();")],
   ["Capsule passphrases stay browser-only and are cleared", !/localStorage|sessionStorage|indexedDB/iu.test(capsuleApp) && !/JSON\.stringify\([^\n]{0,200}passphrase/iu.test(capsuleApp) && capsuleApp.includes('elements.passphrase.value = ""') && capsuleApp.includes('elements.passphraseConfirm.value = ""')],
   ["Offline exhibit crypto and no-network container are fixed", capsuleCryptoApp.includes("PBKDF2_ITERATIONS = 310000") && capsuleCryptoApp.includes("KEY_BITS = 256") && capsuleCryptoApp.includes("TAG_BITS = 128") && capsuleCryptoApp.includes("createOfflineHtml") && capsuleCryptoApp.includes("connect-src 'none'")],
   ["Capsule mobile dialog keeps safe areas and touch targets", capsuleCss.includes("height: 100dvh;") && capsuleCss.includes("max-height: 100dvh;") && capsuleCss.includes("min-height: 44px;") && capsuleCss.includes("min-width: 44px;") && ["safe-area-inset-top", "safe-area-inset-right", "safe-area-inset-bottom", "safe-area-inset-left"].every((token) => capsuleCss.includes(token)) && capsuleCss.includes("@media (max-width: 650px)") && capsuleCss.includes("@media (max-width: 390px)") && capsuleCss.includes("@media (max-width: 320px)")],
-  ["Demo voice controls keep native hidden state", /\.voice-field\s+\[hidden\],\s*\.memory-voice-detail\s+\[hidden\]\s*\{[^}]*display:\s*none\s*!important;/s.test(voiceCss) && html.includes('/voice.css?v=7.0.0')],
+  ["Demo voice controls keep native hidden state", /\.voice-field\s+\[hidden\],\s*\.memory-voice-detail\s+\[hidden\]\s*\{[^}]*display:\s*none\s*!important;/s.test(voiceCss) && html.includes('/voice.css?v=7.1.0')],
   ["页面包含四个清晰主视图", ["collection", "compose", "reflect", "data"].every((view) => html.includes(`data-view-panel="${view}"`))],
   ["主导航仍严格保持单一四项", (html.match(/<nav class="main-nav"/g) || []).length === 1 && (html.match(/class="nav-button/g) || []).length === 4],
   ["主导航暴露受控视图和唯一当前项", ["collection", "compose", "reflect", "data"].every((view) => new RegExp(`data-view="${view}"[^>]*aria-controls="view-${view}"`).test(html)) && (html.match(/aria-current="page"/g) || []).length === 1 && app.includes('button.setAttribute("aria-current", active ? "page" : "false")')],
@@ -142,7 +147,7 @@ const checks = [
   ["页面不再暴露阶段治理术语", !/Phase\s*\d+|Reviewer|插件生态|运行时沙箱|发布审批/.test(html)],
   ["页面没有内联脚本或样式", !/<script(?!\s+src=)/i.test(html) && !/<style/i.test(html) && !/\sstyle="/i.test(html)],
   ["Vercel 静态页面复用完整安全响应头", hasVercelSecurityHeaders(vercel)],
-  ["样式未使用渐变", !/gradient\s*\(/i.test(`${css}\n${archaeologyCss}\n${mediaCss}\n${voiceCss}\n${capsuleCss}\n${mediaEvidenceCss}\n${mediaCompareCss}\n${mediaOcrCss}\n${mediaLabCss}\n${exhibitionsCss}\n${revisitsCss}\n${cluesCss}`)],
+  ["样式未使用渐变", !/gradient\s*\(/i.test(`${css}\n${pwaCss}\n${archaeologyCss}\n${mediaCss}\n${voiceCss}\n${capsuleCss}\n${mediaEvidenceCss}\n${mediaCompareCss}\n${mediaOcrCss}\n${mediaLabCss}\n${exhibitionsCss}\n${revisitsCss}\n${cluesCss}`)],
   ["前端覆盖核心 API", ["/api/memories", "/api/analyze", "/api/search", "/api/guide", "/api/insights", "/api/privacy", "/api/archaeology/routes", "/api/archaeology/puzzle"].every((endpoint) => app.includes(endpoint))],
   ["图片前端覆盖安全上传和关联 API", ["/uploads", "/complete", "/api/memories/"].every((endpoint) => mediaApp.includes(endpoint))],
   ["附件关联失败后复用已创建展品而不重复新增", app.includes("const targetMemoryId = state.editingMemoryId || state.pendingSaveMemoryId;") && app.includes('method: targetMemoryId ? "PUT" : "POST"') && app.indexOf("state.pendingSaveMemoryId = saved.memory.id") < app.indexOf('runAttachmentControllers("saveToMemory", saved.memory.id)') && app.includes("不会重复创建展品") && app.includes('return "继续完成保存"') && app.includes('state.pendingSaveMemoryId = "";')],
@@ -159,7 +164,7 @@ const checks = [
   ["考古结论保留人工确认边界", archaeology.includes('sameEvent: "unassessed"') && archaeology.includes("requiresConfirmation") && archaeology.includes("sourceQuote")],
   ["服务端不再加载旧运维治理模块", !server.includes("createOperationsService") && !server.includes("phase29") && !server.includes("phase30")],
   ["npm 命令保持精简", Object.keys(pkg.scripts || {}).length <= 7],
-  ["核心文件规模已收敛", lineCount(server) < 1400 && lineCount(app) < 1340 && lineCount(mediaApp) < 1150 && lineCount(voiceApp) < 900 && lineCount(capsuleApp) < 1000 && lineCount(mediaEvidenceApp) < 850 && lineCount(mediaCompareApp) < 850 && lineCount(mediaOcrApp) < 750 && lineCount(mediaLabApp) < 500 && lineCount(portabilityApp) < 250 && lineCount(exhibitionsApp) < 850 && lineCount(revisitsApp) < 550 && lineCount(cluesApp) < 750 && lineCount(css) < 1600 && lineCount(archaeologyCss) < 400 && lineCount(mediaCss) < 700 && lineCount(voiceCss) < 450 && lineCount(capsuleCss) < 650 && lineCount(mediaEvidenceCss) < 500 && lineCount(exhibitionsCss) < 800 && lineCount(revisitsCss) < 450 && lineCount(cluesCss) < 550 && lineCount(archaeology) < 900 && lineCount(archaeologyBackup) < 300]
+  ["核心文件规模已收敛", lineCount(server) < 1400 && lineCount(app) < 1340 && lineCount(pwaApp) < 250 && lineCount(mediaApp) < 1150 && lineCount(voiceApp) < 900 && lineCount(capsuleApp) < 1000 && lineCount(mediaEvidenceApp) < 850 && lineCount(mediaCompareApp) < 850 && lineCount(mediaOcrApp) < 750 && lineCount(mediaLabApp) < 500 && lineCount(portabilityApp) < 250 && lineCount(exhibitionsApp) < 850 && lineCount(revisitsApp) < 550 && lineCount(cluesApp) < 750 && lineCount(css) < 1600 && lineCount(pwaCss) < 250 && lineCount(archaeologyCss) < 400 && lineCount(mediaCss) < 700 && lineCount(voiceCss) < 450 && lineCount(capsuleCss) < 650 && lineCount(mediaEvidenceCss) < 500 && lineCount(exhibitionsCss) < 800 && lineCount(revisitsCss) < 450 && lineCount(cluesCss) < 550 && lineCount(archaeology) < 900 && lineCount(archaeologyBackup) < 300]
 ];
 
 let failed = 0;
@@ -198,5 +203,5 @@ function hasVercelSecurityHeaders(config) {
     && headers["Referrer-Policy"] === "same-origin"
     && headers["X-Frame-Options"] === "DENY"
     && headers["Permissions-Policy"] === "camera=(), microphone=(), geolocation=()"
-    && headers["Content-Security-Policy"] === "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
+    && headers["Content-Security-Policy"] === "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self'; script-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
 }

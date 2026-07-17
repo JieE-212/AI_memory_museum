@@ -62,6 +62,8 @@ const syntaxFiles = [
   "public/assets/voice.js",
   "public/assets/capsule-crypto.js",
   "public/assets/capsules.js",
+  "public/assets/pwa.js",
+  "public/sw.js",
   "public/assets/app.js"
 ];
 const checks = [
@@ -86,6 +88,7 @@ const checks = [
   "scripts/capsule-api-check.js",
   "scripts/offline-exhibit-check.js",
   "scripts/capsule-ui-check.js",
+  "scripts/pwa-check.js",
   "scripts/media-format-check.js",
   "scripts/media-storage-check.js",
   "scripts/media-api-check.js",

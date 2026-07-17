@@ -45,13 +45,12 @@ const MEDIA_ROOT = process.env.MEDIA_ROOT || (INTERVIEW_DEMO
   ? path.join(os.tmpdir(), "ai-memory-museum-interview-demo-media")
   : path.join(path.dirname(DB_PATH), "media"));
 const VOICE_ROOT = INTERVIEW_DEMO ? path.join(MEDIA_ROOT, "voice") : (process.env.VOICE_ROOT || path.join(MEDIA_ROOT, "voice"));
-const APP_VERSION = "7.0.0";
+const APP_VERSION = "7.1.0";
 const SCHEMA_VERSION = 9;
 const MAX_RAW_LENGTH = 4000;
 const MAX_BODY_LENGTH = 2 * 1024 * 1024;
 const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS) || 20000;
 const AI_ENABLED = Boolean(process.env.AI_API_KEY) && !INTERVIEW_DEMO;
-
 const halls = [
   { id: "youth", name: "青春展厅", description: "校园、成长、毕业和那些没有说完的话。" },
   { id: "friends", name: "朋友展厅", description: "朋友、室友、群聊与共同经历。" },
@@ -173,7 +172,7 @@ async function handleRequest(request, response) {
         v7: {
           timeCapsules: "未到期只返回外壳；本地日期是仪式门槛，不是密码学时间锁",
           offlineSharing: "浏览器端 PBKDF2-SHA-256 + AES-256-GCM，口令不上传、不持久化",
-          offlineFile: "单个 HTML、无外链、可断网阅读"
+          offlineFile: "单个 HTML、无外链、可断网阅读", pwa: "可安装外壳只提供离线边界页，不缓存私人馆藏"
         },
         demo: buildInterviewDemoStatus()
       });
@@ -1233,7 +1232,8 @@ function serveStatic(urlPath, response) {
   if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) throw httpError(404, "页面不存在。");
   response.statusCode = 200;
   response.setHeader("Content-Type", getContentType(filePath));
-  response.setHeader("Cache-Control", filePath.endsWith("index.html") ? "no-cache" : "public, max-age=300");
+  const fileName = path.basename(filePath).toLowerCase(); const noCache = ["index.html", "sw.js", "manifest.webmanifest"].includes(fileName);
+  response.setHeader("Cache-Control", noCache ? "no-cache, no-store, must-revalidate" : "public, max-age=300"); if (fileName === "sw.js") response.setHeader("Service-Worker-Allowed", "/");
   fs.createReadStream(filePath).pipe(response);
 }
 
@@ -1243,7 +1243,7 @@ function getContentType(filePath) {
     ".html": "text/html; charset=utf-8",
     ".css": "text/css; charset=utf-8",
     ".js": "application/javascript; charset=utf-8",
-    ".json": "application/json; charset=utf-8",
+    ".json": "application/json; charset=utf-8", ".webmanifest": "application/manifest+json; charset=utf-8",
     ".svg": "image/svg+xml",
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -1257,7 +1257,7 @@ function setSecurityHeaders(response) {
   response.setHeader("Referrer-Policy", "same-origin");
   response.setHeader("X-Frame-Options", "DENY");
   response.setHeader("Permissions-Policy", `camera=(), microphone=${INTERVIEW_DEMO ? "()" : "(self)"}, geolocation=()`);
-  response.setHeader("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+  response.setHeader("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self'; script-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
 }
 
 function sendJson(response, statusCode, payload) {

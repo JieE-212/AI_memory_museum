@@ -167,7 +167,7 @@ async function initialize() {
     cluesController = window.TimeIsleClues?.createEntityDialogController({ demo: demo.interviewDemo, onOpenMemory: openMemory, onDataChanged: reloadMemories }) || null;
     populateOptions();
     renderApp();
-    elements.footerVersion.textContent = `v${version.version || "7.0.0"}`;
+    elements.footerVersion.textContent = `v${version.version || "7.1.0"}`;
     setRuntimeStatus(demo.interviewDemo ? "Demo 已连接" : "本地馆藏已连接", "ready");
     const initialView = normalizeView(location.hash.replace("#", ""));
     switchView(initialView, { updateHash: false });
