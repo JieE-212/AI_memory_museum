@@ -36,10 +36,36 @@ async function runArchiveMediaFlow() {
           hall: "daily",
           sourceType: "照片描述",
           rawContent: `${title}，这是用于完整归档回环的本地测试。`,
-          exhibitText: `${title}的展品说明。`
+          exhibitText: `${title}的展品说明。`,
+          date: "2025-05-20",
+          location: "归档操场",
+          people: ["归档朋友"],
+          tags: ["归档回环"]
         });
         assert(`完整归档场景可创建${title}`, created.response.status === 201);
       }
+
+      const exhibitionPreview = await postJson(`${baseUrl}/api/exhibitions/preview`, {
+        theme: "旧操场与重返",
+        memoryIds: [leftId, rightId]
+      });
+      const savedExhibition = await postJson(`${baseUrl}/api/exhibitions`, {
+        ...exhibitionPreview.payload.preview,
+        status: "published",
+        confirm: true
+      });
+      assert("完整归档场景可发布带原文依据的主题展览", exhibitionPreview.response.ok && savedExhibition.response.status === 201 && savedExhibition.payload.exhibition.status === "published");
+      const sourceExhibitionId = savedExhibition.payload.exhibition.id;
+      const archiveRevisitContext = { localDate: "2026-05-20", timezone: "Asia/Shanghai" };
+      const archivedViewed = await postJson(`${baseUrl}/api/revisits/${leftId}/viewed`, archiveRevisitContext);
+      const archivedDismissed = await postJson(`${baseUrl}/api/revisits/${rightId}/dismissed`, archiveRevisitContext);
+      assert(
+        "完整归档场景保存回访与当日隐藏状态",
+        archivedViewed.response.ok &&
+          archivedViewed.payload.state.viewCount === 1 &&
+          archivedDismissed.response.ok &&
+          archivedDismissed.payload.state.dismissedLocalDate === archiveRevisitContext.localDate
+      );
 
       const display = createWebp(320, 180);
       const thumb = createWebp(120, 80);
@@ -65,24 +91,140 @@ async function runArchiveMediaFlow() {
       const compare = await getJson(`${baseUrl}/api/archaeology/puzzle?memoryId=${leftId}&relatedId=${rightId}`);
       assert("时光拼图同时返回两侧图片供手动对照", compare.response.ok && compare.payload.imageCompare.left.length === 1 && compare.payload.imageCompare.right.length === 1);
 
+      const voiceUpload = await uploadVoice(baseUrl, createVoiceWebm(1_200), "操场晚风.webm", "audio/webm");
+      const sourceVoiceId = voiceUpload.payload.asset.id;
+      const linkedVoice = await putJson(`${baseUrl}/api/memories/${leftId}/voices`, {
+        items: [{ assetId: sourceVoiceId, label: "操场晚风" }]
+      });
+      await putJson(`${baseUrl}/api/memories/${leftId}/voices/${sourceVoiceId}/transcript`, {
+        text: "归档声音暗号",
+        confirm: true
+      });
+      const voiceRange = await fetch(`${baseUrl}/api/voice/assets/${sourceVoiceId}/content`, { headers: { Range: "bytes=0-9" } });
+      assert("完整归档场景保存可拖动播放的声音与人工确认文字稿", voiceUpload.response.status === 201 && linkedVoice.payload.count === 1 && voiceRange.status === 206 && voiceRange.headers.get("content-range")?.startsWith("bytes 0-9/"));
+
+      const safeCandidates = await getJson(`${baseUrl}/api/offline-exhibits/candidates?exhibitionId=${encodeURIComponent(sourceExhibitionId)}`);
+      assert(
+        "离线展览候选只列来源展览的 display WebP 与 confirmed 文字稿",
+        safeCandidates.response.ok &&
+          safeCandidates.payload.media.some((item) => item.assetId === leftAsset.id && item.mimeType === "image/webp") &&
+          safeCandidates.payload.transcripts.some((item) => item.assetId === sourceVoiceId && item.confirmed === true && item.text === "归档声音暗号")
+      );
+      const safeMaterial = await postJson(`${baseUrl}/api/offline-exhibits/material`, {
+        sourceType: "exhibition",
+        sourceId: sourceExhibitionId,
+        mediaAssetIds: [leftAsset.id],
+        transcriptAssetIds: [sourceVoiceId],
+        confirm: true
+      });
+      const safeSnapshotText = JSON.stringify(safeMaterial.payload.material.snapshot);
+      assert(
+        "离线展览材料匿名化且只保留明确选择的安全内容",
+        safeMaterial.response.ok &&
+          safeMaterial.payload.material.media.length === 1 &&
+          safeMaterial.payload.material.media[0].mimeType === "image/webp" &&
+          safeMaterial.payload.material.media[0].width === 320 &&
+          safeMaterial.payload.material.media[0].height === 180 &&
+          safeSnapshotText.includes("归档声音暗号") &&
+          !safeSnapshotText.includes(leftId) &&
+          !safeSnapshotText.includes(leftAsset.id) &&
+          !safeSnapshotText.includes(sourceVoiceId)
+      );
+
+      const lockedCapsule = await postJson(`${baseUrl}/api/capsules`, {
+        exhibitionId: sourceExhibitionId,
+        title: "未开启归档胶囊",
+        shellMessage: "等到未来再见",
+        opensOn: "2099-05-20",
+        timezone: "Asia/Shanghai",
+        mediaAssetIds: [leftAsset.id],
+        transcriptAssetIds: [sourceVoiceId],
+        confirm: true
+      });
+      const sourceLockedCapsuleId = lockedCapsule.payload.capsule.id;
+      const lockedContent = await getJson(`${baseUrl}/api/capsules/${sourceLockedCapsuleId}/content`);
+      const lockedText = JSON.stringify(lockedContent.payload);
+      assert(
+        "未到期胶囊只返回外壳且不泄漏任何 payload 线索",
+        lockedCapsule.response.status === 201 &&
+          lockedContent.response.status === 423 &&
+          Object.keys(lockedContent.payload).sort().join(",") === "capsule,code,error" &&
+          lockedContent.payload.capsule.available === false &&
+          lockedContent.payload.capsule.ceremonialGate === true &&
+          !lockedText.includes(leftId) &&
+          !lockedText.includes(leftAsset.id) &&
+          !lockedText.includes(sourceVoiceId) &&
+          !lockedText.includes("归档声音暗号")
+      );
+
+      const openedCapsule = await postJson(`${baseUrl}/api/capsules`, {
+        exhibitionId: sourceExhibitionId,
+        title: "已开启归档胶囊",
+        shellMessage: "用于无损归档回环",
+        opensOn: "2020-05-20",
+        timezone: "Asia/Shanghai",
+        mediaAssetIds: [leftAsset.id],
+        transcriptAssetIds: [sourceVoiceId],
+        confirm: true
+      });
+      const sourceOpenedCapsuleId = openedCapsule.payload.capsule.id;
+      const openedContent = await getJson(`${baseUrl}/api/capsules/${sourceOpenedCapsuleId}/content`);
+      assert(
+        "到期胶囊返回匿名快照与所选安全展示图",
+        openedCapsule.response.status === 201 &&
+          openedContent.response.ok &&
+          openedContent.payload.capsule.available === true &&
+          openedContent.payload.content.media.length === 1 &&
+          openedContent.payload.content.snapshot.sections.some((section) => section.items.some((item) => item.confirmedTranscripts.includes("归档声音暗号") && item.confirmedQuotes.length > 0))
+      );
+
       const archiveResponse = await fetch(`${baseUrl}/api/archive/export`);
       const archive = Buffer.from(await archiveResponse.arrayBuffer());
       assert("完整 .time-isle 导出包含二进制归档与下载文件名", archiveResponse.ok && archiveResponse.headers.get("content-type") === "application/vnd.time-isle" && archiveResponse.headers.get("content-disposition").includes(".time-isle") && archive.subarray(0, 2).equals(Buffer.from([0x1f, 0x8b])));
+      const archiveCollection = await getJson(`${baseUrl}/api/memories/export`);
+      const archivedEntityCount = archiveCollection.payload.entities.entities.length;
+      const archivedEntityId = archiveCollection.payload.entities.entities[0].id;
+      assert("完整归档边界包含实体图", archivedEntityCount > 0 && archiveCollection.payload.entities.entities.every((entity) => entity.memoryLinks.length > 0));
+      assert("完整归档边界包含声音索引与确认文字稿", archiveCollection.payload.voices.assets.length === 1 && archiveCollection.payload.voices.transcripts.some((item) => item.text === "归档声音暗号" && item.status === "confirmed"));
+      assert("完整归档边界包含胶囊安全快照与展示图引用", archiveCollection.payload.capsules.capsules.length === 2 && archiveCollection.payload.capsules.capsules.every((item) => item.snapshot.sections.length > 0) && archiveCollection.payload.capsules.capsules.some((item) => item.mediaLinks.some((link) => link.assetId === leftAsset.id)));
 
       const purged = await deleteJson(`${baseUrl}/api/memories/purge`, { confirm: "DELETE" });
-      assert("归档恢复前可隔离并清空源馆藏与媒体", purged.response.ok && purged.payload.mediaCleanupPending === false && listFiles(path.join(mediaRoot, "assets")).length === 0);
+      assert("归档恢复前可隔离并清空源馆藏、胶囊、实体索引、回访状态、图片与声音", purged.response.ok && purged.payload.purge.capsulesDeleted === 2 && purged.payload.purge.revisitStatesDeleted === 2 && purged.payload.purge.entitiesDeleted === archivedEntityCount && purged.payload.purge.searchDocumentsDeleted === 2 && purged.payload.purge.voiceAssetsDeleted === 1 && purged.payload.mediaCleanupPending === false && listFiles(path.join(mediaRoot, "assets")).length === 0 && listFiles(path.join(mediaRoot, "voice", "ready")).length === 0);
       const restoreResponse = await fetch(`${baseUrl}/api/archive/restore`, {
         method: "POST",
         headers: writeHeaders(`${baseUrl}/api/archive/restore`, { "Content-Type": "application/octet-stream" }),
         body: archive
       });
       const restored = await restoreResponse.json();
-      assert("完整归档以单次事务恢复展品、媒体和图片线索", restoreResponse.ok && restored.imported === 2 && restored.media.assetsCreated === 2 && restored.media.links === 2 && restored.media.observations === 3);
+      assert("完整归档以单次事务恢复展品、图片、声音、胶囊、展览、回访与实体图", restoreResponse.ok && restored.imported === 2 && restored.media.assetsCreated === 2 && restored.media.links === 2 && restored.media.observations === 3 && restored.voices.assets === 1 && restored.voices.memoryLinks === 1 && restored.voices.transcripts === 1 && restored.capsules.capsules === 2 && restored.capsules.mediaLinks === 2 && restored.exhibitions.exhibitions === 1 && restored.revisits.states === 2 && restored.entities.entities === archivedEntityCount && restored.idMap.entities[archivedEntityId]);
       const restoredLeftId = restored.idMap.memories[leftId];
       const restoredLeftAsset = restored.idMap.assets[leftAsset.id];
+      const restoredVoiceId = restored.idMap.voices[sourceVoiceId];
       const restoredDetail = await getJson(`${baseUrl}/api/memories/${restoredLeftId}`);
       const restoredAnnotations = await getJson(`${baseUrl}/api/memories/${restoredLeftId}/media/${restoredLeftAsset}/annotations`);
       assert("恢复后图片文件、关联与敏感区域证据仍可读取", restoredDetail.payload.memory.media.length === 1 && restoredAnnotations.payload.annotations.length === 1 && restoredAnnotations.payload.annotations[0].sensitive === true && listFiles(path.join(mediaRoot, "assets")).length === 6);
+      const restoredVoiceRange = await fetch(`${baseUrl}/api/voice/assets/${restoredVoiceId}/content`, { headers: { Range: "bytes=-8" } });
+      const restoredVoiceSearch = await getJson(`${baseUrl}/api/search?q=${encodeURIComponent("归档声音暗号")}`);
+      assert("恢复后声音文件、关联、Range 与确认文字稿检索仍可用", restoredDetail.payload.memory.voices.length === 1 && restoredDetail.payload.memory.voices[0].transcript.confirmed === true && restoredVoiceRange.status === 206 && restoredVoiceSearch.payload.results.some((item) => item.memory.id === restoredLeftId && item.matchedFields.includes("voice")) && listFiles(path.join(mediaRoot, "voice", "ready")).length === 1);
+      const restoredEntity = await getJson(`${baseUrl}/api/entities/${restored.idMap.entities[archivedEntityId]}`);
+      assert(".time-isle 恢复后实体关系映射到恢复后的展品", restoredEntity.response.ok && restoredEntity.payload.entity.memories.some((memory) => memory.memoryId === restoredLeftId || memory.memoryId === restored.idMap.memories[rightId]));
+      const restoredExhibition = await getJson(`${baseUrl}/api/exhibitions/${restored.idMap.exhibitions[sourceExhibitionId]}`);
+      assert("完整归档恢复后展览引用已映射到恢复后的展品", restoredExhibition.response.ok && restoredExhibition.payload.exhibition.memoryIds.includes(restoredLeftId));
+      const restoredOpenedCapsuleId = restored.idMap.capsules[sourceOpenedCapsuleId];
+      const restoredLockedCapsuleId = restored.idMap.capsules[sourceLockedCapsuleId];
+      const restoredCapsuleContent = await getJson(`${baseUrl}/api/capsules/${restoredOpenedCapsuleId}/content`);
+      const restoredLockedContent = await getJson(`${baseUrl}/api/capsules/${restoredLockedCapsuleId}/content`);
+      assert(
+        "完整归档恢复后胶囊日期、匿名文字与展示图映射保持一致",
+        restoredCapsuleContent.response.ok &&
+          restoredCapsuleContent.payload.content.media[0].contentUrl.includes(restoredLeftAsset) &&
+          restoredCapsuleContent.payload.content.snapshot.sections.some((section) => section.items.some((item) => item.confirmedTranscripts.includes("归档声音暗号"))) &&
+          restoredLockedContent.response.status === 423 &&
+          restoredLockedContent.payload.capsule.opensOn === "2099-05-20"
+      );
+      const restoredRevisits = await getJson(`${baseUrl}/api/revisits?kind=long-unseen&localDate=2026-05-21&timezone=Asia%2FShanghai&limit=20`);
+      const restoredViewed = restoredRevisits.payload.revisits.find((item) => item.memory.id === restoredLeftId);
+      assert("完整归档恢复后回访状态已映射到恢复后的展品", restoredRevisits.response.ok && restored.idMap.revisits[leftId] === restoredLeftId && restoredViewed?.state.viewCount === 1);
       const restoredSimilar = await getJson(`${baseUrl}/api/media/assets/${restoredLeftAsset}/similar`);
       assert("恢复后的检索指纹仍只生成相似候选", restoredSimilar.payload.candidates.length === 1 && restoredSimilar.payload.candidates[0].requiresReview === true);
 
@@ -119,8 +261,9 @@ async function runLocalFlow() {
     assert("静态资源可访问", styles.ok && archaeologyStyles.ok && app.ok);
 
     const health = await getJson(`${baseUrl}/api/health`);
-    assert("健康检查返回时屿品牌与版本", health.response.ok && health.payload.ok && health.payload.version === "4.0.0" && health.payload.schemaVersion === 4 && health.payload.name === "时屿" && health.payload.englishName === "TIME ISLE" && health.payload.tagline === "AI 私人记忆策展工具");
+    assert("健康检查返回时屿品牌与版本", health.response.ok && health.payload.ok && health.payload.version === "7.0.0" && health.payload.schemaVersion === 9 && health.payload.name === "时屿" && health.payload.englishName === "TIME ISLE" && health.payload.tagline === "AI 私人记忆策展工具" && health.payload.stats.capsules === 0);
     assert("本地模式使用 SQLite", health.payload.mode === "local" && health.payload.storage === "local-sqlite");
+    assert("健康检查声明本地语义线索检索与短词回退", health.payload.search?.engine === "fts5-trigram" && health.payload.search?.shortQueryFallback === "parameterized-like" && health.payload.search?.externalModelRequired === false);
 
     const spoofedHost = await rawHttpStatus(`${baseUrl}/api/health`, {
       headers: { Host: "attacker.example" }
@@ -143,13 +286,14 @@ async function runLocalFlow() {
     assert("写请求以 403 拒绝恶意 Origin", maliciousOrigin === 403);
 
     const version = await getJson(`${baseUrl}/api/version`);
-    assert("版本接口描述核心产品流程", version.response.ok && version.payload.productFlow.join(",") === "记录,AI 整理,照片归档,检索与讲解,记忆考古,安全导出");
+    assert("版本接口描述核心产品流程", version.response.ok && version.payload.productFlow.join(",") === "记录,AI 整理,照片与声音归档,语义线索检索与讲解,主题策展,记忆回访,时光胶囊与加密分享,记忆考古,安全导出" && version.payload.v7.offlineSharing.includes("AES-256-GCM"));
 
     const demo = await getJson(`${baseUrl}/api/demo/status`);
     assert("本地模式未伪装成公开 Demo", demo.response.ok && demo.payload.interviewDemo === false);
 
     const options = await getJson(`${baseUrl}/api/options`);
     assert("选项接口包含七个中文展厅", options.response.ok && options.payload.halls.length === 7 && options.payload.halls.every((hall) => hall.name.endsWith("展厅")));
+    assert("本地声音策略锁定三段、三分钟与 12 MiB", options.payload.voicePolicy.maxVoicesPerMemory === 3 && options.payload.voicePolicy.maxDurationMs === 180000 && options.payload.voicePolicy.maxBytes === 12 * 1024 * 1024);
 
     const rawContent = "2025年5月20日，我和朋友在学校操场散步。那段时间很迷茫，但他一直陪我把话说完。";
     const analysis = await postJson(`${baseUrl}/api/analyze`, { rawContent });
@@ -195,11 +339,88 @@ async function runLocalFlow() {
       date: "2025-05-20",
       location: "学校操场",
       people: ["朋友"],
-      tags: ["陪伴", "操场"],
+      tags: ["陪伴", "操场", "星河湾"],
       emotions: ["温暖"],
       importance: 4
     });
     assert("可保存同一往事的第二个版本", related.response.status === 201 && related.payload.memory.id === relatedId);
+
+    const shortClueSearch = await getJson(`${baseUrl}/api/search?q=${encodeURIComponent("学校")}`);
+    const trigramClueSearch = await getJson(`${baseUrl}/api/search?q=${encodeURIComponent("星河湾")}`);
+    assert("两字中文线索使用参数化 LIKE 回退", shortClueSearch.response.ok && shortClueSearch.payload.engine.shortQueryFallback === true && shortClueSearch.payload.results.some((item) => item.memory.id === relatedId));
+    assert("三字中文线索使用 FTS5 trigram 且返回完整展品", trigramClueSearch.response.ok && trigramClueSearch.payload.engine.fts === "fts5-trigram" && trigramClueSearch.payload.engine.shortQueryFallback === false && trigramClueSearch.payload.results.some((item) => item.memory.id === relatedId && item.memory.rawContent));
+
+    const peopleEntities = await getJson(`${baseUrl}/api/entities?type=person&q=${encodeURIComponent("朋友")}&limit=20`);
+    assert("同名人物默认保留为不同身份线索", peopleEntities.response.ok && peopleEntities.payload.entities.length >= 2 && new Set(peopleEntities.payload.entities.map((entity) => entity.id)).size === peopleEntities.payload.entities.length);
+    const [targetPerson, sourcePerson] = peopleEntities.payload.entities;
+    const aliasPreview = await postJson(`${baseUrl}/api/entities/${targetPerson.id}/aliases/preview`, { alias: "老友" });
+    const unconfirmedAlias = await postJson(`${baseUrl}/api/entities/${targetPerson.id}/aliases`, { alias: "老友" });
+    const confirmedAlias = await postJson(`${baseUrl}/api/entities/${targetPerson.id}/aliases`, { alias: "老友", confirm: true });
+    assert("实体别名必须预览并明确确认后才保存", aliasPreview.response.ok && aliasPreview.payload.requiresConfirmation === true && unconfirmedAlias.response.status === 400 && confirmedAlias.response.status === 201);
+    const aliasSearch = await getJson(`${baseUrl}/api/search?q=${encodeURIComponent("老友")}`);
+    assert("已确认别名可作为可解释检索线索", aliasSearch.response.ok && aliasSearch.payload.results.some((item) => item.entityRefs.some((ref) => ref.id === targetPerson.id)));
+    const mergePreview = await postJson(`${baseUrl}/api/entities/${targetPerson.id}/merge/preview`, { sourceEntityId: sourcePerson.id });
+    const unconfirmedMerge = await postJson(`${baseUrl}/api/entities/${targetPerson.id}/merge`, { sourceEntityId: sourcePerson.id });
+    const confirmedMerge = await postJson(`${baseUrl}/api/entities/${targetPerson.id}/merge`, { sourceEntityId: sourcePerson.id, confirm: true });
+    const mergedProfile = await getJson(`${baseUrl}/api/entities/${targetPerson.id}`);
+    assert("同名身份合并必须预览并明确确认", mergePreview.response.ok && unconfirmedMerge.response.status === 400 && confirmedMerge.response.ok && mergedProfile.payload.entity.memories.length === 2);
+
+    const revisitQuery = "localDate=2026-05-20&timezone=Asia%2FShanghai&limit=20";
+    const onThisDay = await getJson(`${baseUrl}/api/revisits?kind=on-this-day&${revisitQuery}`);
+    const longUnseen = await getJson(`${baseUrl}/api/revisits?kind=long-unseen&${revisitQuery}`);
+    const randomRevisit = await getJson(`${baseUrl}/api/revisits?kind=random&${revisitQuery}`);
+    assert(
+      "往年今日只返回有明确周年日期的记忆",
+      onThisDay.response.ok &&
+        onThisDay.payload.kind === "on-this-day" &&
+        onThisDay.payload.revisits.some((item) => item.memory.id === relatedId && item.basis.type === "explicit-date" && item.label === "往年今日")
+    );
+    assert(
+      "很久没见返回可解释的未回访记忆",
+      longUnseen.response.ok &&
+        longUnseen.payload.kind === "long-unseen" &&
+        longUnseen.payload.revisits.length === 2 &&
+        longUnseen.payload.revisits.every((item) => item.basis.type === "never-viewed" && item.label === "很久没见")
+    );
+    assert(
+      "随机漫游返回同一本地日期下的稳定候选",
+      randomRevisit.response.ok &&
+        randomRevisit.payload.kind === "random" &&
+        randomRevisit.payload.revisits.length === 2 &&
+        randomRevisit.payload.revisit?.memory.id === randomRevisit.payload.revisits[0].memory.id &&
+        randomRevisit.payload.revisits.every((item) => item.basis.type === "stable-daily-rotation" && item.label === "随机漫游")
+    );
+
+    const revisitContext = { localDate: "2026-05-20", timezone: "Asia/Shanghai" };
+    const viewedRevisit = await postJson(`${baseUrl}/api/revisits/${memoryId}/viewed`, revisitContext);
+    const dismissedRevisit = await postJson(`${baseUrl}/api/revisits/${relatedId}/dismissed`, revisitContext);
+    assert("打开回访会记录本地日期和回访次数", viewedRevisit.response.ok && viewedRevisit.payload.action === "viewed" && viewedRevisit.payload.state.lastViewedLocalDate === revisitContext.localDate && viewedRevisit.payload.state.viewCount === 1);
+    assert("略过回访只保存当日本地隐藏状态", dismissedRevisit.response.ok && dismissedRevisit.payload.action === "dismissed" && dismissedRevisit.payload.state.dismissedLocalDate === revisitContext.localDate && dismissedRevisit.payload.state.viewCount === 0);
+    const handledToday = await getJson(`${baseUrl}/api/revisits?kind=random&${revisitQuery}`);
+    assert("同一天已打开或略过的记忆不会重复出现", handledToday.response.ok && handledToday.payload.candidateCount === 0 && handledToday.payload.revisits.length === 0);
+
+    const exhibitionPreview = await postJson(`${baseUrl}/api/exhibitions/preview`, {
+      theme: "操场上的陪伴",
+      memoryIds: [memoryId, relatedId]
+    });
+    assert("主题策展预览返回完整章节和原文引用", exhibitionPreview.response.ok && exhibitionPreview.payload.preview.sections.flatMap((section) => section.items).length === 2 && exhibitionPreview.payload.preview.sections.every((section) => section.items.every((item) => item.citations.every((citation) => citation.evidenceValid))));
+    const unconfirmedExhibition = await postJson(`${baseUrl}/api/exhibitions`, exhibitionPreview.payload.preview);
+    assert("主题展览保存要求用户明确确认", unconfirmedExhibition.response.status === 400);
+    const savedExhibition = await postJson(`${baseUrl}/api/exhibitions`, {
+      ...exhibitionPreview.payload.preview,
+      confirm: true
+    });
+    const exhibitionId = savedExhibition.payload.exhibition.id;
+    assert("核对后的主题展览可保存", savedExhibition.response.status === 201 && exhibitionId);
+    const exhibitionList = await getJson(`${baseUrl}/api/exhibitions`);
+    const exhibitionDetail = await getJson(`${baseUrl}/api/exhibitions/${exhibitionId}`);
+    assert("主题展览书架和阅读详情可用", exhibitionList.payload.exhibitions.some((item) => item.id === exhibitionId) && exhibitionDetail.payload.exhibition.memoryIds.length === 2);
+    const updatedExhibition = await putJson(`${baseUrl}/api/exhibitions/${exhibitionId}`, {
+      ...exhibitionPreview.payload.preview,
+      title: "操场上的两次回望",
+      confirm: true
+    });
+    assert("主题展览可在再次确认后更新", updatedExhibition.response.ok && updatedExhibition.payload.exhibition.title === "操场上的两次回望");
 
     await runLocalMediaFlow(baseUrl, memoryId, relatedId, mediaRoot);
 
@@ -237,19 +458,43 @@ async function runLocalFlow() {
 
     const privacy = await getJson(`${baseUrl}/api/privacy`);
     assert("隐私接口说明本地数据位置", privacy.response.ok && privacy.payload.mode === "local-first" && privacy.payload.dataLocations.length >= 3);
+    assert("隐私接口说明实体同名不自动认定且变更需确认", privacy.payload.dataLocations.some((item) => item.name.includes("实体线索") && item.location.includes("同名默认只是线索")) && privacy.payload.controls.some((item) => item.includes("先预览")));
+    assert("隐私接口说明胶囊分表与口令零上传", privacy.payload.dataLocations.some((item) => item.name.includes("时光胶囊") && item.location.includes("不发送给服务端") && item.location.includes("不写入导出文件")));
 
     const fullExport = await getJson(`${baseUrl}/api/memories/export`);
     assert("馆藏备份保留品牌和原文", fullExport.response.ok && fullExport.payload.product === "时屿" && fullExport.payload.productEnglish === "TIME ISLE" && fullExport.payload.memories.some((memory) => memory.rawContent === rawContent));
     assert("馆藏备份包含版本组、证据和补问", fullExport.payload.archaeology.events.length === 1 && fullExport.payload.archaeology.claims.length > 0 && fullExport.payload.archaeology.questions.length === 1);
+    assert("馆藏备份包含已确认主题展览", fullExport.payload.exhibitions.exhibitions.some((item) => item.id === exhibitionId));
+    assert("馆藏备份包含回访与当日隐藏状态", fullExport.payload.revisits.mode === "full" && fullExport.payload.revisits.states.length === 2 && fullExport.payload.revisits.states.some((state) => state.memoryId === memoryId && state.viewCount === 1) && fullExport.payload.revisits.states.some((state) => state.memoryId === relatedId && state.dismissedLocalDate === "2026-05-20"));
+    assert("schema 9 馆藏备份包含实体、声音与胶囊边界", fullExport.payload.schemaVersion === 9 && fullExport.payload.entities.mode === "full" && fullExport.payload.entities.entities.some((entity) => entity.aliases.some((alias) => alias.alias === "老友")) && fullExport.payload.voices.mode === "full" && fullExport.payload.capsules.mode === "full");
 
     await putJson(`${baseUrl}/api/memories/${memoryId}`, { rawContent: "这段原文已被重新整理，不再包含此前的日期、人物或地点线索。" });
     const revalidatedExport = await getJson(`${baseUrl}/api/memories/export`);
     const revisedClaims = revalidatedExport.payload.archaeology.claims.filter((claim) => claim.memoryId === memoryId);
     assert("编辑原文会重新校验并失效旧证据锚点", revisedClaims.length > 0 && revisedClaims.every((claim) => claim.evidenceValid === false && claim.status === "source_invalidated"));
+    const revisedExhibition = revalidatedExport.payload.exhibitions.exhibitions.find((item) => item.id === exhibitionId);
+    assert("编辑原文会让相关主题展览回到待复核草稿", revisedExhibition.requiresConfirmation === true && revisedExhibition.status === "draft" && revisedExhibition.sections.flatMap((section) => section.items).flatMap((item) => item.citations).some((citation) => citation.evidenceValid === false));
 
     const redactedExport = await getJson(`${baseUrl}/api/memories/export?mode=redacted`);
     const redacted = redactedExport.payload.memories.find((memory) => memory.id === memoryId);
     assert("脱敏备份隐藏原文和地点", redactedExport.response.ok && redacted.rawContent.includes("已隐藏") && redacted.location.includes("已隐藏"));
+    assert("脱敏备份物理排除主题展览叙事和引用", redactedExport.payload.exhibitions.mode === "redacted-summary" && !redactedExport.payload.exhibitions.exhibitions);
+    const redactedRevisits = JSON.stringify(redactedExport.payload.revisits);
+    assert("脱敏备份只保留回访汇总且移除展品 ID 与精确时间", redactedExport.payload.revisits.mode === "redacted-summary" && redactedExport.payload.revisits.stateCount === 2 && !redactedExport.payload.revisits.states && !redactedRevisits.includes(memoryId) && !redactedRevisits.includes("lastViewedAt"));
+    const redactedEntities = JSON.stringify(redactedExport.payload.entities);
+    assert("脱敏实体摘要物理排除名称、别名、ID、关系和精确时间", redactedExport.payload.entities.mode === "redacted-summary" && !redactedEntities.includes("老友") && !redactedEntities.includes(targetPerson.id) && !/(?:canonicalName|aliases|memoryLinks|confirmedAt)/.test(redactedEntities));
+    assert("脱敏胶囊摘要物理排除标题、日期、来源、快照与内部 ID", redactedExport.payload.capsules.mode === "redacted-summary" && redactedExport.payload.capsules.capsuleCount === 0 && !Object.hasOwn(redactedExport.payload.capsules, "capsules") && !/(?:title|opensOn|snapshot|exhibitionId|assetId)/.test(JSON.stringify(redactedExport.payload.capsules)));
+
+    const redactedImportId = `redacted-import-${Date.now()}`;
+    const redactedImport = await postJson(`${baseUrl}/api/memories/import`, {
+      schemaVersion: 7,
+      mode: "redacted",
+      memories: [{ id: redactedImportId, title: "脱敏占位", people: ["[已隐藏人物]"], rawContent: "[已隐藏原始记忆]" }],
+      entities: redactedExport.payload.entities
+    });
+    const redactedImportDetail = await getJson(`${baseUrl}/api/memories/${redactedImportId}`);
+    assert("脱敏 JSON 导入不从占位文字制造实体", redactedImport.response.ok && redactedImport.payload.entities.entities === 0 && redactedImportDetail.payload.memory.entityRefs.length === 0);
+    await deleteJson(`${baseUrl}/api/memories/${redactedImportId}`);
 
     const imported = await postJson(`${baseUrl}/api/memories/import`, {
       memories: [{ ...created.payload.memory, id: `imported-${Date.now()}`, title: "导入验证展品" }]
@@ -284,6 +529,21 @@ async function runLocalFlow() {
     });
     assert("本地展品可删除", deleteResponse.ok);
 
+    const purgeMemoryIds = [`purge-a-${Date.now()}`, `purge-b-${Date.now()}`];
+    for (const [index, id] of purgeMemoryIds.entries()) {
+      await postJson(`${baseUrl}/api/memories`, {
+        id,
+        title: `清空验证展品 ${index + 1}`,
+        rawContent: `这是清空主题展览前的第 ${index + 1} 段可引用原文。`,
+        exhibitText: "只用于验证整馆清空。"
+      });
+    }
+    const purgePreview = await postJson(`${baseUrl}/api/exhibitions/preview`, { theme: "清空验证", memoryIds: purgeMemoryIds });
+    const purgeExhibition = await postJson(`${baseUrl}/api/exhibitions`, { ...purgePreview.payload.preview, confirm: true });
+    assert("清空前存在可验证的主题展览", purgeExhibition.response.status === 201);
+    const purgeRevisit = await postJson(`${baseUrl}/api/revisits/${purgeMemoryIds[0]}/viewed`, { localDate: "2026-06-01", timezone: "Asia/Shanghai" });
+    assert("清空前存在可验证的回访状态", purgeRevisit.response.ok && purgeRevisit.payload.state.viewCount === 1);
+
     const rejectedPurge = await fetch(`${baseUrl}/api/memories/purge`, {
       method: "DELETE",
       headers: writeHeaders(`${baseUrl}/api/memories/purge`, { "Content-Type": "application/json" }),
@@ -292,14 +552,50 @@ async function runLocalFlow() {
     assert("清空操作要求明确确认", rejectedPurge.status === 400);
 
     const purge = await deleteJson(`${baseUrl}/api/memories/purge`, { confirm: "DELETE" });
-    assert("确认后可清空本地馆藏", purge.response.ok && purge.payload.ok === true);
+    assert("确认后可清空本地馆藏、回访与实体索引", purge.response.ok && purge.payload.ok === true && purge.payload.purge.revisitStatesDeleted === 1 && purge.payload.purge.entitiesDeleted > 0 && purge.payload.purge.searchDocumentsDeleted > 0);
+    const exhibitionsAfterPurge = await getJson(`${baseUrl}/api/exhibitions`);
+    assert("清空馆藏不会残留主题展览", exhibitionsAfterPurge.payload.exhibitions.length === 0);
+    const revisitsAfterPurge = await getJson(`${baseUrl}/api/revisits?kind=random&localDate=2026-06-01&timezone=Asia%2FShanghai&limit=20`);
+    assert("清空馆藏不会残留可见回访候选", revisitsAfterPurge.response.ok && revisitsAfterPurge.payload.candidateCount === 0 && revisitsAfterPurge.payload.revisits.length === 0);
 
-    const restored = await postJson(`${baseUrl}/api/memories/import`, fullExport.payload);
-    assert("馆藏备份可恢复记忆考古数据", restored.response.ok && restored.payload.archaeology.events === 1 && restored.payload.archaeology.claims > 0 && restored.payload.archaeology.questions === 1);
+    const restored = await postJson(`${baseUrl}/api/memories/import`, revalidatedExport.payload);
+    assert("馆藏备份可恢复记忆考古、主题展览、回访与实体图", restored.response.ok && restored.payload.archaeology.events === 1 && restored.payload.archaeology.claims > 0 && restored.payload.archaeology.questions === 1 && restored.payload.exhibitions.exhibitions === 1 && restored.payload.revisits.states === 2 && restored.payload.entities.entities > 0 && restored.payload.entities.aliases > 0);
     const restoredOverview = await getJson(`${baseUrl}/api/archaeology/overview`);
     assert("恢复后两个版本仍属于同一时光拼图", restoredOverview.payload.overview.filter((item) => [memoryId, relatedId].includes(item.memoryId)).length === 2 && restoredOverview.payload.overview.filter((item) => [memoryId, relatedId].includes(item.memoryId)).every((item) => item.versionCount === 2));
+    const restoredExhibitionId = restored.payload.exhibitions.idMap[exhibitionId];
+    const restoredExhibition = await getJson(`${baseUrl}/api/exhibitions/${restoredExhibitionId}`);
+    assert("JSON 恢复会重写展览成员并保留待复核状态", restoredExhibition.response.ok && restoredExhibition.payload.exhibition.requiresConfirmation === true && restoredExhibition.payload.exhibition.memoryIds.length === 2);
+    const revisitsAfterJsonRestore = await getJson(`${baseUrl}/api/revisits?kind=random&${revisitQuery}`);
+    assert("JSON 恢复会重写回访展品 ID 并保留同日去重状态", restored.payload.revisits.idMap[memoryId] === memoryId && restored.payload.revisits.idMap[relatedId] === relatedId && revisitsAfterJsonRestore.response.ok && revisitsAfterJsonRestore.payload.candidateCount === 0);
+    const deletedExhibition = await deleteJson(`${baseUrl}/api/exhibitions/${restoredExhibitionId}`);
+    assert("主题展览可独立删除且不删除来源展品", deletedExhibition.response.ok && (await getJson(`${baseUrl}/api/memories/${memoryId}`)).response.ok);
 
     const beforeRejectedImport = await getJson(`${baseUrl}/api/memories`);
+    const futureSchema = await postJson(`${baseUrl}/api/memories/import`, {
+      schemaVersion: 10,
+      mode: "full",
+      memories: [{ ...created.payload.memory, id: "future-schema-memory" }],
+      entities: { mode: "full", schemaVersion: 7, entities: [] }
+    });
+    const missingEntities = await postJson(`${baseUrl}/api/memories/import`, {
+      schemaVersion: 7,
+      mode: "full",
+      memories: [{ ...created.payload.memory, id: "missing-entities-memory" }]
+    });
+    const missingVoices = await postJson(`${baseUrl}/api/memories/import`, {
+      schemaVersion: 8,
+      mode: "full",
+      memories: [{ ...created.payload.memory, id: "missing-voices-memory" }],
+      entities: { mode: "full", schemaVersion: 7, entities: [] }
+    });
+    const missingCapsules = await postJson(`${baseUrl}/api/memories/import`, {
+      schemaVersion: 9,
+      mode: "full",
+      memories: [{ ...created.payload.memory, id: "missing-capsules-memory" }],
+      entities: { mode: "full", schemaVersion: 7, entities: [] },
+      voices: revalidatedExport.payload.voices
+    });
+    assert("JSON 导入拒绝未来 schema 及缺失必需 section 的完整备份", futureSchema.response.status === 400 && missingEntities.response.status === 400 && missingVoices.response.status === 400 && missingCapsules.response.status === 400);
     const rejectedArchive = await postJson(`${baseUrl}/api/memories/import`, {
       memories: [{ ...created.payload.memory, id: "corrupt-archive-memory" }],
       archaeology: { mode: "full", events: [null], claims: [], pairDecisions: [], questions: [] }
@@ -678,11 +974,56 @@ async function runDemoSafetyFlow() {
     const status = await getJson(`${baseUrl}/api/demo/status`);
     assert("公开 Demo 自动注入四条示例", status.response.ok && status.payload.interviewDemo === true && status.payload.seededExamples === 4);
     assert("公开 Demo 使用临时存储并强制本地 Mock", status.payload.storage === "ephemeral-sqlite-on-tmp" && status.payload.destructiveActionsBlocked === true && status.payload.aiMode === "mock-fallback");
+    const demoHome = await fetch(`${baseUrl}/`);
+    assert("公开 Demo 通过权限策略禁用麦克风", demoHome.headers.get("permissions-policy")?.includes("microphone=()"));
 
     const memories = await getJson(`${baseUrl}/api/memories`);
     assert("公开 Demo 馆藏可直接浏览", memories.response.ok && memories.payload.memories.length === 4);
 
+    const demoPeople = await getJson(`${baseUrl}/api/entities?type=person&limit=20`);
+    const [demoTargetPerson, demoSourcePerson] = demoPeople.payload.entities;
+    const demoClueStatsBefore = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+    const demoAliasPreview = await postJson(`${baseUrl}/api/entities/${demoTargetPerson.id}/aliases/preview`, { alias: "演示别名" });
+    const demoAliasWrite = await postJson(`${baseUrl}/api/entities/${demoTargetPerson.id}/aliases`, { alias: "演示别名", confirm: true });
+    const demoMergePreview = await postJson(`${baseUrl}/api/entities/${demoTargetPerson.id}/merge/preview`, { sourceEntityId: demoSourcePerson.id });
+    const demoMergeWrite = await postJson(`${baseUrl}/api/entities/${demoTargetPerson.id}/merge`, { sourceEntityId: demoSourcePerson.id, confirm: true });
+    const demoClueStatsAfter = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+    assert("公开 Demo 可预览实体变更但拒绝别名与合并写入", demoAliasPreview.response.ok && demoMergePreview.response.ok && demoAliasWrite.response.status === 403 && demoMergeWrite.response.status === 403);
+    assert("公开 Demo 实体预览保持 SQLite 零写入", demoClueStatsAfter.entities === demoClueStatsBefore.entities && demoClueStatsAfter.entityAliases === demoClueStatsBefore.entityAliases);
+
+    const demoExhibitionPreview = await postJson(`${baseUrl}/api/exhibitions/preview`, {
+      theme: "Demo 中的温暖片段",
+      memoryIds: memories.payload.memories.slice(0, 2).map((memory) => memory.id)
+    });
+    assert("公开 Demo 允许生成不落库的主题展览预览", demoExhibitionPreview.response.ok && demoExhibitionPreview.payload.preview.sections.length > 0);
+    const blockedExhibitionSave = await postJson(`${baseUrl}/api/exhibitions`, {
+      ...demoExhibitionPreview.payload.preview,
+      confirm: true
+    });
+    assert("公开 Demo 阻止主题展览持久化", blockedExhibitionSave.response.status === 403 && blockedExhibitionSave.payload.interviewDemo === true);
+
+    const demoCapsulesBefore = await getJson(`${baseUrl}/api/capsules`);
+    const blockedCapsule = await postJson(`${baseUrl}/api/capsules`, {
+      exhibitionId: "demo-exhibition",
+      title: "不应保存的 Demo 胶囊",
+      shellMessage: "不写入",
+      opensOn: "2099-01-01",
+      timezone: "Asia/Shanghai",
+      mediaAssetIds: [],
+      transcriptAssetIds: [],
+      confirm: true
+    });
+    const demoCapsulesAfter = await getJson(`${baseUrl}/api/capsules`);
+    assert("公开 Demo 阻止胶囊写入且外壳列表保持零变化", demoCapsulesBefore.response.ok && blockedCapsule.response.status === 403 && blockedCapsule.payload.interviewDemo === true && demoCapsulesAfter.payload.capsules.length === demoCapsulesBefore.payload.capsules.length);
+
     const targetId = memories.payload.memories[0].id;
+    const demoRevisit = await getJson(`${baseUrl}/api/revisits?kind=random&localDate=2026-07-16&timezone=Asia%2FShanghai`);
+    assert("公开 Demo 可以浏览但不会预写回访状态", demoRevisit.response.ok && demoRevisit.payload.revisit?.memory.id && demoRevisit.payload.revisit.state.viewCount === 0);
+    const demoRevisitContext = { localDate: "2026-07-16", timezone: "Asia/Shanghai" };
+    const blockedViewed = await postJson(`${baseUrl}/api/revisits/${targetId}/viewed`, demoRevisitContext);
+    const blockedDismissed = await postJson(`${baseUrl}/api/revisits/${targetId}/dismissed`, demoRevisitContext);
+    assert("公开 Demo 阻止回访浏览与隐藏状态写入", blockedViewed.response.status === 403 && blockedViewed.payload.interviewDemo === true && blockedDismissed.response.status === 403 && blockedDismissed.payload.interviewDemo === true);
+
     const blockedDelete = await fetch(`${baseUrl}/api/memories/${targetId}`, {
       method: "DELETE",
       headers: writeHeaders(`${baseUrl}/api/memories/${targetId}`)
@@ -719,6 +1060,7 @@ async function runDemoSafetyFlow() {
     assert("公开 Demo 可生成不写入私人数据的记忆航线", route.response.ok && route.payload.route.items.length >= 2 && route.payload.route.transitions.every((item) => item.sameEvent === "unassessed"));
 
     await assertDemoMediaWritesBlocked(baseUrl, targetId);
+    await assertDemoVoiceWritesBlocked(baseUrl, targetId, mediaRoot);
     const memoryLimit = status.payload.limits?.memories;
     const capacityAttempts = Array.from({ length: (memoryLimit - memories.payload.memories.length) + 8 }, (_, offset) => {
       const index = memories.payload.memories.length + offset;
@@ -834,6 +1176,27 @@ async function assertDemoMediaWritesBlocked(baseUrl, memoryId) {
     "公开 Demo 阻止图片区域证据的创建、更新和删除",
     annotationResults.every(({ response, payload }) => response.status === 403 && payload.interviewDemo === true)
   );
+}
+
+async function assertDemoVoiceWritesBlocked(baseUrl, memoryId, mediaRoot) {
+  const assetId = "voice-demo-write-guard";
+  const before = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+  const attempts = [
+    fetch(`${baseUrl}/api/voice/uploads?filename=demo.webm`, {
+      method: "POST",
+      headers: writeHeaders(`${baseUrl}/api/voice/uploads?filename=demo.webm`, { "Content-Type": "audio/webm" }),
+      body: createVoiceWebm()
+    }),
+    jsonFetch(`${baseUrl}/api/memories/${memoryId}/voices`, "PUT", { items: [{ assetId }] }),
+    jsonFetch(`${baseUrl}/api/memories/${memoryId}/voices/${assetId}/transcript`, "PUT", { text: "不应写入", confirm: true }),
+    jsonFetch(`${baseUrl}/api/memories/${memoryId}/voices/${assetId}/transcript`, "DELETE"),
+    jsonFetch(`${baseUrl}/api/voice/assets/${assetId}`, "DELETE")
+  ];
+  const responses = await Promise.all(attempts);
+  const payloads = await Promise.all(responses.map((response) => response.json()));
+  const after = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+  assert("公开 Demo 阻止全部声音与转写写操作", responses.every((response) => response.status === 403) && payloads.every((payload) => payload.interviewDemo === true));
+  assert("公开 Demo 声音写入保持数据库与文件零变化", after.voiceAssets === before.voiceAssets && after.voiceLinks === before.voiceLinks && after.voiceTranscripts === before.voiceTranscripts && listFiles(path.join(mediaRoot, "voice", "ready")).length === 0);
 }
 
 async function withServer(extraEnv, callback) {
@@ -965,6 +1328,17 @@ async function uploadOriginal(baseUrl, bytes, options = {}) {
   return { response, payload: await response.json() };
 }
 
+async function uploadVoice(baseUrl, bytes, fileName, mimeType) {
+  const query = new URLSearchParams({ filename: fileName });
+  const url = `${baseUrl}/api/voice/uploads?${query}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: writeHeaders(url, { "Content-Type": mimeType }),
+    body: bytes
+  });
+  return { response, payload: await response.json() };
+}
+
 async function putMediaBytes(url, bytes, mimeType) {
   const response = await fetch(url, {
     method: "PUT",
@@ -1047,6 +1421,65 @@ function createWebp(width, height) {
   header.write("RIFF", 0, 4, "ascii");
   header.writeUInt32LE(body.length, 4);
   return Buffer.concat([header, body]);
+}
+
+function createVoiceWebm(durationMs = 1_000) {
+  const opusHead = Buffer.alloc(19);
+  opusHead.write("OpusHead", 0, "ascii");
+  opusHead[8] = 1;
+  opusHead[9] = 1;
+  opusHead.writeUInt32LE(48_000, 12);
+  const track = voiceEbmlElement("ae", Buffer.concat([
+    voiceEbmlUInt("d7", 1),
+    voiceEbmlUInt("83", 2),
+    voiceEbmlElement("86", Buffer.from("A_OPUS")),
+    voiceEbmlElement("63a2", opusHead),
+    voiceEbmlElement("e1", Buffer.concat([voiceEbmlUInt("9f", 1), voiceEbmlFloat("b5", 48_000)]))
+  ]));
+  const info = voiceEbmlElement("1549a966", Buffer.concat([
+    voiceEbmlUInt("2ad7b1", 1_000_000),
+    voiceEbmlFloat("4489", durationMs)
+  ]));
+  const cluster = voiceEbmlElement("1f43b675", Buffer.concat([
+    voiceEbmlUInt("e7", 0),
+    voiceEbmlElement("a3", Buffer.from([0x81, 0x00, 0x00, 0x80, 0xf8]))
+  ]));
+  return Buffer.concat([
+    voiceEbmlElement("1a45dfa3", voiceEbmlElement("4282", Buffer.from("webm"))),
+    voiceEbmlElement("18538067", Buffer.concat([info, voiceEbmlElement("1654ae6b", track), cluster]))
+  ]);
+}
+
+function voiceEbmlUInt(id, value) {
+  let hex = BigInt(value).toString(16);
+  if (hex.length % 2) hex = `0${hex}`;
+  return voiceEbmlElement(id, Buffer.from(hex, "hex"));
+}
+
+function voiceEbmlFloat(id, value) {
+  const data = Buffer.alloc(8);
+  data.writeDoubleBE(value);
+  return voiceEbmlElement(id, data);
+}
+
+function voiceEbmlElement(id, payload) {
+  return Buffer.concat([Buffer.from(id, "hex"), voiceEbmlSize(payload.length), payload]);
+}
+
+function voiceEbmlSize(value) {
+  const number = BigInt(value);
+  for (let width = 1; width <= 8; width += 1) {
+    const maximum = (1n << BigInt(7 * width)) - 1n;
+    if (number >= maximum) continue;
+    let marked = number | (1n << BigInt(7 * width));
+    const output = Buffer.alloc(width);
+    for (let index = width - 1; index >= 0; index -= 1) {
+      output[index] = Number(marked & 0xffn);
+      marked >>= 8n;
+    }
+    return output;
+  }
+  throw new Error("voice fixture is too large");
 }
 
 function crc32(buffer) {

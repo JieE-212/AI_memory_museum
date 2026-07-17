@@ -213,6 +213,10 @@ h3 {
   color: white;
 }
 
+.nav-label-compact {
+  display: none;
+}
+
 .runtime-badge {
   justify-self: end;
   color: var(--ink-soft);
@@ -1297,14 +1301,31 @@ form label textarea {
   }
 }
 
-@media (max-width: 650px) {
+@media (max-width: 650px), (max-width: 950px) and (max-height: 520px) and (pointer: coarse) {
+  :root {
+    --mobile-nav-height: 65px;
+  }
+
+  html {
+    scroll-padding-bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom) + 12px);
+  }
+
+  body {
+    min-width: 0;
+    padding-bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom));
+  }
+
   .shell {
     width: min(calc(100% - 24px), var(--shell));
   }
 
   .site-header {
+    grid-template-columns: 1fr;
     gap: 10px;
-    padding-inline: 12px;
+    min-height: 60px;
+    padding: calc(8px + env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+    background: rgba(244, 241, 234, 0.98);
+    backdrop-filter: none;
   }
 
   .brand small,
@@ -1313,13 +1334,56 @@ form label textarea {
   }
 
   .main-nav {
-    justify-content: flex-start;
+    position: fixed;
+    z-index: 50;
+    inset: auto 0 0;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-column: auto;
+    grid-row: auto;
+    width: auto;
+    min-height: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom));
+    align-items: stretch;
+    gap: 4px;
+    padding: 6px max(8px, env(safe-area-inset-right), calc((100vw - 520px) / 2)) calc(6px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left), calc((100vw - 520px) / 2));
+    overflow: visible;
+    border: 0;
+    border-top: 1px solid var(--line);
+    border-radius: 0;
+    background: rgba(255, 253, 248, 0.96);
+    box-shadow: 0 -8px 24px rgba(39, 47, 43, 0.08);
+    backdrop-filter: blur(12px);
   }
 
   .nav-button {
-    flex: 0 0 auto;
-    padding-inline: 11px;
-    font-size: 0.8rem;
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    min-height: 52px;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 4px;
+    font-size: clamp(0.7rem, 3.2vw, 0.8rem);
+    line-height: 1.2;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .nav-label-full {
+    display: none;
+  }
+
+  .nav-label-compact {
+    display: inline;
+  }
+
+  .nav-button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -3px;
+  }
+
+  .nav-button.is-active:focus-visible {
+    outline-color: white;
   }
 
   .hero {
@@ -1398,6 +1462,25 @@ form label textarea {
   .site-footer {
     flex-direction: column;
     padding-inline: 12px;
+  }
+
+  .toast {
+    right: max(12px, env(safe-area-inset-right));
+    bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom) + 12px);
+    max-width: calc(100% - max(12px, env(safe-area-inset-left)) - max(12px, env(safe-area-inset-right)));
+  }
+}
+
+@media (max-width: 360px) {
+  .main-nav {
+    gap: 2px;
+    padding-left: max(6px, env(safe-area-inset-left));
+    padding-right: max(6px, env(safe-area-inset-right));
+  }
+
+  .nav-button {
+    padding-inline: 2px;
+    font-size: 0.7rem;
   }
 }
 

@@ -9,6 +9,7 @@ const state = {
   editingMemoryId: "",
   pendingSaveMemoryId: "",
   searchResults: null,
+  searchResponse: null,
   searchError: "",
   searchRequest: 0,
   insights: null,
@@ -121,11 +122,15 @@ const sampleMemories = [
 
 let searchTimer = null;
 let toastTimer = null;
-let mediaController = null;
+let mediaController = null, voiceController = null;
 let mediaEvidenceController = null;
 let portabilityController = null;
 let mediaCompareControllers = [];
 let mediaLabController = null;
+let exhibitionsController = null;
+let capsulesController = null;
+let revisitsController = null;
+let cluesController = null;
 
 bindEvents();
 initialize();
@@ -148,30 +153,40 @@ async function initialize() {
     state.privacy = privacy;
     state.health = health;
     state.archaeologyOverview = indexArchaeologyOverview(archaeology.overview);
-    mediaController = window.TimeIsleMedia?.createController({
-      policy: options.mediaPolicy,
-      demo: demo.interviewDemo,
-      onBusyChange: (busy) => {
-        if (busy) elements.saveMemoryButton.title = "正在安全处理照片";
-        else elements.saveMemoryButton.removeAttribute("title");
-      }
-    }) || null;
+    mediaController = window.TimeIsleMedia?.createController({ policy: options.mediaPolicy, demo: demo.interviewDemo }) || null;
+    initializeVoiceController(options.voicePolicy, demo.interviewDemo);
     mediaEvidenceController = window.TimeIsleMediaEvidence?.createController({ demo: demo.interviewDemo }) || null;
     portabilityController = window.TimeIslePortability?.createController({
       demo: demo.interviewDemo,
       onRestored: reloadMemories
     }) || null;
     mediaLabController = window.TimeIsleMediaLab?.createController({ demo: demo.interviewDemo }) || null;
+    exhibitionsController = window.TimeIsleExhibitions?.createController({ demo: demo.interviewDemo, onOpenMemory: openMemory }) || null;
+    capsulesController = window.TimeIsleCapsules?.createController({ demo: demo.interviewDemo }) || null;
+    revisitsController = window.TimeIsleRevisits?.createController({ demo: demo.interviewDemo, onOpenMemory: openMemory }) || null;
+    cluesController = window.TimeIsleClues?.createEntityDialogController({ demo: demo.interviewDemo, onOpenMemory: openMemory, onDataChanged: reloadMemories }) || null;
     populateOptions();
     renderApp();
-    elements.footerVersion.textContent = `v${version.version || "4.0.0"}`;
+    elements.footerVersion.textContent = `v${version.version || "7.0.0"}`;
     setRuntimeStatus(demo.interviewDemo ? "Demo 已连接" : "本地馆藏已连接", "ready");
     const initialView = normalizeView(location.hash.replace("#", ""));
     switchView(initialView, { updateHash: false });
   } catch (error) {
     setRuntimeStatus("连接失败", "error");
     elements.collectionMeta.textContent = error.message;
+    showVoiceUnavailable();
     showToast(`无法连接项目：${error.message}`, true);
+  }
+}
+
+function initializeVoiceController(policy, demo) {
+  try {
+    if (typeof window.TimeIsleVoice?.createController !== "function") throw new Error("声音模块未加载");
+    voiceController = window.TimeIsleVoice.createController({ policy, demo });
+    if (!voiceController) throw new Error("声音控制器未能创建");
+  } catch (error) {
+    console.error("声音模块初始化失败：", error); voiceController = null;
+    showVoiceUnavailable("声音模块未能加载，请刷新页面重试。", "声音模块暂不可用；其他馆藏功能不受影响。");
   }
 }
 
@@ -268,7 +283,10 @@ function switchView(view, options = {}) {
     panel.classList.toggle("is-active", active);
   });
   if (options.updateHash !== false && location.hash !== `#${target}`) history.pushState(null, "", `#${target}`);
-  if (target === "reflect" && !state.insights) loadInsights();
+  if (target === "reflect") {
+    if (!state.insights) loadInsights();
+    revisitsController?.load();
+  }
   if (options.focusHeading) elements.viewPanels.find((panel) => !panel.hidden)?.querySelector("h1")?.focus({ preventScroll: true });
   window.scrollTo({ top: 0, behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
 }
@@ -279,9 +297,14 @@ function normalizeView(view) {
 function renderDemoStatus() {
   const demo = Boolean(state.demo?.interviewDemo);
   mediaController?.setDemo(demo);
+  voiceController?.setDemo(demo);
   mediaEvidenceController?.setDemo(demo);
   portabilityController?.setDemo(demo);
   mediaLabController?.setDemo(demo);
+  exhibitionsController?.setDemo(demo);
+  capsulesController?.setDemo(demo);
+  revisitsController?.setDemo(demo);
+  cluesController?.setDemo(demo);
   elements.demoNotice.hidden = !demo;
   elements.purgeButton.disabled = demo;
   elements.purgeButton.title = demo ? "公开 Demo 已禁用清空操作" : "永久清空本地 SQLite 馆藏";
@@ -318,6 +341,7 @@ async function performSearch() {
   const requestId = ++state.searchRequest;
   if (!query) {
     state.searchResults = null;
+    state.searchResponse = null;
     state.searchError = "";
     renderCollection();
     return;
@@ -325,16 +349,18 @@ async function performSearch() {
   state.searchError = "";
   elements.searchErrorState.hidden = true;
   elements.memoryGrid.setAttribute("aria-busy", "true");
-  elements.collectionMeta.textContent = "正在进行混合检索…";
+  elements.collectionMeta.textContent = "正在沿语义线索寻找展品…";
   try {
-    const payload = await requestJson(`/api/search?mode=hybrid&limit=50&query=${encodeURIComponent(query)}`);
+    const payload = await requestJson(`/api/search?limit=50&query=${encodeURIComponent(query)}`);
     if (requestId !== state.searchRequest) return;
-    state.searchResults = (payload.results || []).map((item) => item.memory);
+    state.searchResponse = window.TimeIsleClues?.normalizeSearchResponse(payload) || { results: payload.results || [], engine: {} };
+    state.searchResults = state.searchResponse.results.map((item) => ({ ...state.memories.find((memory) => memory.id === item.memory.id), ...item.memory }));
     state.searchError = "";
     renderCollection();
   } catch (error) {
     if (requestId !== state.searchRequest) return;
     state.searchResults = [];
+    state.searchResponse = null;
     state.searchError = error?.message
       ? `暂时无法完成这次检索：${error.message}`
       : "本次检索没有完成，请稍后重试。";
@@ -347,6 +373,7 @@ function clearFilters() {
   elements.hallFilter.value = "all";
   elements.sortSelect.value = "recent";
   state.searchResults = null;
+  state.searchResponse = null;
   state.searchError = "";
   state.searchRequest += 1;
   renderCollection();
@@ -379,16 +406,16 @@ function renderCollection() {
   const query = elements.searchInput.value.trim();
   const filterNote = elements.hallFilter.value === "all" ? "" : ` · ${hallName(elements.hallFilter.value)}`;
   elements.collectionMeta.textContent = query
-    ? `“${query}”找到 ${visible.length} 件展品${filterNote}`
+    ? `“${query}”找到 ${visible.length} 件展品${filterNote}${state.searchResponse?.engine.shortQueryFallback ? " · 已兼容短线索" : ""}`
     : `馆内共有 ${state.memories.length} 件展品，当前显示 ${visible.length} 件${filterNote}`;
   elements.searchErrorState.hidden = true;
   elements.emptyState.hidden = visible.length > 0;
   elements.memoryGrid.innerHTML = visible.map(renderMemoryCard).join("");
 }
-
 function renderMemoryCard(memory) {
   const tags = [...(memory.tags || []), ...(memory.emotions || [])].slice(0, 4);
   const versionCount = state.archaeologyOverview[memory.id]?.versionCount || 1;
+  const searchResult = state.searchResponse?.results.find((item) => item.memory.id === memory.id);
   return `
     <article class="memory-card">
       <button type="button" class="memory-card-button" data-memory-id="${escapeHtml(memory.id)}" aria-label="查看《${escapeHtml(memory.title)}》"></button>
@@ -400,14 +427,19 @@ function renderMemoryCard(memory) {
       <h3>${escapeHtml(memory.title)}</h3>
       <p class="memory-excerpt">${escapeHtml(memory.exhibitText || memory.rawContent || "暂无展品说明")}</p>
       <div class="tag-list">${tags.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}</div>
+      ${window.TimeIsleVoice?.renderCardSummary(memory, escapeHtml) || ""}
       ${versionCount > 1 ? `<span class="memory-version-badge">${escapeHtml(String(versionCount))} 个记忆版本</span>` : ""}
+      ${searchResult ? window.TimeIsleClues?.renderSearchEvidence(searchResult, state.searchResponse.engine) || "" : ""}
     </article>`;
 }
-
 function handleMemoryLinkClick(event) {
   const target = event.target.closest("[data-memory-id], [data-open-memory]");
   if (!target) return;
-  openMemory(target.dataset.memoryId || target.dataset.openMemory);
+  const memoryId = target.dataset.memoryId || target.dataset.openMemory;
+  void openMemory(memoryId).catch((error) => {
+    console.error("打开展品详情失败：", error);
+    showToast(`无法打开这件展品：${error.message}`, true);
+  });
 }
 
 async function openMemory(id) {
@@ -442,17 +474,17 @@ async function openMemory(id) {
 }
 
 function renderMemoryDetail(memory) {
-  const tags = [...(memory.tags || []), ...(memory.emotions || [])];
   return `
     ${window.TimeIsleMedia?.renderDetailGallery(memory, escapeHtml) || ""}
+    ${window.TimeIsleVoice?.renderDetailVoices(memory, escapeHtml) || ""}
     ${window.TimeIsleMediaEvidence?.renderPanel(memory) || ""}
     ${window.TimeIsleMediaLab?.renderPanel(memory, escapeHtml) || ""}
-    <div class="tag-list">${tags.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}</div>
+    <div class="tag-list">${renderEntityChips(memory, "theme", memory.tags || [], true)}${(memory.emotions || []).map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}</div>
     <p class="detail-text">${escapeHtml(memory.exhibitText || "暂无展品说明")}</p>
     <div class="detail-grid">
       <div class="detail-field"><small>日期</small><strong>${escapeHtml(formatDate(memory.date) || "未注明")}</strong></div>
-      <div class="detail-field"><small>地点</small><strong>${escapeHtml(memory.location || "未注明")}</strong></div>
-      <div class="detail-field"><small>人物</small><strong>${escapeHtml((memory.people || []).join("、") || "未注明")}</strong></div>
+      <div class="detail-field"><small>地点</small>${renderEntityChips(memory, "place", memory.location)}</div>
+      <div class="detail-field"><small>人物</small>${renderEntityChips(memory, "person", memory.people || [])}</div>
       <div class="detail-field"><small>来源</small><strong>${escapeHtml(memory.sourceType || "其他")}</strong></div>
       <div class="detail-field"><small>重要度</small><strong>${escapeHtml(String(memory.importance || 1))} / 5</strong></div>
       <div class="detail-field"><small>情绪强度</small><strong>${escapeHtml(String(memory.emotionIntensity || 3))} / 5</strong></div>
@@ -460,7 +492,14 @@ function renderMemoryDetail(memory) {
     <h3>原始记忆</h3>
     <div class="detail-raw">${escapeHtml(memory.rawContent || "未保留原文")}</div>`;
 }
-
+function renderEntityChips(memory, type, fallback, tags = false) {
+  const refs = (memory.entityRefs || memory.entities || []).filter((item) => ({ people: "person", location: "place" }[item.type] || item.type) === type && (item.id || item.entityId));
+  if (!refs.length) {
+    const values = Array.isArray(fallback) ? fallback : [fallback];
+    return tags ? values.filter(Boolean).map((value) => `<span class="tag">${escapeHtml(value)}</span>`).join("") : `<strong>${escapeHtml(values.filter(Boolean).join("、") || "未注明")}</strong>`;
+  }
+  return `<span class="clue-entity-chips clue-detail-entities">${refs.map((item) => `<button type="button" class="clue-entity-chip" data-entity-id="${escapeHtml(item.id || item.entityId)}"><span aria-hidden="true">${type === "person" ? "人" : type === "place" ? "地" : "题"}</span>${escapeHtml(item.label || item.canonicalName || item.name || item.sourceValue || "未命名线索")}</button>`).join("")}</span>`;
+}
 function insertSample() {
   const current = elements.rawContent.value.trim();
   const candidates = sampleMemories.filter((sample) => sample !== current);
@@ -547,10 +586,10 @@ async function saveDraft(event) {
   const editing = Boolean(state.editingMemoryId);
   const targetMemoryId = state.editingMemoryId || state.pendingSaveMemoryId;
   let contentSaved = false;
-  let mediaSaved = Boolean(state.demo?.interviewDemo);
+  let attachmentsSaved = Boolean(state.demo?.interviewDemo);
   if (targetMemoryId) memory.id = targetMemoryId;
   try {
-    await mediaController?.waitForReady();
+    await runAttachmentControllers("waitForReady");
     const saved = await requestJson(targetMemoryId ? `/api/memories/${encodeURIComponent(targetMemoryId)}` : "/api/memories", {
       method: targetMemoryId ? "PUT" : "POST",
       body: JSON.stringify(memory)
@@ -558,15 +597,15 @@ async function saveDraft(event) {
     contentSaved = true;
     state.pendingSaveMemoryId = saved.memory.id;
     if (!state.demo?.interviewDemo) {
-      await mediaController?.saveToMemory(saved.memory.id);
-      mediaSaved = true;
+      await runAttachmentControllers("saveToMemory", saved.memory.id);
+      attachmentsSaved = true;
     }
     await reloadMemories();
     resetComposer();
     switchView("collection", { focusHeading: true });
     showToast(editing ? "展品修改已保存。" : "记忆已经保存为展品。", false);
   } catch (error) {
-    if (contentSaved && !mediaSaved) setAnalyzeStatus(`展品正文已保存，照片尚未完成：${error.message}。请修正后点击“继续完成保存”；不会重复创建展品。`, true);
+    if (contentSaved && !attachmentsSaved) setAnalyzeStatus(`展品正文已保存，${error.message}。请修正后点击“继续完成保存”；不会重复创建展品。`, true);
     else if (contentSaved) setAnalyzeStatus(`展品已保存，但页面刷新失败：${error.message}。点击“继续完成保存”会复用同一件展品。`, true);
     else if (state.pendingSaveMemoryId) setAnalyzeStatus(`未能继续完成保存：${error.message}。再次尝试仍会复用同一件展品。`, true);
     else setAnalyzeStatus(error.message, true);
@@ -576,6 +615,10 @@ async function saveDraft(event) {
   }
 }
 
+async function runAttachmentControllers(method, memoryId) {
+  try { const results = await Promise.allSettled([mediaController?.[method](memoryId), voiceController?.[method](memoryId)]), failed = results.find((item) => item.status === "rejected"); if (failed) throw failed.reason; return results.map((item) => item.value); }
+  catch (error) { throw new Error(`附件未完成：${error.message}`); }
+}
 function saveButtonLabel() {
   if (state.pendingSaveMemoryId) return "继续完成保存";
   return state.editingMemoryId ? "保存修改" : "保存到博物馆";
@@ -587,6 +630,7 @@ function resetComposer() {
   state.editingMemoryId = "";
   state.pendingSaveMemoryId = "";
   mediaController?.reset();
+  voiceController?.reset();
   elements.memoryForm.reset();
   elements.draftForm.reset();
   elements.draftForm.hidden = true;
@@ -1159,6 +1203,7 @@ async function editSelectedMemory() {
   state.draft = { ...memory };
   state.workflow = null;
   mediaController?.loadMemory(memory);
+  voiceController?.loadMemory(memory);
   elements.rawContent.value = memory.rawContent || "";
   populateDraft(memory);
   elements.draftPlaceholder.hidden = true;
@@ -1202,14 +1247,18 @@ async function reloadMemories() {
   state.memories = payload.memories || [];
   state.archaeologyOverview = indexArchaeologyOverview(archaeology.overview);
   state.searchResults = null;
+  state.searchResponse = null;
   state.searchError = "";
   state.insights = null;
   state.route = null;
   state.routeFocusId = "";
   state.routeLoadedKey = null;
   state.routeRequest += 1;
+  exhibitionsController?.refresh();
+  capsulesController?.refresh();
+  revisitsController?.invalidate();
   renderStats();
-  renderCollection();
+  if (elements.searchInput.value.trim()) await performSearch(); else renderCollection();
 }
 
 function downloadJson(payload, filename) {
@@ -1226,13 +1275,22 @@ function downloadJson(payload, filename) {
 
 function setRuntimeStatus(message, status) {
   elements.runtimeBadge.textContent = message;
-  elements.runtimeBadge.classList.toggle("is-ready", status === "ready");
-  elements.runtimeBadge.classList.toggle("is-error", status === "error");
+  elements.runtimeBadge.classList.toggle("is-ready", status === "ready"); elements.runtimeBadge.classList.toggle("is-error", status === "error");
+}
+
+function showVoiceUnavailable(statusMessage = "请先启动本地服务，再刷新页面重试。", helpMessage = "本地服务未连接，声音录制与音频选择暂不可用。") {
+  voiceController?.destroy(); voiceController = null;
+  const recordButton = document.querySelector("#voiceRecordButton"), fileInput = document.querySelector("#voiceFileInput");
+  const fileLabel = document.querySelector("#voiceFileLabel"), fallbackHelp = document.querySelector("#voiceFallbackHelp"), status = document.querySelector("#voiceStatus");
+  if (recordButton) { recordButton.hidden = false; recordButton.disabled = true; recordButton.textContent = "录音暂不可用"; recordButton.setAttribute("aria-busy", "false"); }
+  if (fileInput) fileInput.disabled = true;
+  if (fileLabel) { fileLabel.classList.add("is-disabled"); fileLabel.setAttribute("aria-disabled", "true"); }
+  if (fallbackHelp) fallbackHelp.textContent = helpMessage;
+  if (status) { status.textContent = statusMessage; status.classList.add("is-error"); status.classList.remove("is-loading", "is-success"); }
 }
 
 function showToast(message, isError) {
-  clearTimeout(toastTimer);
-  elements.toast.textContent = message;
+  clearTimeout(toastTimer); elements.toast.textContent = message;
   elements.toast.classList.toggle("is-error", Boolean(isError));
   elements.toast.hidden = false;
   toastTimer = setTimeout(() => { elements.toast.hidden = true; }, 3600);
@@ -1241,10 +1299,7 @@ function showToast(message, isError) {
 async function requestJson(url, options = {}) {
   const response = await fetch(url, {
     ...options,
-    headers: {
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
-      ...(options.headers || {})
-    }
+    headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), ...(options.headers || {}) }
   });
   const contentType = response.headers.get("content-type") || "";
   const payload = contentType.includes("application/json") ? await response.json() : await response.text();
@@ -1255,18 +1310,13 @@ async function requestJson(url, options = {}) {
   return payload;
 }
 
-function hallName(id) {
-  return state.options.halls.find((hall) => hall.id === id)?.name || "日常展厅";
-}
+function hallName(id) { return state.options.halls.find((hall) => hall.id === id)?.name || "日常展厅"; }
 
-function parseList(value) {
-  return [...new Set(String(value || "").split(/[，,、\n]/).map((item) => item.trim()).filter(Boolean))];
-}
+function parseList(value) { return [...new Set(String(value || "").split(/[，,、\n]/).map((item) => item.trim()).filter(Boolean))]; }
 
 function getMemoryTimestamp(memory) {
   const value = memory.date || memory.createdAt || "";
-  const timestamp = Date.parse(value);
-  return Number.isNaN(timestamp) ? 0 : timestamp;
+  const timestamp = Date.parse(value); return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
 function formatDate(value) {
@@ -1274,21 +1324,15 @@ function formatDate(value) {
   if (!text) return "";
   const match = text.match(/^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?/);
   if (!match) return text;
-  if (match[3]) return `${match[1]}.${match[2]}.${match[3]}`;
-  if (match[2]) return `${match[1]}.${match[2]}`;
+  if (match[3]) return `${match[1]}.${match[2]}.${match[3]}`; if (match[2]) return `${match[1]}.${match[2]}`;
   return match[1];
 }
 
 function formatDateTime(value) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value || "") : date.toLocaleString("zh-CN", { hour12: false });
+  const date = new Date(value); return Number.isNaN(date.getTime()) ? String(value || "") : date.toLocaleString("zh-CN", { hour12: false });
 }
 
 function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
 }

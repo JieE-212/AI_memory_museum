@@ -1,12 +1,14 @@
-# 时屿（TIME ISLE）V4.0.0 Vercel 面试 Demo 部署
+# 时屿（TIME ISLE）V7.0.0 Vercel 面试 Demo 发布说明
 
-线上 Demo（V4.0.0，已部署）：
+线上 Demo（当前仍是已发布的 V4.0.0）：
 
 ```text
 https://ai-memory-museum-demo.vercel.app
 ```
 
-本文对应已发布的 V4.0.0（schema 4）：源码已同步至 GitHub 与 Gitee，Vercel 公开 Demo 也已完成部署；`/api/health` 已核验 `version: 4.0.0`、`schemaVersion: 4`、`mode: interview-demo`、`storage: ephemeral-sqlite` 和 `aiMode: mock-fallback`。V4 Demo 仍是公开、临时、只用于面试演示的环境：它不接收私人图片，也不允许 `.time-isle` 归档恢复；完整图片保存与恢复应在具有持久磁盘的本地 Node.js 环境体验。
+本文记录 V7.0.0（schema 9）的发布配置与验收口径。当前工作区中的 V7 已完成本地实现和检查，现为尚待线上部署与部署后验收的发布候选；线上域名在 V7 部署成功前仍保持 V4，实际版本始终以 `/api/health` 返回值为准。V7 部署成功后，`/api/health` 应核验 `version: 7.0.0`、`schemaVersion: 9`、`mode: interview-demo`、`storage: ephemeral-sqlite` 和 `aiMode: mock-fallback`。
+
+V7 Demo 仍是公开、临时、只用于面试演示的环境：它不接收私人图片或声音，不保存展览、回访、实体变更或时间胶囊，也不允许 `.time-isle` 归档恢复。完整媒体保存、胶囊封存和归档恢复应在具有持久磁盘的本地 Node.js 环境体验；浏览器端加密流程可以使用公开示例预览，但不要输入私人内容。
 
 ## Git 连接
 
@@ -36,7 +38,7 @@ Build Command: npm run build
 Output Directory: 留空
 ```
 
-`npm run build` 会执行语法检查和各模块回归，但不会启动真实 HTTP smoke；104 条 HTTP 断言应在推送前由 `npm.cmd run check` 完成。
+`npm run build` 会执行语法检查和各模块回归，但不会启动真实 HTTP smoke；167 条 HTTP 断言应在推送前由 `npm.cmd run check` 完成。
 
 `vercel.json` 将 `/api/*` 转发到 `api/index.js`，并为 Vercel 直接提供的页面、样式、脚本和 API 统一设置与本地 Node 服务一致的 CSP、frame、referrer、MIME 嗅探和 Permissions Policy 安全头。
 
@@ -71,7 +73,7 @@ AI_TIMEOUT_MS=20000
 
 公开 Demo 通常不需要配置 `DB_PATH` 或 `MEDIA_ROOT`。代码会在任何启动删除前解析真实路径，并要求二者位于系统临时目录、使用 `ai-memory-museum-` 专用前缀，且不能相同或互相包含；否则进程 fail closed，避免误配置清理私人数据。也不要提交 `.env`、本地 SQLite、`data/media` 或 `.time-isle` 备份。
 
-## V4 Demo 安全行为
+## V7 Demo 安全行为
 
 `INTERVIEW_DEMO=true` 时：
 
@@ -79,6 +81,8 @@ AI_TIMEOUT_MS=20000
 - Demo 在代码层始终强制 Mock，误配的 `AI_API_KEY` 不会被使用。
 - 共享文本馆藏、整理运行、时光拼图与补问分别受 SQLite 事务硬上限保护；并发请求也不能越过上限，达到后返回 429。
 - 所有媒体写操作返回 403，包括原图上传、展示图和缩略图写入、完成上传、图片关联、区域证据、指纹生成与图片删除。
+- 所有声音上传、关联和文字稿写入返回 403；麦克风权限策略固定关闭。
+- 实体别名/合并、展览保存、回访浏览状态和时间胶囊持久化均返回 403；无写入的主题展览预览与浏览器内加密仍可演示。
 - `.time-isle` 归档恢复和旧 JSON 导入返回 403，避免外部文件污染共享实例；完整或脱敏导出仍只导出当前临时实例中的公开数据。
 - 删除展品、解除关系、清空数据库和改写预置展品均受保护。
 - 页面显示“公开面试 Demo”提示，并禁用图片选择和完整备份恢复入口。
@@ -86,14 +90,14 @@ AI_TIMEOUT_MS=20000
 
 访客仍可能在共享临时实例中新增普通文本，所以页面提示中的“请勿提交私人内容”也适用于文字。
 
-## 为什么 Vercel 不承载私人图片
+## 为什么 Vercel 不承载私人图片、声音与胶囊
 
-V4 的媒体层使用本地文件系统、SHA-256 内容寻址和 SQLite 引用关系。Vercel Functions 的临时文件系统不提供这种数据所需的持久性，因此：
+V7 的图片、声音与胶囊层使用本地文件系统、SHA-256 内容寻址和 SQLite 引用关系。Vercel Functions 的临时文件系统不提供这类私人数据所需的持久性，因此：
 
 - 公开 Demo 明确关闭媒体写入，而不是假装已经持久保存。
 - 不要仅把 `INTERVIEW_DEMO` 改为 `false` 就当作私人生产部署；实例重建后 SQLite 和图片都可能丢失。
 - 私人或长期部署应使用 Node.js 24+ 和持久磁盘，同时持久化 `DB_PATH` 与 `MEDIA_ROOT`，并定期下载完整 `.time-isle`。
-- 若未来接入云数据库或对象存储，需要额外实现身份认证、租户隔离、访问控制和存储驱动；这些不在 V4.0.0 范围内。
+- 若未来接入云数据库或对象存储，需要额外实现身份认证、租户隔离、访问控制、密钥管理和存储驱动；这些不在 V7.0.0 范围内。
 
 本地持久配置示例：
 
@@ -103,7 +107,7 @@ $env:MEDIA_ROOT = "D:\time-isle\media"
 npm.cmd start
 ```
 
-默认本地路径分别为 `data/memory-museum.sqlite` 和 `data/media/`。完整 `.time-isle` 会包含馆藏、照片、图片线索和时光拼图，但不包含 Agent 运行日志；脱敏归档会物理排除图片文件。
+默认本地路径分别为 `data/memory-museum.sqlite`、`data/media/` 和 `data/media/voice/`。完整 `.time-isle` 会包含馆藏、照片、图片线索、声音、确认文字稿、实体图、主题展览、回访状态、时间胶囊和时光拼图，但不包含 Agent 运行日志；脱敏归档会物理排除正文、媒体文件、文字稿、展览叙事、实体名称与胶囊内容。
 
 ## 发布前检查
 
@@ -116,10 +120,10 @@ npm.cmd run check
 ```
 
 - `build`：语法检查和各独立回归，不运行 HTTP smoke。
-- `smoke`：在系统临时目录启动本地服务，执行当前 104 条真实 HTTP 断言。
+- `smoke`：在系统临时目录启动本地服务，执行当前 167 条真实 HTTP 断言。
 - `check`：依次执行全部语法、独立回归和 HTTP smoke；`npm.cmd test` 与它等价。
 
-媒体相关回归覆盖真实格式校验、安全展示图、精确去重、关联保护与 GC、EXIF 待确认/GPS 敏感、区域证据、只供人工复核的近似候选、本机 `TextDetector` 不可用时的手动降级、手动两点叠影，以及 `.time-isle` 全量验真、损坏零写入和事务恢复。
+回归覆盖真实格式校验、安全展示图、精确去重、关联保护与 GC、EXIF 待确认/GPS 敏感、区域证据、人工复核的近似候选、本机 OCR 降级、手动两点叠影、声音 Range/确认文字稿、主题展览与回访、实体线索、胶囊锁定零泄漏、浏览器端加密，以及 `.time-isle` 全量验真、损坏零写入和事务恢复。
 
 检查通过后：
 
@@ -139,7 +143,7 @@ https://ai-memory-museum-demo.vercel.app/api/demo/status
 https://ai-memory-museum-demo.vercel.app/api/privacy
 ```
 
-`/api/version` 应返回 `"version": "4.0.0"`。`/api/demo/status` 应包含：
+V7 部署完成后，`/api/version` 应返回 `"version": "7.0.0"`，健康接口应返回 `"schemaVersion": 9`。`/api/demo/status` 应包含：
 
 ```json
 {
@@ -155,12 +159,12 @@ https://ai-memory-museum-demo.vercel.app/api/privacy
 最后在无痕窗口完成一次人工路径：
 
 1. 浏览四件示例展品，打开《操场尽头的告别》，进入记忆航线与时光拼图并核对原文摘录。
-2. 体验 Mock AI 整理、混合检索和讲解来源，不输入任何私人文本。
-3. 确认“添加照片”入口处于 Demo 禁用状态；不要用真实私人照片测试公开站点。
-4. 确认完整备份可以导出，但恢复入口、旧 JSON 导入、删除和清空均不可用。
-5. 在浏览器网络面板确认直接尝试媒体写入或 `POST /api/archive/restore` 会得到 403，而读取页面和公开 API 保持正常。
+2. 体验 Mock AI 整理、语义线索检索、实体档案预览和讲解来源，不输入任何私人文本。
+3. 体验主题展览预览、今日回访与声音只读提示；确认展览保存、回访状态、声音和胶囊写入均被 Demo 阻止。
+4. 打开“胶囊与分享”，确认页面明确提示公开 Demo 不保存胶囊；仅使用示例内容体验浏览器内加密，不复用私人口令。
+5. 确认图片/声音入口、完整归档恢复、旧 JSON 导入、删除和清空均不可用；直接写 API 或 `POST /api/archive/restore` 返回 403。
 
-影像闭环的最终验收应在本地使用两张可丢弃、无隐私的测试图完成：分别体验“仅保留安全展示图”和“保留原图”、可用的 EXIF 线索确认、区域圈选、近似候选、文字手动降级、手动叠影，再导出 `.time-isle` 并恢复到另一组临时 `DB_PATH` / `MEDIA_ROOT`。测试后删除这组临时数据，不把测试图片提交到仓库。
+完整闭环的最终验收应在本地使用可丢弃、无隐私的图片和声音完成：体验两种图片隐私模式、EXIF 线索确认、区域圈选、相似候选、OCR 降级、手动叠影、声音确认文字稿、主题展览、未到期/到期胶囊、错误/正确离线口令，再导出 `.time-isle` 并恢复到另一组临时 `DB_PATH` / `MEDIA_ROOT`。测试后删除临时数据和下载文件，不把测试素材提交到仓库。
 
 ## 重复 Vercel 项目
 

@@ -7,9 +7,12 @@ const os = require("node:os");
 const path = require("node:path");
 const { createMemoryStore } = require("../database");
 const { createMediaStorage } = require("../lib/media-storage");
+const { createVoiceStorage } = require("../lib/voice-storage");
 const { buildMediaArchive, prepareMediaArchive } = require("../lib/media-backup");
 const { restorePreparedArchive } = require("../lib/media-restore");
 const { validateArchaeologyBackup, restoreArchaeologyBackup } = require("../lib/archaeology-backup");
+const { buildExhibitionPreview } = require("../lib/exhibition-curator");
+const { buildClueBackup, remapClueBackup, validateClueBackup } = require("../lib/clue-backup");
 
 let assertions = 0;
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "time-isle-restore-"));
@@ -21,6 +24,20 @@ let privacyConflictStore;
 let corruptReusableStore;
 let boundaryStore;
 let privacyDefenseStore;
+let exhibitionDefenseStore;
+let exhibitionSourceStore;
+let exhibitionTargetStore;
+let revisitDefenseStore;
+let revisitSourceStore;
+let revisitTargetStore;
+let entityDefenseStore;
+let entitySourceStore;
+let entityTargetStore;
+let capsuleSourceStore;
+let capsuleHandlerDefenseStore;
+let capsuleTargetStore;
+let capsuleMissingStore;
+let capsuleCorruptStore;
 
 function check(value, message) {
   assert.ok(value, message);
@@ -29,6 +46,11 @@ function check(value, message) {
 
 function equal(actual, expected, message) {
   assert.equal(actual, expected, message);
+  assertions += 1;
+}
+
+function deepEqual(actual, expected, message) {
+  assert.deepEqual(actual, expected, message);
   assertions += 1;
 }
 
@@ -68,6 +90,477 @@ async function main() {
     equal(restoredMedia.length, 1, "恢复后的展品应能读取图片");
     check(restoredMedia[0].variants.every((variant) => fs.existsSync(target.storage.resolveStorageKey(variant.storageKey))), "所有媒体文件都应落在最终内容寻址目录");
     equal(target.store.listMediaObservations({ assetId: restoredMedia[0].assetId }).length, 1, "恢复后的媒体观察应可查询");
+
+    const exhibitionDefense = createTarget(path.join(root, "exhibition-defense"));
+    exhibitionDefenseStore = exhibitionDefense.store;
+    const fullExhibitionShell = {
+      ...firstPrepared,
+      collection: {
+        ...firstPrepared.collection,
+        exhibitions: { mode: "full", schemaVersion: 5, exhibitions: [] }
+      }
+    };
+    assert.throws(() => restorePreparedArchive({
+      prepared: fullExhibitionShell,
+      store: exhibitionDefense.store,
+      storage: exhibitionDefense.storage,
+      normalizeMemory,
+      validateArchaeologyBackup,
+      restoreArchaeologyBackup,
+      createId: (prefix) => `${prefix}-missing-handler-${++idCounter}`
+    }), (error) => error?.code === "MEDIA_RESTORE_EXHIBITION_HANDLER_REQUIRED");
+    assertions += 1;
+    equal(exhibitionDefense.store.listMemories().length, 0, "缺少展览恢复处理器时必须在任何写入前整包拒绝");
+
+    const malformedPrepared = {
+      ...firstPrepared,
+      collection: {
+        ...firstPrepared.collection,
+        memories: [
+          firstPrepared.collection.memories[0],
+          normalizeMemory({ id: "memory-malformed-second", title: "第二件展品", rawContent: "第二段可核对的原始记忆。" })
+        ],
+        exhibitions: malformedExhibitionBackup()
+      }
+    };
+    assert.throws(() => restorePreparedArchive({
+      prepared: malformedPrepared,
+      store: exhibitionDefense.store,
+      storage: exhibitionDefense.storage,
+      normalizeMemory,
+      validateArchaeologyBackup,
+      restoreArchaeologyBackup,
+      validateExhibitionBackup: exhibitionDefense.store.validateExhibitionBackup,
+      restoreExhibitionBackup: exhibitionDefense.store.restoreExhibitionBackup,
+      createId: (prefix) => `${prefix}-malformed-${++idCounter}`
+    }), (error) => error?.code === "MEDIA_RESTORE_FEATURE_INVALID" && error.cause?.code === "EXHIBITION_LIMIT_INVALID");
+    assertions += 1;
+    equal(exhibitionDefense.store.listMemories().length, 0, "展览树深层损坏时不得写入展品");
+    equal(exhibitionDefense.store.listMediaAssets({ limit: 20 }).length, 0, "展览树深层损坏时不得移动或登记媒体");
+
+    const exhibitionSource = createExhibitionFixture(path.join(root, "exhibition-source"));
+    exhibitionSourceStore = exhibitionSource.store;
+    const exhibitionArchive = buildMediaArchive({
+      collection: exhibitionSource.collection,
+      store: exhibitionSource.store,
+      storage: exhibitionSource.storage,
+      appVersion: "5.0.0",
+      schemaVersion: 5
+    });
+    const exhibitionTarget = createTarget(path.join(root, "exhibition-target"));
+    exhibitionTargetStore = exhibitionTarget.store;
+    const exhibitionPrepared = await prepareMediaArchive(exhibitionArchive, {
+      stagingRoot: path.join(exhibitionTarget.storage.root, ".restore", "full-exhibition")
+    });
+    const exhibitionRestored = restorePreparedArchive({
+      prepared: exhibitionPrepared,
+      store: exhibitionTarget.store,
+      storage: exhibitionTarget.storage,
+      normalizeMemory,
+      validateArchaeologyBackup,
+      restoreArchaeologyBackup,
+      validateExhibitionBackup: exhibitionTarget.store.validateExhibitionBackup,
+      restoreExhibitionBackup: exhibitionTarget.store.restoreExhibitionBackup,
+      createId: (prefix) => `${prefix}-exhibition-${++idCounter}`
+    });
+    equal(exhibitionRestored.imported, 2, "完整归档可在同一事务恢复展品与主题展览");
+    equal(exhibitionRestored.exhibitions.exhibitions, 1, "非空主题展览被完整恢复");
+    const restoredExhibitionId = exhibitionRestored.idMap.exhibitions[exhibitionSource.exhibition.id];
+    const restoredExhibition = exhibitionTarget.store.getExhibition(restoredExhibitionId);
+    check(restoredExhibition?.memoryIds.every((id) => Object.values(exhibitionRestored.idMap.memories).includes(id)), "主题展览恢复后重写全部展品 ID");
+
+    const redactedArchive = buildMediaArchive({
+      collection: {
+        ...exhibitionSource.collection,
+        mode: "redacted",
+        exhibitions: exhibitionSource.store.buildExhibitionBackup("redacted")
+      },
+      store: exhibitionSource.store,
+      storage: exhibitionSource.storage,
+      appVersion: "5.0.0",
+      schemaVersion: 5
+    });
+    const redactedPrepared = await prepareMediaArchive(redactedArchive, {
+      stagingRoot: path.join(exhibitionTarget.storage.root, ".restore", "redacted-exhibition")
+    });
+    check(redactedPrepared.collection.exhibitions.mode === "redacted-summary" && !redactedPrepared.collection.exhibitions.exhibitions, "脱敏归档物理排除展览叙事、成员与原文引用");
+
+    const revisitSource = createRevisitFixture(path.join(root, "revisit-source"));
+    revisitSourceStore = revisitSource.store;
+    const revisitArchive = buildMediaArchive({
+      collection: revisitSource.collection,
+      store: revisitSource.store,
+      storage: revisitSource.storage,
+      appVersion: "5.1.0",
+      schemaVersion: 6
+    });
+    const revisitDefense = createTarget(path.join(root, "revisit-defense"));
+    revisitDefenseStore = revisitDefense.store;
+    const revisitPrepared = await prepareMediaArchive(revisitArchive, {
+      stagingRoot: path.join(revisitDefense.storage.root, ".restore", "full-revisit")
+    });
+    deepEqual(
+      revisitPrepared.manifest.sections.find((section) => section.name === "revisits"),
+      { name: "revisits", path: "revisits/state.json", count: 1, required: true, version: 1 },
+      "schema 6 非空回访备份应作为 required section 通过验真"
+    );
+    deepEqual(revisitPrepared.collection.revisits, revisitSource.collection.revisits, "prepare 应无损重挂非空回访备份");
+
+    assert.throws(() => restorePreparedArchive({
+      prepared: revisitPrepared,
+      store: revisitDefense.store,
+      storage: revisitDefense.storage,
+      normalizeMemory,
+      validateArchaeologyBackup,
+      restoreArchaeologyBackup,
+      validateExhibitionBackup: revisitDefense.store.validateExhibitionBackup,
+      restoreExhibitionBackup: revisitDefense.store.restoreExhibitionBackup,
+      createId: (prefix) => `${prefix}-missing-revisit-handler-${++idCounter}`
+    }), (error) => error?.code === "MEDIA_RESTORE_REVISIT_HANDLER_REQUIRED");
+    assertions += 1;
+    equal(revisitDefense.store.listMemories().length, 0, "缺少回访处理器时不得写入展品");
+    equal(revisitDefense.store.listMediaAssets({ limit: 20 }).length, 0, "缺少回访处理器时不得登记媒体");
+
+    const invalidRevisitPrepared = {
+      ...revisitPrepared,
+      collection: {
+        ...revisitPrepared.collection,
+        revisits: {
+          ...revisitPrepared.collection.revisits,
+          states: revisitPrepared.collection.revisits.states.map((state, index) => (
+            index === 0 ? { ...state, memoryId: "memory-outside-archive" } : state
+          ))
+        }
+      }
+    };
+    assert.throws(() => restorePreparedArchive({
+      prepared: invalidRevisitPrepared,
+      store: revisitDefense.store,
+      storage: revisitDefense.storage,
+      normalizeMemory,
+      validateArchaeologyBackup,
+      restoreArchaeologyBackup,
+      validateExhibitionBackup: revisitDefense.store.validateExhibitionBackup,
+      restoreExhibitionBackup: revisitDefense.store.restoreExhibitionBackup,
+      validateRevisitBackup: revisitDefense.store.validateRevisitBackup,
+      restoreRevisitBackup: revisitDefense.store.restoreRevisitBackup,
+      createId: (prefix) => `${prefix}-invalid-revisit-${++idCounter}`
+    }), (error) => (
+      error?.code === "MEDIA_RESTORE_FEATURE_INVALID"
+        && error.cause?.code === "REVISIT_BACKUP_REFERENCE_INVALID"
+    ));
+    assertions += 1;
+    equal(revisitDefense.store.listMemories().length, 0, "回访非法引用被包装为统一错误后仍须零展品写入");
+    equal(revisitDefense.store.listMediaAssets({ limit: 20 }).length, 0, "回访非法引用必须在媒体登记前被拒绝");
+    equal(revisitDefense.store.listRevisitStates().length, 0, "回访非法引用不得留下部分状态");
+    check(revisitPrepared.files.variants.every((file) => fs.existsSync(file.filePath)), "回访校验失败后已验真媒体仍留在暂存区，未发生落盘移动");
+    equal(fs.readdirSync(path.join(revisitDefense.storage.root, "assets")).length, 0, "回访校验失败不得在最终媒体目录落盘");
+
+    const revisitTarget = createTarget(path.join(root, "revisit-target"));
+    revisitTargetStore = revisitTarget.store;
+    const revisitRoundtripPrepared = await prepareMediaArchive(revisitArchive, {
+      stagingRoot: path.join(revisitTarget.storage.root, ".restore", "full-revisit")
+    });
+    const revisitRestored = restorePreparedArchive({
+      prepared: revisitRoundtripPrepared,
+      store: revisitTarget.store,
+      storage: revisitTarget.storage,
+      normalizeMemory,
+      validateArchaeologyBackup,
+      restoreArchaeologyBackup,
+      validateExhibitionBackup: revisitTarget.store.validateExhibitionBackup,
+      restoreExhibitionBackup: revisitTarget.store.restoreExhibitionBackup,
+      validateRevisitBackup: revisitTarget.store.validateRevisitBackup,
+      restoreRevisitBackup: revisitTarget.store.restoreRevisitBackup,
+      createId: (prefix) => `${prefix}-revisit-roundtrip-${++idCounter}`
+    });
+    equal(revisitRestored.imported, 2, "schema 6 归档应完整恢复两件展品");
+    equal(revisitRestored.media.assetsCreated, 1, "schema 6 回访往返不得影响媒体恢复");
+    equal(revisitRestored.revisits.states, 1, "非空回访 section 应在同一事务恢复");
+    const restoredRevisitMemoryId = revisitRestored.idMap.memories[revisitSource.revisitMemoryId];
+    equal(revisitRestored.idMap.revisits[revisitSource.revisitMemoryId], restoredRevisitMemoryId, "回访恢复结果应暴露展品 ID 重写映射");
+    const sourceRevisitState = revisitSource.store.getRevisitState(revisitSource.revisitMemoryId);
+    const targetRevisitState = revisitTarget.store.getRevisitState(restoredRevisitMemoryId);
+    deepEqual(
+      { ...targetRevisitState, memoryId: revisitSource.revisitMemoryId },
+      sourceRevisitState,
+      "回访往返应保留查看次数、本地日期、时区与精确时间"
+    );
+
+    const entitySource = createEntityFixture(path.join(root, "entity-source"));
+    entitySourceStore = entitySource.store;
+    const entityArchive = buildMediaArchive({
+      collection: entitySource.collection,
+      store: entitySource.store,
+      storage: entitySource.storage,
+      appVersion: "6.0.0",
+      schemaVersion: 7
+    });
+    const entityDefense = createTarget(path.join(root, "entity-defense"));
+    entityDefenseStore = entityDefense.store;
+    const entityPrepared = await prepareMediaArchive(entityArchive, {
+      stagingRoot: path.join(entityDefense.storage.root, ".restore", "full-entities")
+    });
+    deepEqual(
+      entityPrepared.manifest.sections.find((section) => section.name === "entities"),
+      { name: "entities", path: "entities/state.json", count: 1, required: true, version: 1 },
+      "schema 7 非空实体图应作为 required section 通过验真"
+    );
+    deepEqual(entityPrepared.entities, entitySource.collection.entities, "prepare 顶层应无损暴露非空实体图");
+    deepEqual(
+      entityPrepared.collection.entities,
+      entityPrepared.entities,
+      "prepared.collection.entities 与 prepared.entities 应保持等价"
+    );
+
+    assert.throws(() => restorePreparedArchive({
+      prepared: entityPrepared,
+      store: entityDefense.store,
+      storage: entityDefense.storage,
+      normalizeMemory,
+      validateArchaeologyBackup,
+      restoreArchaeologyBackup,
+      validateExhibitionBackup: entityDefense.store.validateExhibitionBackup,
+      restoreExhibitionBackup: entityDefense.store.restoreExhibitionBackup,
+      validateRevisitBackup: entityDefense.store.validateRevisitBackup,
+      restoreRevisitBackup: entityDefense.store.restoreRevisitBackup,
+      restoreEntityBackup: () => ({ entities: 0, aliases: 0, memoryLinks: 0, idMap: {} }),
+      createId: (prefix) => `${prefix}-missing-entity-validator-${++idCounter}`
+    }), (error) => error?.code === "MEDIA_RESTORE_ENTITY_HANDLER_REQUIRED");
+    assertions += 1;
+    equal(entityDefense.store.listMemories().length, 0, "缺少实体 validate 处理器时必须在任何展品写入前拒绝");
+
+    assert.throws(() => restorePreparedArchive({
+      prepared: entityPrepared,
+      store: entityDefense.store,
+      storage: entityDefense.storage,
+      normalizeMemory,
+      validateArchaeologyBackup,
+      restoreArchaeologyBackup,
+      validateExhibitionBackup: entityDefense.store.validateExhibitionBackup,
+      restoreExhibitionBackup: entityDefense.store.restoreExhibitionBackup,
+      validateRevisitBackup: entityDefense.store.validateRevisitBackup,
+      restoreRevisitBackup: entityDefense.store.restoreRevisitBackup,
+      validateEntityBackup: validateClueBackup,
+      createId: (prefix) => `${prefix}-missing-entity-restorer-${++idCounter}`
+    }), (error) => error?.code === "MEDIA_RESTORE_ENTITY_HANDLER_REQUIRED");
+    assertions += 1;
+    equal(entityDefense.store.listMemories().length, 0, "缺少实体 restore 处理器时必须保持零展品写入");
+    equal(entityDefense.store.listMediaAssets({ limit: 20 }).length, 0, "任一实体处理器缺失时不得登记媒体");
+
+    const invalidEntityCollection = {
+      ...entitySource.collection,
+      entities: {
+        ...entitySource.collection.entities,
+        entities: entitySource.collection.entities.entities.map((entity, entityIndex) => ({
+          ...entity,
+          memoryLinks: entity.memoryLinks.map((link, linkIndex) => (
+            entityIndex === 0 && linkIndex === 0 ? { ...link, memoryId: "memory-outside-archive" } : link
+          ))
+        }))
+      }
+    };
+    const invalidEntityArchive = buildMediaArchive({
+      collection: invalidEntityCollection,
+      store: entitySource.store,
+      storage: entitySource.storage,
+      appVersion: "6.0.0",
+      schemaVersion: 7
+    });
+    const invalidEntityPrepared = await prepareMediaArchive(invalidEntityArchive, {
+      stagingRoot: path.join(entityDefense.storage.root, ".restore", "invalid-entity-reference")
+    });
+    assert.throws(() => restorePreparedArchive({
+      prepared: invalidEntityPrepared,
+      store: entityDefense.store,
+      storage: entityDefense.storage,
+      normalizeMemory,
+      validateArchaeologyBackup,
+      restoreArchaeologyBackup,
+      validateExhibitionBackup: entityDefense.store.validateExhibitionBackup,
+      restoreExhibitionBackup: entityDefense.store.restoreExhibitionBackup,
+      validateRevisitBackup: entityDefense.store.validateRevisitBackup,
+      restoreRevisitBackup: entityDefense.store.restoreRevisitBackup,
+      validateEntityBackup: validateClueBackup,
+      restoreEntityBackup: () => { throw new Error("非法实体备份不应进入 restore 处理器"); },
+      createId: (prefix) => `${prefix}-invalid-entity-${++idCounter}`
+    }), (error) => (
+      error?.code === "MEDIA_RESTORE_FEATURE_INVALID"
+        && error.cause?.code === "CLUE_BACKUP_REFERENCE_INVALID"
+    ));
+    assertions += 1;
+    equal(entityDefense.store.listMemories().length, 0, "实体越界引用应在展品事务开始前被拒绝");
+    equal(entityDefense.store.listMediaAssets({ limit: 20 }).length, 0, "实体越界引用应在媒体登记前被拒绝");
+    check(invalidEntityPrepared.files.variants.every((file) => fs.existsSync(file.filePath)), "实体校验失败后媒体仍应留在已验真的暂存区");
+    const entityDefenseAssets = path.join(entityDefense.storage.root, "assets");
+    equal(fs.existsSync(entityDefenseAssets) ? fs.readdirSync(entityDefenseAssets).length : 0, 0, "实体校验失败不得在最终媒体目录落盘");
+
+    const entityTarget = createTarget(path.join(root, "entity-target"));
+    entityTargetStore = entityTarget.store;
+    const entityRoundtripPrepared = await prepareMediaArchive(entityArchive, {
+      stagingRoot: path.join(entityTarget.storage.root, ".restore", "full-entities")
+    });
+    let restoredEntityGraph = null;
+    const restoreEntityGraph = (backup, memoryIdMap) => {
+      const entityIdMap = Object.fromEntries(backup.entities.map((entity) => [entity.id, `restored-${entity.id}`]));
+      const aliasIdMap = Object.fromEntries(backup.entities.flatMap((entity) => (
+        entity.aliases.map((alias) => [alias.id, `restored-${alias.id}`])
+      )));
+      const remapped = remapClueBackup(backup, { memoryIdMap, entityIdMap, aliasIdMap });
+      restoredEntityGraph = remapped.backup;
+      return {
+        entities: remapped.backup.entities.length,
+        aliases: remapped.backup.entities.reduce((sum, entity) => sum + entity.aliases.length, 0),
+        memoryLinks: remapped.backup.entities.reduce((sum, entity) => sum + entity.memoryLinks.length, 0),
+        skipped: 0,
+        idMap: remapped.idMap
+      };
+    };
+    const entityRestored = restorePreparedArchive({
+      prepared: entityRoundtripPrepared,
+      store: entityTarget.store,
+      storage: entityTarget.storage,
+      normalizeMemory,
+      validateArchaeologyBackup,
+      restoreArchaeologyBackup,
+      validateExhibitionBackup: entityTarget.store.validateExhibitionBackup,
+      restoreExhibitionBackup: entityTarget.store.restoreExhibitionBackup,
+      validateRevisitBackup: entityTarget.store.validateRevisitBackup,
+      restoreRevisitBackup: entityTarget.store.restoreRevisitBackup,
+      validateEntityBackup: validateClueBackup,
+      restoreEntityBackup: restoreEntityGraph,
+      createId: (prefix) => `${prefix}-entity-roundtrip-${++idCounter}`
+    });
+    equal(entityRestored.imported, 2, "schema 7 完整归档应恢复实体图边界内的两件展品");
+    equal(entityRestored.media.assetsCreated, 1, "实体图往返不得影响媒体恢复");
+    equal(entityRestored.entities.entities, 1, "非空实体 section 应在同一事务交给恢复处理器");
+    equal(entityRestored.entities.aliases, 1, "实体别名应完整进入恢复处理器");
+    equal(entityRestored.entities.memoryLinks, 1, "实体与展品关系应完整进入恢复处理器");
+    const sourceEntity = entitySource.collection.entities.entities[0];
+    const sourceAlias = sourceEntity.aliases[0];
+    equal(entityRestored.idMap.entities[sourceEntity.id], `restored-${sourceEntity.id}`, "顶层恢复结果应直接暴露实体 ID 映射");
+    equal(entityRestored.idMap.aliases[sourceAlias.id], `restored-${sourceAlias.id}`, "顶层恢复结果应直接暴露实体别名 ID 映射");
+    equal(
+      restoredEntityGraph.entities[0].memoryLinks[0].memoryId,
+      entityRestored.idMap.memories[sourceEntity.memoryLinks[0].memoryId],
+      "实体关系中的展品 ID 应按本次恢复映射重写"
+    );
+    equal(restoredEntityGraph.entities[0].canonicalName, sourceEntity.canonicalName, "非空实体图往返应保留规范名称");
+    equal(restoredEntityGraph.entities[0].aliases[0].alias, sourceAlias.alias, "非空实体图往返应保留别名文本");
+
+    const capsuleSource = createCapsuleFixture(path.join(root, "capsule-source"));
+    capsuleSourceStore = capsuleSource.store;
+    const capsuleArchive = buildMediaArchive({
+      collection: capsuleSource.collection,
+      store: capsuleSource.store,
+      storage: capsuleSource.storage,
+      voiceStorage: capsuleSource.voiceStorage,
+      appVersion: "7.0.0",
+      schemaVersion: 9
+    });
+
+    const capsuleHandlerDefense = createCapsuleTarget(path.join(root, "capsule-handler-defense"));
+    capsuleHandlerDefenseStore = capsuleHandlerDefense.store;
+    const capsuleHandlerPrepared = await prepareMediaArchive(capsuleArchive, {
+      stagingRoot: path.join(capsuleHandlerDefense.storage.root, ".restore", "missing-capsule-handler"),
+      validateVoiceBackup: capsuleSource.store.validateVoiceBackup
+    });
+    assert.throws(() => restorePreparedArchive({
+      prepared: capsuleHandlerPrepared,
+      ...capsuleRestoreDependencies(capsuleHandlerDefense),
+      createId: (prefix) => `${prefix}-missing-capsule-handler-${++idCounter}`,
+      validateCapsuleBackup: undefined,
+      restoreCapsuleBackup: undefined
+    }), (error) => error?.code === "MEDIA_RESTORE_CAPSULE_HANDLER_REQUIRED");
+    assertions += 1;
+    assertCapsuleTargetEmpty(capsuleHandlerDefense, "缺少胶囊处理器");
+
+    const capsuleTarget = createCapsuleTarget(path.join(root, "capsule-target"));
+    capsuleTargetStore = capsuleTarget.store;
+    const seededConflicts = seedCapsuleRestoreConflicts(capsuleTarget, capsuleSource);
+    const capsulePrepared = await prepareMediaArchive(capsuleArchive, {
+      stagingRoot: path.join(capsuleTarget.storage.root, ".restore", "full-capsule"),
+      validateVoiceBackup: capsuleSource.store.validateVoiceBackup
+    });
+    const capsuleRestored = restorePreparedArchive({
+      prepared: capsulePrepared,
+      ...capsuleRestoreDependencies(capsuleTarget),
+      createId: (prefix) => `${prefix}-capsule-roundtrip-${++idCounter}`
+    });
+    equal(capsuleRestored.imported, capsuleSource.collection.memories.length, "schema 9 归档应在同一事务恢复胶囊依赖的全部展品");
+    equal(capsuleRestored.capsules.capsules, 1, "完整胶囊 section 应恢复一个外壳与安全快照");
+    equal(capsuleRestored.capsules.mediaLinks, 1, "完整胶囊 section 应恢复一个图片链接");
+    const sourceCapsule = capsuleSource.collection.capsules.capsules[0];
+    const restoredCapsuleId = capsuleRestored.idMap.capsules[sourceCapsule.id];
+    check(Boolean(restoredCapsuleId), "顶层 idMap.capsules 应暴露源胶囊到目标胶囊的映射");
+    equal(capsuleRestored.capsules.idMap[sourceCapsule.id], restoredCapsuleId, "胶囊结果与顶层 idMap 应暴露同一映射");
+    check(restoredCapsuleId !== sourceCapsule.id, "目标胶囊 ID 冲突时应生成无碰撞 ID");
+    const restoredCapsulePayload = capsuleTarget.store.getCapsulePayload(restoredCapsuleId);
+    deepEqual(restoredCapsulePayload.snapshot, sourceCapsule.snapshot, "恢复应原样保留匿名安全快照");
+    const mappedAssetId = capsuleRestored.idMap.assets[sourceCapsule.mediaLinks[0].assetId];
+    check(mappedAssetId && mappedAssetId !== sourceCapsule.mediaLinks[0].assetId, "媒体 ID 冲突时应生成并暴露新资产映射");
+    equal(restoredCapsulePayload.mediaLinks[0].assetId, mappedAssetId, "胶囊图片链接应使用本次媒体恢复映射");
+    const mappedExhibitionId = capsuleRestored.idMap.exhibitions[sourceCapsule.exhibitionId];
+    check(mappedExhibitionId && mappedExhibitionId !== sourceCapsule.exhibitionId, "展览 ID 冲突时应生成并暴露新展览映射");
+    const restoredCapsuleRecord = capsuleTarget.store.buildCapsuleBackup("full").capsules
+      .find((capsule) => capsule.id === restoredCapsuleId);
+    equal(restoredCapsuleRecord.exhibitionId, mappedExhibitionId, "胶囊来源应重写为本次恢复得到的展览 ID");
+    equal(capsuleTarget.store.listMemories().length, seededConflicts.memoryCount + capsuleRestored.imported, "胶囊成功恢复不应覆盖预先存在的展品");
+    equal(capsuleTarget.store.getCapsuleStats().capsules, seededConflicts.capsuleCount + 1, "胶囊成功恢复应只新增归档内记录");
+
+    const missingCapsuleCollection = structuredClone(capsuleSource.collection);
+    missingCapsuleCollection.capsules.capsules[0].mediaLinks[0].assetId = "asset-capsule-missing";
+    const missingCapsuleArchive = buildMediaArchive({
+      collection: missingCapsuleCollection,
+      store: capsuleSource.store,
+      storage: capsuleSource.storage,
+      voiceStorage: capsuleSource.voiceStorage,
+      appVersion: "7.0.0",
+      schemaVersion: 9
+    });
+    const capsuleMissing = createCapsuleTarget(path.join(root, "capsule-missing-reference"));
+    capsuleMissingStore = capsuleMissing.store;
+    const missingCapsulePrepared = await prepareMediaArchive(missingCapsuleArchive, {
+      stagingRoot: path.join(capsuleMissing.storage.root, ".restore", "missing-reference"),
+      validateVoiceBackup: capsuleSource.store.validateVoiceBackup
+    });
+    assert.throws(() => restorePreparedArchive({
+      prepared: missingCapsulePrepared,
+      ...capsuleRestoreDependencies(capsuleMissing),
+      createId: (prefix) => `${prefix}-capsule-missing-${++idCounter}`
+    }), (error) => error?.code === "CAPSULE_BACKUP_REFERENCE_INVALID");
+    assertions += 1;
+    assertCapsuleTargetEmpty(capsuleMissing, "胶囊缺少图片映射");
+    equal(countFiles(path.join(capsuleMissing.storage.root, "assets")), 0, "胶囊缺少图片映射时已物化媒体必须清理");
+
+    const corruptCapsuleCollection = structuredClone(capsuleSource.collection);
+    corruptCapsuleCollection.capsules.capsules[0].mediaLinks[0].itemKey = "item-999";
+    const corruptCapsuleArchive = buildMediaArchive({
+      collection: corruptCapsuleCollection,
+      store: capsuleSource.store,
+      storage: capsuleSource.storage,
+      voiceStorage: capsuleSource.voiceStorage,
+      appVersion: "7.0.0",
+      schemaVersion: 9
+    });
+    const capsuleCorrupt = createCapsuleTarget(path.join(root, "capsule-corrupt-reference"));
+    capsuleCorruptStore = capsuleCorrupt.store;
+    const corruptCapsulePrepared = await prepareMediaArchive(corruptCapsuleArchive, {
+      stagingRoot: path.join(capsuleCorrupt.storage.root, ".restore", "corrupt-reference"),
+      validateVoiceBackup: capsuleSource.store.validateVoiceBackup
+    });
+    assert.throws(() => restorePreparedArchive({
+      prepared: corruptCapsulePrepared,
+      ...capsuleRestoreDependencies(capsuleCorrupt),
+      createId: (prefix) => `${prefix}-capsule-corrupt-${++idCounter}`
+    }), (error) => (
+      error?.code === "MEDIA_RESTORE_FEATURE_INVALID"
+        && error.cause?.code === "CAPSULE_MEDIA_REFERENCE_INVALID"
+    ));
+    assertions += 1;
+    assertCapsuleTargetEmpty(capsuleCorrupt, "胶囊匿名展品引用损坏");
+    check(corruptCapsulePrepared.files.variants.every((file) => fs.existsSync(file.filePath)), "胶囊预校验失败时已验真媒体应留在暂存区");
+    equal(countFiles(path.join(capsuleCorrupt.storage.root, "assets")), 0, "胶囊预校验失败不得在最终媒体目录落盘");
 
     const boundary = createTarget(path.join(root, "boundary"));
     boundaryStore = boundary.store;
@@ -218,7 +711,21 @@ async function main() {
       privacyConflictStore,
       corruptReusableStore,
       boundaryStore,
-      privacyDefenseStore
+      privacyDefenseStore,
+      exhibitionDefenseStore,
+      exhibitionSourceStore,
+      exhibitionTargetStore,
+      revisitDefenseStore,
+      revisitSourceStore,
+      revisitTargetStore,
+      entityDefenseStore,
+      entitySourceStore,
+      entityTargetStore,
+      capsuleSourceStore,
+      capsuleHandlerDefenseStore,
+      capsuleTargetStore,
+      capsuleMissingStore,
+      capsuleCorruptStore
     ]) {
       try { store?.close(); } catch { /* already closed */ }
     }
@@ -229,7 +736,6 @@ async function main() {
 function createFixture(directory) {
   fs.mkdirSync(directory, { recursive: true });
   const store = createMemoryStore({ dbPath: path.join(directory, "museum.sqlite"), halls, schemaVersion: 4 });
-  sourceStore = store;
   const storage = createMediaStorage({ root: path.join(directory, "media") });
   const memory = store.saveMemory(normalizeMemory({
     id: "memory-source",
@@ -284,6 +790,311 @@ function createFixture(directory) {
     archaeology: { mode: "full", events: [], claims: [], pairDecisions: [], questions: [] }
   };
   return { store, storage, collection, asset };
+}
+
+function createExhibitionFixture(directory) {
+  const fixture = createFixture(directory);
+  const second = fixture.store.saveMemory(normalizeMemory({
+    id: "memory-exhibition-second",
+    title: "雨停后的车站",
+    rawContent: "雨停以后，我们在车站门口等了很久，最后一起走回旧街。",
+    exhibitText: "雨停后一起回家的那段路。"
+  }));
+  const memories = [...fixture.collection.memories, second];
+  const preview = buildExhibitionPreview(memories, { theme: "雨天与归途", title: "雨停以后" });
+  const exhibition = fixture.store.createExhibition({ ...preview, confirmed: true });
+  return {
+    ...fixture,
+    exhibition,
+    collection: {
+      ...fixture.collection,
+      version: "5.0.0",
+      schemaVersion: 5,
+      memories,
+      exhibitions: fixture.store.buildExhibitionBackup("full")
+    }
+  };
+}
+
+function createRevisitFixture(directory) {
+  const fixture = createExhibitionFixture(directory);
+  const revisitMemoryId = fixture.collection.memories[0].id;
+  const localContext = { memoryId: revisitMemoryId, localDate: "2026-07-16", timezone: "Asia/Shanghai" };
+  fixture.store.markRevisitViewed(localContext);
+  fixture.store.markRevisitViewed(localContext);
+  fixture.store.markRevisitDismissed(localContext);
+  return {
+    ...fixture,
+    revisitMemoryId,
+    collection: {
+      ...fixture.collection,
+      version: "5.1.0",
+      schemaVersion: 6,
+      revisits: fixture.store.buildRevisitBackup("full", fixture.collection.memories.map((memory) => memory.id))
+    }
+  };
+}
+
+function createEntityFixture(directory) {
+  const fixture = createRevisitFixture(directory);
+  const memoryId = fixture.collection.memories[0].id;
+  return {
+    ...fixture,
+    collection: {
+      ...fixture.collection,
+      version: "6.0.0",
+      schemaVersion: 7,
+      entities: buildClueBackup(entityBackupSource(memoryId), "full", [memoryId])
+    }
+  };
+}
+
+function createCapsuleFixture(directory) {
+  const fixture = createEntityFixture(directory);
+  const publishedExhibition = fixture.store.updateExhibition(fixture.exhibition.id, {
+    status: "published",
+    confirm: true
+  });
+  const snapshot = capsuleSnapshotFixture();
+  fixture.store.createCapsule({
+    id: "capsule-source",
+    title: snapshot.title,
+    shellMessage: "等到那一天，再慢慢打开。",
+    opensOn: "2040-02-29",
+    timezone: "Asia/Shanghai",
+    exhibitionId: publishedExhibition.id,
+    snapshot,
+    mediaLinks: [{
+      assetId: fixture.asset.id,
+      itemKey: "item-1",
+      position: 0,
+      altText: "窗边的一张旧照片",
+      caption: "雨天旧照"
+    }],
+    confirm: true
+  });
+  const memoryIds = fixture.collection.memories.map((memory) => memory.id);
+  return {
+    ...fixture,
+    exhibition: publishedExhibition,
+    voiceStorage: createVoiceStorage({ root: path.join(directory, "voice") }),
+    collection: {
+      ...fixture.collection,
+      version: "7.0.0",
+      schemaVersion: 9,
+      exhibitions: fixture.store.buildExhibitionBackup("full"),
+      voices: fixture.store.buildVoiceBackup("full", memoryIds),
+      capsules: fixture.store.buildCapsuleBackup("full")
+    }
+  };
+}
+
+function capsuleSnapshotFixture() {
+  return {
+    version: 1,
+    title: "给未来的雨天展览",
+    theme: "雨天与归途",
+    opening: "等雨停以后，再一起走回旧街。",
+    sections: [{
+      key: "section-1",
+      title: "第一章",
+      summary: "匿名且经过确认的展览快照。",
+      items: [{
+        key: "item-1",
+        title: "旧相册",
+        excerpt: "翻开旧相册时，看见了那天的雨。",
+        curatorNote: "留给未来。",
+        confirmedQuotes: ["翻开旧相册时"],
+        confirmedTranscripts: []
+      }, {
+        key: "item-2",
+        title: "雨停后的车站",
+        excerpt: "雨停以后，我们一起走回旧街。",
+        curatorNote: "第二件展品。",
+        confirmedQuotes: ["雨停以后"],
+        confirmedTranscripts: []
+      }]
+    }]
+  };
+}
+
+function createCapsuleTarget(directory) {
+  const target = createTarget(directory);
+  return {
+    ...target,
+    voiceStorage: createVoiceStorage({ root: path.join(directory, "voice") })
+  };
+}
+
+function capsuleRestoreDependencies(target) {
+  return {
+    store: target.store,
+    storage: target.storage,
+    voiceStorage: target.voiceStorage,
+    normalizeMemory,
+    validateArchaeologyBackup,
+    restoreArchaeologyBackup,
+    validateExhibitionBackup: target.store.validateExhibitionBackup,
+    restoreExhibitionBackup: target.store.restoreExhibitionBackup,
+    validateRevisitBackup: target.store.validateRevisitBackup,
+    restoreRevisitBackup: target.store.restoreRevisitBackup,
+    validateEntityBackup: target.store.validateClueBackup,
+    restoreEntityBackup: target.store.restoreClueBackup,
+    validateVoiceBackup: target.store.validateVoiceBackup,
+    restoreVoiceBackup: target.store.restoreVoiceBackup,
+    validateCapsuleBackup: target.store.validateCapsuleBackup,
+    restoreCapsuleBackup: target.store.restoreCapsuleBackup
+  };
+}
+
+function seedCapsuleRestoreConflicts(target, source) {
+  seedAssetIdCollision(target, source.asset.id);
+  const memoryIdMap = {};
+  for (const memory of source.collection.memories) {
+    const targetId = `preexisting-${memory.id}`;
+    target.store.saveMemory(normalizeMemory({
+      ...memory,
+      id: targetId,
+      rawContent: memory.rawContent,
+      exhibitText: memory.exhibitText
+    }));
+    memoryIdMap[memory.id] = targetId;
+  }
+  const seededExhibitions = target.store.restoreExhibitionBackup(source.collection.exhibitions, memoryIdMap);
+  const sourceExhibitionId = source.collection.exhibitions.exhibitions[0].id;
+  if (seededExhibitions.idMap[sourceExhibitionId] !== sourceExhibitionId) {
+    throw new Error("胶囊恢复夹具未能预占源展览 ID。");
+  }
+  const sourceCapsule = source.collection.capsules.capsules[0];
+  target.store.createCapsule({
+    id: sourceCapsule.id,
+    title: "预存同 ID 胶囊",
+    shellMessage: "用于验证无碰撞恢复。",
+    opensOn: "2039-01-01",
+    timezone: "Asia/Shanghai",
+    snapshot: sourceCapsule.snapshot,
+    mediaLinks: [],
+    confirm: true
+  });
+  return {
+    memoryCount: target.store.listMemories().length,
+    capsuleCount: target.store.getCapsuleStats().capsules
+  };
+}
+
+function seedAssetIdCollision(target, assetId) {
+  const data = createWebp(7, 5);
+  const hash = sha256(data);
+  const variants = ["original", "display", "thumb"].map((kind) => {
+    const storageKey = `assets/preexisting/${assetId}/${kind}.webp`;
+    const filePath = target.storage.resolveStorageKey(storageKey);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, data);
+    return {
+      assetId,
+      kind,
+      storageKey,
+      mimeType: "image/webp",
+      byteSize: data.length,
+      width: 7,
+      height: 5,
+      sha256: hash
+    };
+  });
+  target.store.createMediaAsset({
+    id: assetId,
+    contentSha256: hash,
+    originalName: "预存冲突.webp",
+    sourceMimeType: "image/webp",
+    sourceByteSize: data.length,
+    width: 7,
+    height: 5,
+    storageDriver: "local",
+    privacyMode: "preserve_original",
+    status: "ready",
+    safeMetadata: { canonicalVariant: "display", coordinateSpace: "canonical-preview-v1" }
+  }, variants);
+}
+
+function assertCapsuleTargetEmpty(target, reason) {
+  equal(target.store.listMemories().length, 0, `${reason}时必须保持零展品写入`);
+  equal(target.store.listMediaAssets({ limit: 20 }).length, 0, `${reason}时必须保持零媒体写入`);
+  equal(target.store.listExhibitions().length, 0, `${reason}时必须保持零展览写入`);
+  equal(target.store.listRevisitStates().length, 0, `${reason}时必须保持零回访写入`);
+  deepEqual(
+    target.store.getCapsuleStats(),
+    { capsules: 0, payloads: 0, mediaLinks: 0, needsReview: 0 },
+    `${reason}时必须保持胶囊三表零写入`
+  );
+}
+
+function countFiles(directory) {
+  if (!fs.existsSync(directory)) return 0;
+  return fs.readdirSync(directory, { withFileTypes: true }).reduce((count, entry) => {
+    const entryPath = path.join(directory, entry.name);
+    return count + (entry.isDirectory() ? countFiles(entryPath) : entry.isFile() ? 1 : 0);
+  }, 0);
+}
+
+function entityBackupSource(memoryId) {
+  const timestamp = "2026-07-16T00:00:00.000Z";
+  return {
+    entities: [{ id: "entity-archive-person", type: "person", canonicalName: "林岚" }],
+    aliases: [{
+      id: "alias-archive-person",
+      entityId: "entity-archive-person",
+      alias: "岚姨",
+      source: "user",
+      confirmedAt: timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    }],
+    memoryLinks: [{
+      entityId: "entity-archive-person",
+      memoryId,
+      sourceField: "people",
+      mentionText: "岚姨",
+      confirmedAt: timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    }]
+  };
+}
+
+function malformedExhibitionBackup() {
+  const timestamp = "2026-07-16T00:00:00.000Z";
+  const item = (id, memoryId, quote) => ({
+    id,
+    memoryId,
+    title: id,
+    excerpt: "",
+    curatorNote: "",
+    citations: [{ id: `${id}-citation`, quote, startOffset: 0, endOffset: quote.length, evidenceValid: true, field: "rawContent", createdAt: timestamp }],
+    createdAt: timestamp
+  });
+  const first = item("malformed-item-one", "memory-source", "翻开旧相册时");
+  first.citations = null;
+  return {
+    mode: "full",
+    schemaVersion: 5,
+    exhibitions: [{
+      id: "malformed-exhibition",
+      title: "损坏展览",
+      theme: "测试",
+      opening: "应在媒体写入前被拒绝。",
+      mode: "evidence-rules",
+      status: "draft",
+      needsReview: false,
+      createdAt: timestamp,
+      sections: [{
+        id: "malformed-section",
+        title: "第一章",
+        summary: "",
+        createdAt: timestamp,
+        items: [first, item("malformed-item-two", "memory-malformed-second", "第二段可核对")]
+      }]
+    }]
+  };
 }
 
 function createTarget(directory) {

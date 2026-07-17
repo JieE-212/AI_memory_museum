@@ -12,8 +12,10 @@ const {
   prepareMediaArchive,
   ARCHIVE_FORMAT,
   ARCHIVE_FORMAT_VERSION,
-  ARCHIVE_PATHS
+  ARCHIVE_PATHS,
+  FEATURE_ARCHIVE_SECTIONS
 } = require("../lib/media-backup");
+const { buildClueBackup } = require("../lib/clue-backup");
 const { MEDIA_ARCHIVE_LIMITS } = require("../lib/media-policy");
 
 let assertions = 0;
@@ -70,6 +72,11 @@ async function runChecks(temporaryRoot) {
     stagingRoot: roundTripRoot,
     limits: { maxEntries: 20, maxEntryBytes: 1024 * 1024, maxTotalBytes: 4 * 1024 * 1024 }
   });
+  equal(ARCHIVE_FORMAT_VERSION, 2, "新归档 writer 应发布 format version 2");
+  deepEqual(prepared.manifest.sections, [
+    { name: "collection", path: ARCHIVE_PATHS.collection, count: 2, required: true, version: 1 },
+    { name: "media", path: ARCHIVE_PATHS.assets, count: 1, required: true, version: 1 }
+  ], "V2 manifest 应显式声明必需的 collection 与 media sections");
   equal(prepared.verified, true, "完整归档应在全量验证后返回 verified descriptor");
   equal(prepared.manifest.format, ARCHIVE_FORMAT, "manifest 应声明媒体归档格式");
   equal(prepared.collection.memories.length, 2, "馆藏 JSON 应完整回环");
@@ -89,6 +96,8 @@ async function runChecks(temporaryRoot) {
 
   const pristineEntries = await readArchiveEntries(archive, path.join(temporaryRoot, "unpack-pristine"));
   const imagePath = prepared.assets[0].variants.find((variant) => variant.kind === "display").archivePath;
+  await checkArchiveVersioning(temporaryRoot, pristineEntries);
+  await checkFeatureSections(temporaryRoot, fixture, collection);
 
   const corruptedEntries = cloneEntries(pristineEntries);
   const corruptedImage = Buffer.from(corruptedEntries.get(imagePath));
@@ -140,6 +149,777 @@ async function runChecks(temporaryRoot) {
   await checkObservationPrivacy(temporaryRoot, fixture, collection, pristineEntries);
   await checkArchiveLimits(temporaryRoot, fixture, collection);
   await checkRedactedArchive(temporaryRoot, collection);
+}
+
+async function checkArchiveVersioning(temporaryRoot, pristineEntries) {
+  const legacyEntries = cloneEntries(pristineEntries);
+  const legacyManifest = parseJson(legacyEntries.get(ARCHIVE_PATHS.manifest));
+  legacyManifest.formatVersion = 1;
+  delete legacyManifest.sections;
+  legacyEntries.set(ARCHIVE_PATHS.manifest, jsonBuffer(legacyManifest));
+  const legacyPrepared = await prepareMediaArchive(repack(legacyEntries), {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-v1")
+  });
+  equal(legacyPrepared.manifest.formatVersion, 1, "V2 reader 应继续接受没有 sections 的 V1 归档");
+  equal(legacyPrepared.collection.memories.length, 2, "V1 兼容读取应原样返回 collection");
+
+  const requiredEntries = cloneEntries(pristineEntries);
+  const requiredManifest = parseJson(requiredEntries.get(ARCHIVE_PATHS.manifest));
+  requiredManifest.sections.push({
+    name: "future_required",
+    path: "future/required.json",
+    count: 0,
+    required: true,
+    version: 1
+  });
+  requiredEntries.set(ARCHIVE_PATHS.manifest, jsonBuffer(requiredManifest));
+  await rejectsCode(
+    "MEDIA_ARCHIVE_REQUIRED_SECTION_UNSUPPORTED",
+    () => prepareMediaArchive(repack(requiredEntries), {
+      stagingRoot: path.join(temporaryRoot, "reject-unknown-required-section")
+    }),
+    "未知 required section 必须在任何业务恢复前整包拒绝"
+  );
+
+  const optionalEntries = cloneEntries(pristineEntries);
+  const optionalPath = "future/optional.json";
+  const optionalData = jsonBuffer({ records: [{ id: "future-one" }] });
+  optionalEntries.set(optionalPath, optionalData);
+  const optionalManifest = parseJson(optionalEntries.get(ARCHIVE_PATHS.manifest));
+  optionalManifest.sections.push({
+    name: "future_optional",
+    path: optionalPath,
+    count: 1,
+    required: false,
+    version: 1
+  });
+  optionalManifest.entries.push({
+    path: optionalPath,
+    sha256: sha256(optionalData),
+    bytes: optionalData.length,
+    mime: "application/json"
+  });
+  optionalManifest.entries.sort((left, right) => left.path.localeCompare(right.path, "en"));
+  optionalManifest.entryCount = optionalManifest.entries.length;
+  optionalEntries.set(ARCHIVE_PATHS.manifest, jsonBuffer(optionalManifest));
+  const optionalPrepared = await prepareMediaArchive(repack(optionalEntries), {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-unknown-optional-section")
+  });
+  equal(optionalPrepared.collection.memories.length, 2, "未知 optional section 可在验真后忽略");
+  equal(optionalPrepared.assets.length, 1, "忽略 optional section 不得改变既有 feature descriptor");
+
+  const undeclaredEntries = cloneEntries(pristineEntries);
+  const undeclaredPath = "future/undeclared.json";
+  undeclaredEntries.set(undeclaredPath, jsonBuffer({ ignored: true }));
+  const undeclaredManifest = parseJson(undeclaredEntries.get(ARCHIVE_PATHS.manifest));
+  undeclaredManifest.sections.push({
+    name: "future_optional",
+    path: undeclaredPath,
+    count: 0,
+    required: false,
+    version: 1
+  });
+  undeclaredEntries.set(ARCHIVE_PATHS.manifest, jsonBuffer(undeclaredManifest));
+  await rejectsCode(
+    "MEDIA_ARCHIVE_ENTRY_UNDECLARED",
+    () => prepareMediaArchive(repack(undeclaredEntries), {
+      stagingRoot: path.join(temporaryRoot, "reject-undeclared-optional-entry")
+    }),
+    "optional section 不能让未列入 manifest.entries 的归档条目绕过校验"
+  );
+}
+
+async function checkFeatureSections(temporaryRoot, fixture, sourceCollection) {
+  deepEqual(
+    FEATURE_ARCHIVE_SECTIONS.map(({ name, path: sectionPath, sinceSchemaVersion }) => ({ name, path: sectionPath, sinceSchemaVersion })),
+    [
+      { name: "exhibitions", path: ARCHIVE_PATHS.exhibitions, sinceSchemaVersion: 5 },
+      { name: "revisits", path: ARCHIVE_PATHS.revisits, sinceSchemaVersion: 6 },
+      { name: "entities", path: ARCHIVE_PATHS.entities, sinceSchemaVersion: 7 },
+      { name: "capsules", path: ARCHIVE_PATHS.capsules, sinceSchemaVersion: 9 }
+    ],
+    "功能 section 注册表应按 schema 顺序声明展览、回访、实体线索与时间胶囊"
+  );
+
+  const exhibitions = { mode: "full", schemaVersion: 5, exhibitions: [] };
+  const schema5Collection = {
+    ...sourceCollection,
+    version: "5.0.0",
+    schemaVersion: 5,
+    exhibitions
+  };
+  throwsCode(
+    "MEDIA_ARCHIVE_REQUIRED_SECTION_MISSING",
+    () => buildMediaArchive({
+      collection: {
+        ...sourceCollection,
+        version: "5.0.0",
+        schemaVersion: 5
+      },
+      store: fixture.store,
+      storage: fixture.storage,
+      appVersion: "5.0.0",
+      schemaVersion: 5
+    }),
+    "schema 5 完整归档不得省略空展览 section"
+  );
+
+  const schema5Archive = buildMediaArchive({
+    collection: schema5Collection,
+    store: fixture.store,
+    storage: fixture.storage,
+    appVersion: "5.0.0",
+    schemaVersion: 5
+  });
+  const schema5Entries = await readArchiveEntries(schema5Archive, path.join(temporaryRoot, "unpack-schema5-features"));
+  check(schema5Entries.has(ARCHIVE_PATHS.exhibitions), "schema 5 writer 应创建独立展览 JSON 条目");
+  check(!Object.hasOwn(parseJson(schema5Entries.get(ARCHIVE_PATHS.collection)), "exhibitions"), "展览数据应从归档内 collection 副本移出");
+  deepEqual(parseJson(schema5Entries.get(ARCHIVE_PATHS.exhibitions)), exhibitions, "独立展览条目应无损保存完整备份");
+  const schema5Prepared = await prepareMediaArchive(schema5Archive, {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-schema5-features")
+  });
+  deepEqual(
+    schema5Prepared.manifest.sections.find((section) => section.name === "exhibitions"),
+    { name: "exhibitions", path: ARCHIVE_PATHS.exhibitions, count: 0, required: true, version: 1 },
+    "schema 5 full 即使没有展览也应声明 required section"
+  );
+  deepEqual(schema5Prepared.exhibitions, exhibitions, "reader 应在顶层暴露展览备份");
+  deepEqual(schema5Prepared.collection.exhibitions, exhibitions, "reader 应把展览备份重新挂回 collection");
+  equal(schema5Prepared.revisits, null, "schema 5 归档不应伪造尚不存在的回访 section");
+  equal(schema5Prepared.entities, null, "V2 schema 5 归档不应被实体 section 注册影响");
+
+  const revisits = { mode: "full", schemaVersion: 6, states: [] };
+  const schema6Collection = {
+    ...schema5Collection,
+    version: "6.0.0",
+    schemaVersion: 6,
+    revisits
+  };
+  throwsCode(
+    "MEDIA_ARCHIVE_REQUIRED_SECTION_MISSING",
+    () => buildMediaArchive({
+      collection: {
+        ...schema5Collection,
+        version: "6.0.0",
+        schemaVersion: 6
+      },
+      store: fixture.store,
+      storage: fixture.storage,
+      appVersion: "6.0.0",
+      schemaVersion: 6
+    }),
+    "schema 6 完整归档不得省略空回访 section"
+  );
+
+  const schema6Archive = buildMediaArchive({
+    collection: schema6Collection,
+    store: fixture.store,
+    storage: fixture.storage,
+    appVersion: "6.0.0",
+    schemaVersion: 6
+  });
+  const schema6Entries = await readArchiveEntries(schema6Archive, path.join(temporaryRoot, "unpack-schema6-features"));
+  const storedSchema6Collection = parseJson(schema6Entries.get(ARCHIVE_PATHS.collection));
+  check(!Object.hasOwn(storedSchema6Collection, "exhibitions") && !Object.hasOwn(storedSchema6Collection, "revisits"), "功能数据不得在 collection 与独立 section 中重复保存");
+  const schema6Manifest = parseJson(schema6Entries.get(ARCHIVE_PATHS.manifest));
+  deepEqual(schema6Manifest.sections.slice(2), [
+    { name: "exhibitions", path: ARCHIVE_PATHS.exhibitions, count: 0, required: true, version: 1 },
+    { name: "revisits", path: ARCHIVE_PATHS.revisits, count: 0, required: true, version: 1 }
+  ], "schema 6 full 应按注册表顺序声明两个必需功能 section");
+  check(!schema6Manifest.sections.some((section) => ["entities", "voice", "capsules"].includes(section.name)), "尚无数据模型的未来功能不得提前写入 manifest");
+  const schema6Prepared = await prepareMediaArchive(schema6Archive, {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-schema6-features")
+  });
+  deepEqual(schema6Prepared.exhibitions, exhibitions, "schema 6 reader 应继续暴露展览备份");
+  deepEqual(schema6Prepared.revisits, revisits, "schema 6 reader 应暴露回访备份");
+  deepEqual(schema6Prepared.collection.revisits, revisits, "schema 6 reader 应把回访备份重新挂回 collection");
+  equal(schema6Prepared.entities, null, "V2 schema 6 归档不应被实体 section 注册影响");
+
+  const entities = { mode: "full", schemaVersion: 7, entities: [] };
+  const schema7Collection = {
+    ...schema6Collection,
+    version: "6.0.0",
+    schemaVersion: 7,
+    entities
+  };
+  throwsCode(
+    "MEDIA_ARCHIVE_REQUIRED_SECTION_MISSING",
+    () => buildMediaArchive({
+      collection: {
+        ...schema6Collection,
+        version: "6.0.0",
+        schemaVersion: 7
+      },
+      store: fixture.store,
+      storage: fixture.storage,
+      appVersion: "6.0.0",
+      schemaVersion: 7
+    }),
+    "schema 7 完整归档不得省略空实体 section"
+  );
+  const schema7Archive = buildMediaArchive({
+    collection: schema7Collection,
+    store: fixture.store,
+    storage: fixture.storage,
+    appVersion: "6.0.0",
+    schemaVersion: 7
+  });
+  const schema7Entries = await readArchiveEntries(schema7Archive, path.join(temporaryRoot, "unpack-schema7-features"));
+  const schema7StoredCollection = parseJson(schema7Entries.get(ARCHIVE_PATHS.collection));
+  check(!Object.hasOwn(schema7StoredCollection, "entities"), "实体线索不得在 collection 与独立 section 中重复保存");
+  const schema7Manifest = parseJson(schema7Entries.get(ARCHIVE_PATHS.manifest));
+  deepEqual(schema7Manifest.sections.slice(2), [
+    { name: "exhibitions", path: ARCHIVE_PATHS.exhibitions, count: 0, required: true, version: 1 },
+    { name: "revisits", path: ARCHIVE_PATHS.revisits, count: 0, required: true, version: 1 },
+    { name: "entities", path: ARCHIVE_PATHS.entities, count: 0, required: true, version: 1 }
+  ], "schema 7 full 即使实体为空也应声明三个必需功能 section");
+  const schema7Prepared = await prepareMediaArchive(schema7Archive, {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-schema7-features")
+  });
+  deepEqual(schema7Prepared.entities, entities, "schema 7 reader 应暴露实体线索备份");
+  deepEqual(schema7Prepared.collection.entities, entities, "schema 7 reader 应把实体线索重新挂回 collection");
+
+  const entitySource = entityBackupSource(sourceCollection.memories[0].id);
+  const nonEmptyEntities = buildClueBackup(entitySource, "full", [sourceCollection.memories[0].id]);
+  const nonEmptySchema7Archive = buildMediaArchive({
+    collection: { ...schema7Collection, entities: nonEmptyEntities },
+    store: fixture.store,
+    storage: fixture.storage,
+    appVersion: "6.0.0",
+    schemaVersion: 7
+  });
+  const nonEmptySchema7Entries = await readArchiveEntries(
+    nonEmptySchema7Archive,
+    path.join(temporaryRoot, "unpack-schema7-nonempty-entities")
+  );
+  const nonEmptySchema7Manifest = parseJson(nonEmptySchema7Entries.get(ARCHIVE_PATHS.manifest));
+  deepEqual(
+    nonEmptySchema7Manifest.sections.find((section) => section.name === "entities"),
+    { name: "entities", path: ARCHIVE_PATHS.entities, count: 1, required: true, version: 1 },
+    "schema 7 非空实体图应以可信计数写入 required section"
+  );
+  deepEqual(
+    parseJson(nonEmptySchema7Entries.get(ARCHIVE_PATHS.entities)),
+    nonEmptyEntities,
+    "非空实体、别名和展品关系应无损写入独立 JSON"
+  );
+  const nonEmptySchema7Prepared = await prepareMediaArchive(nonEmptySchema7Archive, {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-schema7-nonempty-entities")
+  });
+  deepEqual(nonEmptySchema7Prepared.entities, nonEmptyEntities, "prepare 顶层应无损暴露非空实体图");
+  deepEqual(
+    nonEmptySchema7Prepared.collection.entities,
+    nonEmptySchema7Prepared.entities,
+    "prepared.collection.entities 与 prepared.entities 必须保持等价"
+  );
+
+  const sourceMemoryIds = sourceCollection.memories.map((memory) => memory.id);
+  const emptyVoices = {
+    mode: "full",
+    schemaVersion: 8,
+    assets: [],
+    memoryLinks: [],
+    transcripts: []
+  };
+  const validateEmptyVoices = (backup, memoryIds) => {
+    deepEqual(memoryIds, sourceMemoryIds, "schema 8/9 声音校验器应收到当前归档的展品边界");
+    deepEqual(backup, emptyVoices, "schema 8/9 兼容夹具只声明严格空声音备份");
+    return true;
+  };
+  const voiceAwareStore = { ...fixture.store, validateVoiceBackup: validateEmptyVoices };
+  const emptyVoiceStorage = { resolveStorageKey: () => path.join(temporaryRoot, "unused-empty-voice") };
+  const schema8Collection = {
+    ...schema7Collection,
+    version: "6.1.0",
+    schemaVersion: 8,
+    voices: emptyVoices
+  };
+  const schema8Archive = buildMediaArchive({
+    collection: schema8Collection,
+    store: voiceAwareStore,
+    storage: fixture.storage,
+    voiceStorage: emptyVoiceStorage,
+    appVersion: "6.1.0",
+    schemaVersion: 8
+  });
+  const schema8Prepared = await prepareMediaArchive(schema8Archive, {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-schema8-without-capsules"),
+    validateVoiceBackup: validateEmptyVoices
+  });
+  equal(schema8Prepared.capsules, null, "schema 8 完整归档不应被 schema 9 胶囊 section 追溯影响");
+  check(
+    !schema8Prepared.manifest.sections.some((section) => section.name === "capsules"),
+    "schema 8 manifest 不应伪造尚未存在的胶囊 section"
+  );
+
+  throwsCode(
+    "MEDIA_ARCHIVE_REQUIRED_SECTION_MISSING",
+    () => buildMediaArchive({
+      collection: {
+        ...schema8Collection,
+        version: "7.0.0",
+        schemaVersion: 9
+      },
+      store: voiceAwareStore,
+      storage: fixture.storage,
+      voiceStorage: emptyVoiceStorage,
+      appVersion: "7.0.0",
+      schemaVersion: 9
+    }),
+    "schema 9 完整归档即使胶囊为空也不能省略 required capsules section"
+  );
+
+  const fullCapsules = capsuleBackupFixture(fixture.asset.id);
+  const schema9Collection = {
+    ...schema8Collection,
+    version: "7.0.0",
+    schemaVersion: 9,
+    capsules: fullCapsules
+  };
+  const schema9Archive = buildMediaArchive({
+    collection: schema9Collection,
+    store: voiceAwareStore,
+    storage: fixture.storage,
+    voiceStorage: emptyVoiceStorage,
+    appVersion: "7.0.0",
+    schemaVersion: 9
+  });
+  const schema9Entries = await readArchiveEntries(
+    schema9Archive,
+    path.join(temporaryRoot, "unpack-schema9-capsules")
+  );
+  const schema9Manifest = parseJson(schema9Entries.get(ARCHIVE_PATHS.manifest));
+  deepEqual(
+    schema9Manifest.sections.find((section) => section.name === "capsules"),
+    { name: "capsules", path: ARCHIVE_PATHS.capsules, count: 1, required: true, version: 1 },
+    "schema 9 非空胶囊应以可信计数写入 required section"
+  );
+  const capsuleBytes = schema9Entries.get(ARCHIVE_PATHS.capsules);
+  const capsuleEntry = schema9Manifest.entries.find((entry) => entry.path === ARCHIVE_PATHS.capsules);
+  equal(capsuleEntry.bytes, capsuleBytes.length, "胶囊 section 字节数应写入 manifest");
+  equal(capsuleEntry.sha256, sha256(capsuleBytes), "胶囊 section SHA-256 应覆盖精确归档字节");
+  deepEqual(parseJson(capsuleBytes), fullCapsules, "胶囊外壳、安全快照与图片链接应无损写入独立 JSON");
+  check(!capsuleBytes.toString("utf8").includes("payload_sha256"), "胶囊私有 payload hash 不得进入 .time-isle");
+
+  const schema9Prepared = await prepareMediaArchive(schema9Archive, {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-schema9-capsules"),
+    validateVoiceBackup: validateEmptyVoices
+  });
+  deepEqual(schema9Prepared.capsules, fullCapsules, "prepare 顶层应无损暴露非空胶囊备份");
+  deepEqual(schema9Prepared.collection.capsules, fullCapsules, "prepare 应把胶囊备份重新挂回 collection");
+  deepEqual(schema9Prepared.collection.capsules, schema9Prepared.capsules, "胶囊的两个 prepared 入口必须等价");
+
+  const missingCapsules = cloneEntries(schema9Entries);
+  const missingCapsulesManifest = parseJson(missingCapsules.get(ARCHIVE_PATHS.manifest));
+  missingCapsulesManifest.sections = missingCapsulesManifest.sections.filter((section) => section.name !== "capsules");
+  missingCapsulesManifest.entries = missingCapsulesManifest.entries.filter((entry) => entry.path !== ARCHIVE_PATHS.capsules);
+  missingCapsulesManifest.entryCount = missingCapsulesManifest.entries.length;
+  missingCapsules.delete(ARCHIVE_PATHS.capsules);
+  missingCapsules.set(ARCHIVE_PATHS.manifest, jsonBuffer(missingCapsulesManifest));
+  await rejectsCode(
+    "MEDIA_ARCHIVE_REQUIRED_SECTION_MISSING",
+    () => prepareMediaArchive(repack(missingCapsules), {
+      stagingRoot: path.join(temporaryRoot, "reject-missing-schema9-capsules"),
+      validateVoiceBackup: validateEmptyVoices
+    }),
+    "schema 9 full reader 不得把缺失胶囊 section 静默降级为空"
+  );
+
+  const corruptCapsules = cloneEntries(schema9Entries);
+  const corruptCapsuleBytes = Buffer.from(corruptCapsules.get(ARCHIVE_PATHS.capsules));
+  corruptCapsuleBytes[corruptCapsuleBytes.length - 2] ^= 0x01;
+  corruptCapsules.set(ARCHIVE_PATHS.capsules, corruptCapsuleBytes);
+  await rejectsCode(
+    "MEDIA_ARCHIVE_HASH_MISMATCH",
+    () => prepareMediaArchive(repack(corruptCapsules), {
+      stagingRoot: path.join(temporaryRoot, "reject-corrupt-schema9-capsules"),
+      validateVoiceBackup: validateEmptyVoices
+    }),
+    "胶囊 section 任一字节被篡改时必须在返回 prepared 前拒绝"
+  );
+
+  const redactedCapsules = {
+    mode: "redacted-summary",
+    capsuleCount: 2,
+    mediaLinkCount: 1,
+    note: "胶囊标题、日期、时区、来源、内容快照、图片关联和内部 ID 已物理移除。"
+  };
+  const redactedCapsuleArchive = buildMediaArchive({
+    collection: {
+      ...sourceCollection,
+      version: "7.0.0",
+      schemaVersion: 9,
+      mode: "redacted",
+      memories: sourceCollection.memories.map((memory) => ({
+        ...memory,
+        rawContent: "[已隐藏原始记忆]",
+        media: [],
+        attachments: [],
+        coverImage: ""
+      })),
+      capsules: redactedCapsules
+    },
+    appVersion: "7.0.0",
+    schemaVersion: 9
+  });
+  const redactedCapsuleEntries = await readArchiveEntries(
+    redactedCapsuleArchive,
+    path.join(temporaryRoot, "unpack-redacted-schema9-capsules")
+  );
+  deepEqual(
+    [...redactedCapsuleEntries.keys()].sort(),
+    [ARCHIVE_PATHS.collection, ARCHIVE_PATHS.capsules, ARCHIVE_PATHS.manifest].sort(),
+    "schema 9 脱敏胶囊归档只增加 count-only JSON 摘要"
+  );
+  const redactedCapsuleManifest = parseJson(redactedCapsuleEntries.get(ARCHIVE_PATHS.manifest));
+  deepEqual(
+    redactedCapsuleManifest.sections.find((section) => section.name === "capsules"),
+    { name: "capsules", path: ARCHIVE_PATHS.capsules, count: 2, required: false, version: 1 },
+    "脱敏胶囊 section 应为 optional 且只公开可信总数"
+  );
+  const redactedCapsuleBytes = redactedCapsuleEntries.get(ARCHIVE_PATHS.capsules).toString("utf8");
+  deepEqual(
+    Object.keys(JSON.parse(redactedCapsuleBytes)).sort(),
+    ["capsuleCount", "mediaLinkCount", "mode", "note"],
+    "脱敏胶囊 section 字段集合必须精确限制为两个计数、模式与固定说明"
+  );
+  for (const canary of capsuleCanaries(fullCapsules)) {
+    check(!redactedCapsuleBytes.includes(canary), `脱敏胶囊 section 应物理排除 ${canary}`);
+  }
+  check(!/[a-f0-9]{64}/iu.test(redactedCapsuleBytes), "脱敏胶囊 section 不得包含 payload 或媒体 SHA-256");
+  const redactedCapsulePrepared = await prepareMediaArchive(redactedCapsuleArchive, {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-redacted-schema9-capsules")
+  });
+  deepEqual(redactedCapsulePrepared.capsules, redactedCapsules, "prepare 应只暴露脱敏胶囊计数摘要");
+  deepEqual(redactedCapsulePrepared.collection.capsules, redactedCapsules, "脱敏胶囊摘要应安全重挂回 collection");
+
+  const leakyCapsuleSummary = cloneEntries(redactedCapsuleEntries);
+  const leakyCapsulePayload = parseJson(leakyCapsuleSummary.get(ARCHIVE_PATHS.capsules));
+  leakyCapsulePayload.note = `capsule-archive-canary，2040-02-29，${fixture.asset.id}`;
+  replaceJsonAndRefreshManifest(leakyCapsuleSummary, ARCHIVE_PATHS.capsules, leakyCapsulePayload);
+  await rejectsCode(
+    "MEDIA_ARCHIVE_FEATURE_INVALID",
+    () => prepareMediaArchive(repack(leakyCapsuleSummary), {
+      stagingRoot: path.join(temporaryRoot, "reject-leaky-redacted-capsule-note")
+    }),
+    "即使重算 manifest 哈希，脱敏胶囊固定说明也不能夹带 ID、日期或媒体引用"
+  );
+
+  throwsCode(
+    "MEDIA_ARCHIVE_FEATURE_INVALID",
+    () => buildMediaArchive({
+      collection: {
+        ...sourceCollection,
+        version: "7.0.0",
+        schemaVersion: 9,
+        mode: "redacted",
+        capsules: { ...redactedCapsules, capsules: fullCapsules.capsules }
+      },
+      appVersion: "7.0.0",
+      schemaVersion: 9
+    }),
+    "脱敏胶囊摘要不得夹带完整胶囊数组"
+  );
+
+  const redactedExhibitions = {
+    mode: "redacted-summary",
+    exhibitionCount: 2,
+    publishedCount: 1,
+    note: "展览内容已移除。"
+  };
+  const redactedRevisits = {
+    mode: "redacted-summary",
+    stateCount: 2,
+    viewedCount: 1,
+    dismissedCount: 1,
+    note: "逐条回访状态已移除。"
+  };
+  const redactedArchive = buildMediaArchive({
+    collection: {
+      ...schema6Collection,
+      mode: "redacted",
+      exhibitions: redactedExhibitions,
+      revisits: redactedRevisits
+    },
+    appVersion: "6.0.0",
+    schemaVersion: 6
+  });
+  const redactedEntries = await readArchiveEntries(redactedArchive, path.join(temporaryRoot, "unpack-redacted-features"));
+  deepEqual([...redactedEntries.keys()].sort(), [
+    ARCHIVE_PATHS.collection,
+    ARCHIVE_PATHS.exhibitions,
+    ARCHIVE_PATHS.manifest,
+    ARCHIVE_PATHS.revisits
+  ].sort(), "schema 6 脱敏归档只应增加两个 JSON 摘要条目");
+  const redactedManifest = parseJson(redactedEntries.get(ARCHIVE_PATHS.manifest));
+  deepEqual(redactedManifest.sections.slice(2), [
+    { name: "exhibitions", path: ARCHIVE_PATHS.exhibitions, count: 2, required: false, version: 1 },
+    { name: "revisits", path: ARCHIVE_PATHS.revisits, count: 2, required: false, version: 1 }
+  ], "脱敏功能 section 应为可选摘要并保留可信计数");
+  const redactedRevisitBytes = redactedEntries.get(ARCHIVE_PATHS.revisits).toString("utf8");
+  deepEqual(
+    Object.keys(parseJson(redactedEntries.get(ARCHIVE_PATHS.revisits))).sort(),
+    ["dismissedCount", "mode", "note", "stateCount", "viewedCount"],
+    "脱敏回访 section 只允许集合计数与说明字段"
+  );
+  check(
+    !/["'](?:memoryId|lastViewedAt|lastDismissedAt|states)["']/.test(redactedRevisitBytes)
+      && !/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(redactedRevisitBytes),
+    "脱敏回访 section 不得包含展品 ID、精确时间或逐条状态"
+  );
+  const redactedPrepared = await prepareMediaArchive(redactedArchive, {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-redacted-features")
+  });
+  deepEqual(redactedPrepared.exhibitions, redactedExhibitions, "脱敏展览摘要应在验真后重新挂载");
+  deepEqual(redactedPrepared.revisits, redactedRevisits, "脱敏回访摘要应在验真后重新挂载");
+  check(!Object.hasOwn(redactedPrepared.revisits, "states") && !Object.hasOwn(redactedPrepared.exhibitions, "exhibitions"), "脱敏功能 section 不得包含完整记录数组");
+
+  const redactedEntities = buildClueBackup(entitySource, "redacted", [sourceCollection.memories[0].id]);
+  const redactedSchema7Archive = buildMediaArchive({
+    collection: {
+      ...schema7Collection,
+      mode: "redacted",
+      exhibitions: redactedExhibitions,
+      revisits: redactedRevisits,
+      entities: redactedEntities
+    },
+    appVersion: "6.0.0",
+    schemaVersion: 7
+  });
+  const redactedSchema7Entries = await readArchiveEntries(redactedSchema7Archive, path.join(temporaryRoot, "unpack-redacted-schema7"));
+  const redactedEntityBytes = redactedSchema7Entries.get(ARCHIVE_PATHS.entities).toString("utf8");
+  deepEqual(
+    Object.keys(parseJson(redactedSchema7Entries.get(ARCHIVE_PATHS.entities))).sort(),
+    ["entityCount", "locationCount", "mode", "note", "personCount", "themeCount"],
+    "脱敏实体 section 只允许分类计数与说明字段"
+  );
+  check(
+    !/(?:canonicalName|alias|entityId|memoryId|confirmedAt|createdAt|updatedAt)/.test(redactedEntityBytes)
+      && !/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(redactedEntityBytes)
+      && !["林岚", "岚姨", "entity-archive-person", "alias-archive-person", sourceCollection.memories[0].id]
+        .some((secret) => redactedEntityBytes.includes(secret)),
+    "脱敏实体 section 不得包含名称、ID、关系或精确时间"
+  );
+  const redactedSchema7Prepared = await prepareMediaArchive(redactedSchema7Archive, {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-redacted-schema7")
+  });
+  deepEqual(redactedSchema7Prepared.entities, redactedEntities, "脱敏实体摘要应在验真后重新挂载");
+  deepEqual(redactedSchema7Prepared.collection.entities, redactedSchema7Prepared.entities, "脱敏实体摘要的两处 prepared 入口应等价");
+
+  const leakyEntitySummary = cloneEntries(redactedSchema7Entries);
+  const leakyEntityPayload = parseJson(leakyEntitySummary.get(ARCHIVE_PATHS.entities));
+  leakyEntityPayload.note = "林岚（岚姨），entity-archive-person，2026-07-16T00:00:00.000Z";
+  replaceJsonAndRefreshManifest(leakyEntitySummary, ARCHIVE_PATHS.entities, leakyEntityPayload);
+  await rejectsCode(
+    "MEDIA_ARCHIVE_FEATURE_INVALID",
+    () => prepareMediaArchive(repack(leakyEntitySummary), {
+      stagingRoot: path.join(temporaryRoot, "reject-leaky-redacted-entity-note")
+    }),
+    "即使重新计算哈希，脱敏实体摘要也不能借 note 夹带名称、ID 或精确时间"
+  );
+
+  const leakedRedactedFeature = cloneEntries(redactedEntries);
+  const leakedRevisits = parseJson(leakedRedactedFeature.get(ARCHIVE_PATHS.revisits));
+  leakedRevisits.states = [];
+  replaceJsonAndRefreshManifest(leakedRedactedFeature, ARCHIVE_PATHS.revisits, leakedRevisits);
+  await rejectsCode(
+    "MEDIA_ARCHIVE_FEATURE_INVALID",
+    () => prepareMediaArchive(repack(leakedRedactedFeature), { stagingRoot: path.join(temporaryRoot, "reject-redacted-feature-leak") }),
+    "即使哈希已重算，脱敏功能 section 也不得夹带完整记录字段"
+  );
+
+  const summarylessArchive = buildMediaArchive({
+    collection: {
+      ...sourceCollection,
+      version: "6.0.0",
+      schemaVersion: 6,
+      mode: "redacted"
+    },
+    appVersion: "6.0.0",
+    schemaVersion: 6
+  });
+  const summarylessPrepared = await prepareMediaArchive(summarylessArchive, {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-summaryless-features")
+  });
+  equal(summarylessPrepared.exhibitions, null, "缺席的脱敏可选展览摘要不应被伪造");
+  equal(summarylessPrepared.revisits, null, "缺席的脱敏可选回访摘要不应被伪造");
+
+  const countMismatch = cloneEntries(schema6Entries);
+  const countMismatchManifest = parseJson(countMismatch.get(ARCHIVE_PATHS.manifest));
+  countMismatchManifest.sections.find((section) => section.name === "revisits").count = 1;
+  countMismatch.set(ARCHIVE_PATHS.manifest, jsonBuffer(countMismatchManifest));
+  await rejectsCode(
+    "MEDIA_ARCHIVE_SECTIONS_INVALID",
+    () => prepareMediaArchive(repack(countMismatch), { stagingRoot: path.join(temporaryRoot, "reject-feature-count") }),
+    "功能 section 声明计数必须与已验真 JSON 内容一致"
+  );
+
+  const wrongPath = cloneEntries(schema6Entries);
+  const wrongPathManifest = parseJson(wrongPath.get(ARCHIVE_PATHS.manifest));
+  wrongPathManifest.sections.find((section) => section.name === "revisits").path = "revisits/wrong.json";
+  wrongPath.set(ARCHIVE_PATHS.manifest, jsonBuffer(wrongPathManifest));
+  await rejectsCode(
+    "MEDIA_ARCHIVE_SECTIONS_INVALID",
+    () => prepareMediaArchive(repack(wrongPath), { stagingRoot: path.join(temporaryRoot, "reject-feature-path") }),
+    "已知功能 section 不得更换注册路径"
+  );
+
+  const wrongVersion = cloneEntries(schema6Entries);
+  const wrongVersionManifest = parseJson(wrongVersion.get(ARCHIVE_PATHS.manifest));
+  wrongVersionManifest.sections.find((section) => section.name === "revisits").version = 2;
+  wrongVersion.set(ARCHIVE_PATHS.manifest, jsonBuffer(wrongVersionManifest));
+  await rejectsCode(
+    "MEDIA_ARCHIVE_SECTIONS_INVALID",
+    () => prepareMediaArchive(repack(wrongVersion), { stagingRoot: path.join(temporaryRoot, "reject-feature-version") }),
+    "不受支持的功能 section 版本必须整包拒绝"
+  );
+
+  const corruptFeature = cloneEntries(schema6Entries);
+  const corruptBytes = Buffer.from(corruptFeature.get(ARCHIVE_PATHS.revisits));
+  corruptBytes[corruptBytes.length - 2] ^= 0x01;
+  corruptFeature.set(ARCHIVE_PATHS.revisits, corruptBytes);
+  await rejectsCode(
+    "MEDIA_ARCHIVE_HASH_MISMATCH",
+    () => prepareMediaArchive(repack(corruptFeature), { stagingRoot: path.join(temporaryRoot, "reject-feature-hash") }),
+    "功能 section 字节被篡改时必须先于业务恢复拒绝"
+  );
+
+  const missingRequired = cloneEntries(schema6Entries);
+  const missingRequiredManifest = parseJson(missingRequired.get(ARCHIVE_PATHS.manifest));
+  missingRequiredManifest.sections = missingRequiredManifest.sections.filter((section) => section.name !== "revisits");
+  missingRequiredManifest.entries = missingRequiredManifest.entries.filter((entry) => entry.path !== ARCHIVE_PATHS.revisits);
+  missingRequiredManifest.entryCount = missingRequiredManifest.entries.length;
+  missingRequired.delete(ARCHIVE_PATHS.revisits);
+  missingRequired.set(ARCHIVE_PATHS.manifest, jsonBuffer(missingRequiredManifest));
+  await rejectsCode(
+    "MEDIA_ARCHIVE_REQUIRED_SECTION_MISSING",
+    () => prepareMediaArchive(repack(missingRequired), { stagingRoot: path.join(temporaryRoot, "reject-missing-feature") }),
+    "schema 6 full 缺少回访 section 时不得静默降级恢复"
+  );
+
+  const missingRequiredEntities = cloneEntries(schema7Entries);
+  const missingRequiredEntitiesManifest = parseJson(missingRequiredEntities.get(ARCHIVE_PATHS.manifest));
+  missingRequiredEntitiesManifest.sections = missingRequiredEntitiesManifest.sections.filter((section) => section.name !== "entities");
+  missingRequiredEntitiesManifest.entries = missingRequiredEntitiesManifest.entries.filter((entry) => entry.path !== ARCHIVE_PATHS.entities);
+  missingRequiredEntitiesManifest.entryCount = missingRequiredEntitiesManifest.entries.length;
+  missingRequiredEntities.delete(ARCHIVE_PATHS.entities);
+  missingRequiredEntities.set(ARCHIVE_PATHS.manifest, jsonBuffer(missingRequiredEntitiesManifest));
+  await rejectsCode(
+    "MEDIA_ARCHIVE_REQUIRED_SECTION_MISSING",
+    () => prepareMediaArchive(repack(missingRequiredEntities), {
+      stagingRoot: path.join(temporaryRoot, "reject-missing-entities-feature")
+    }),
+    "schema 7 full 即使实体为空也不能省略 required entities section"
+  );
+
+  const duplicatedFeature = cloneEntries(schema6Entries);
+  const duplicatedCollection = parseJson(duplicatedFeature.get(ARCHIVE_PATHS.collection));
+  duplicatedCollection.revisits = revisits;
+  replaceJsonAndRefreshManifest(duplicatedFeature, ARCHIVE_PATHS.collection, duplicatedCollection);
+  await rejectsCode(
+    "MEDIA_ARCHIVE_SECTIONS_INVALID",
+    () => prepareMediaArchive(repack(duplicatedFeature), { stagingRoot: path.join(temporaryRoot, "reject-duplicated-feature") }),
+    "collection 与独立 section 中重复的功能数据必须拒绝"
+  );
+
+  const legacySchema5 = cloneEntries(schema5Entries);
+  const legacyCollection = parseJson(legacySchema5.get(ARCHIVE_PATHS.collection));
+  legacyCollection.exhibitions = parseJson(legacySchema5.get(ARCHIVE_PATHS.exhibitions));
+  legacySchema5.set(ARCHIVE_PATHS.collection, jsonBuffer(legacyCollection));
+  legacySchema5.delete(ARCHIVE_PATHS.exhibitions);
+  const legacyManifest = parseJson(legacySchema5.get(ARCHIVE_PATHS.manifest));
+  legacyManifest.formatVersion = 1;
+  delete legacyManifest.sections;
+  legacyManifest.entries = legacyManifest.entries.filter((entry) => entry.path !== ARCHIVE_PATHS.exhibitions);
+  const legacyCollectionEntry = legacyManifest.entries.find((entry) => entry.path === ARCHIVE_PATHS.collection);
+  const legacyCollectionBytes = legacySchema5.get(ARCHIVE_PATHS.collection);
+  legacyCollectionEntry.bytes = legacyCollectionBytes.length;
+  legacyCollectionEntry.sha256 = sha256(legacyCollectionBytes);
+  legacyManifest.entryCount = legacyManifest.entries.length;
+  legacySchema5.set(ARCHIVE_PATHS.manifest, jsonBuffer(legacyManifest));
+  const legacyPrepared = await prepareMediaArchive(repack(legacySchema5), {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-inline-v1-feature")
+  });
+  deepEqual(legacyPrepared.exhibitions, exhibitions, "V1 内联展览备份应继续兼容并在顶层暴露");
+  deepEqual(legacyPrepared.collection.exhibitions, exhibitions, "V1 内联展览备份应保留原 collection 结构");
+
+  const legacySchema6 = cloneEntries(schema6Entries);
+  const legacySchema6Collection = parseJson(legacySchema6.get(ARCHIVE_PATHS.collection));
+  legacySchema6Collection.exhibitions = parseJson(legacySchema6.get(ARCHIVE_PATHS.exhibitions));
+  legacySchema6Collection.revisits = parseJson(legacySchema6.get(ARCHIVE_PATHS.revisits));
+  legacySchema6.set(ARCHIVE_PATHS.collection, jsonBuffer(legacySchema6Collection));
+  legacySchema6.delete(ARCHIVE_PATHS.exhibitions);
+  legacySchema6.delete(ARCHIVE_PATHS.revisits);
+  const legacySchema6Manifest = parseJson(legacySchema6.get(ARCHIVE_PATHS.manifest));
+  legacySchema6Manifest.formatVersion = 1;
+  delete legacySchema6Manifest.sections;
+  legacySchema6Manifest.entries = legacySchema6Manifest.entries.filter((entry) => (
+    entry.path !== ARCHIVE_PATHS.exhibitions && entry.path !== ARCHIVE_PATHS.revisits
+  ));
+  const legacySchema6CollectionEntry = legacySchema6Manifest.entries.find((entry) => entry.path === ARCHIVE_PATHS.collection);
+  const legacySchema6CollectionBytes = legacySchema6.get(ARCHIVE_PATHS.collection);
+  legacySchema6CollectionEntry.bytes = legacySchema6CollectionBytes.length;
+  legacySchema6CollectionEntry.sha256 = sha256(legacySchema6CollectionBytes);
+  legacySchema6Manifest.entryCount = legacySchema6Manifest.entries.length;
+  legacySchema6.set(ARCHIVE_PATHS.manifest, jsonBuffer(legacySchema6Manifest));
+  const legacySchema6Prepared = await prepareMediaArchive(repack(legacySchema6), {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-inline-v1-revisit")
+  });
+  deepEqual(legacySchema6Prepared.collection.exhibitions, exhibitions, "V1 schema 6 仍能读取内联展览备份");
+  deepEqual(legacySchema6Prepared.collection.revisits, revisits, "V1 schema 6 仍能读取内联回访备份");
+
+  const incompleteLegacySchema6 = cloneEntries(legacySchema6);
+  const incompleteLegacyCollection = parseJson(incompleteLegacySchema6.get(ARCHIVE_PATHS.collection));
+  delete incompleteLegacyCollection.revisits;
+  replaceJsonAndRefreshManifest(incompleteLegacySchema6, ARCHIVE_PATHS.collection, incompleteLegacyCollection);
+  await rejectsCode(
+    "MEDIA_ARCHIVE_REQUIRED_SECTION_MISSING",
+    () => prepareMediaArchive(repack(incompleteLegacySchema6), {
+      stagingRoot: path.join(temporaryRoot, "reject-incomplete-v1-revisit")
+    }),
+    "V1 schema 6 full 缺少内联回访备份时也不得静默丢失状态"
+  );
+
+  const legacySchema7 = cloneEntries(nonEmptySchema7Entries);
+  const legacySchema7Collection = parseJson(legacySchema7.get(ARCHIVE_PATHS.collection));
+  legacySchema7Collection.exhibitions = parseJson(legacySchema7.get(ARCHIVE_PATHS.exhibitions));
+  legacySchema7Collection.revisits = parseJson(legacySchema7.get(ARCHIVE_PATHS.revisits));
+  legacySchema7Collection.entities = parseJson(legacySchema7.get(ARCHIVE_PATHS.entities));
+  legacySchema7.set(ARCHIVE_PATHS.collection, jsonBuffer(legacySchema7Collection));
+  legacySchema7.delete(ARCHIVE_PATHS.exhibitions);
+  legacySchema7.delete(ARCHIVE_PATHS.revisits);
+  legacySchema7.delete(ARCHIVE_PATHS.entities);
+  const legacySchema7Manifest = parseJson(legacySchema7.get(ARCHIVE_PATHS.manifest));
+  legacySchema7Manifest.formatVersion = 1;
+  delete legacySchema7Manifest.sections;
+  legacySchema7Manifest.entries = legacySchema7Manifest.entries.filter((entry) => ![
+    ARCHIVE_PATHS.exhibitions,
+    ARCHIVE_PATHS.revisits,
+    ARCHIVE_PATHS.entities
+  ].includes(entry.path));
+  const legacySchema7CollectionEntry = legacySchema7Manifest.entries.find((entry) => entry.path === ARCHIVE_PATHS.collection);
+  const legacySchema7CollectionBytes = legacySchema7.get(ARCHIVE_PATHS.collection);
+  legacySchema7CollectionEntry.bytes = legacySchema7CollectionBytes.length;
+  legacySchema7CollectionEntry.sha256 = sha256(legacySchema7CollectionBytes);
+  legacySchema7Manifest.entryCount = legacySchema7Manifest.entries.length;
+  legacySchema7.set(ARCHIVE_PATHS.manifest, jsonBuffer(legacySchema7Manifest));
+  const legacySchema7Prepared = await prepareMediaArchive(repack(legacySchema7), {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-inline-v1-entities")
+  });
+  deepEqual(legacySchema7Prepared.entities, nonEmptyEntities, "V1 schema 7 仍能在顶层暴露内联非空实体图");
+  deepEqual(legacySchema7Prepared.collection.entities, nonEmptyEntities, "V1 schema 7 仍能读取内联非空实体线索备份");
+
+  const incompleteLegacySchema7 = cloneEntries(legacySchema7);
+  const incompleteLegacySchema7Collection = parseJson(incompleteLegacySchema7.get(ARCHIVE_PATHS.collection));
+  delete incompleteLegacySchema7Collection.entities;
+  replaceJsonAndRefreshManifest(incompleteLegacySchema7, ARCHIVE_PATHS.collection, incompleteLegacySchema7Collection);
+  await rejectsCode(
+    "MEDIA_ARCHIVE_REQUIRED_SECTION_MISSING",
+    () => prepareMediaArchive(repack(incompleteLegacySchema7), {
+      stagingRoot: path.join(temporaryRoot, "reject-incomplete-v1-entities")
+    }),
+    "V1 schema 7 full 缺少内联实体备份时也不得静默丢失线索"
+  );
 }
 
 async function checkArchiveLimits(temporaryRoot, fixture, fullCollection) {
@@ -439,6 +1219,10 @@ async function checkRedactedArchive(temporaryRoot, fullCollection) {
   check([...entries.keys()].every((entryPath) => !entryPath.startsWith("media/")), "脱敏归档不得物理包含任何媒体条目");
 
   const prepared = await prepareMediaArchive(archive, { stagingRoot: path.join(temporaryRoot, "roundtrip-redacted") });
+  deepEqual(prepared.manifest.sections, [
+    { name: "collection", path: ARCHIVE_PATHS.collection, count: 2, required: true, version: 1 },
+    { name: "media", path: ARCHIVE_PATHS.assets, count: 0, required: false, version: 1 }
+  ], "V2 脱敏归档应保留 optional media section 且明确计数为零");
   equal(prepared.manifest.media.included, false, "脱敏 manifest 应明确媒体未包含");
   deepEqual(prepared.assets, [], "脱敏恢复 descriptor 不应包含资产");
   check(prepared.collection.memories.every((memory) => memory.media.length === 0 && memory.attachments.length === 0 && memory.coverImage === ""), "脱敏 collection 应清空关联、附件和封面路径");
@@ -619,6 +1403,8 @@ function refreshWholeManifest(entries, mediaCounts) {
     }));
   manifest.entryCount = manifest.entries.length;
   Object.assign(manifest.media, mediaCounts);
+  const mediaSection = manifest.sections?.find((section) => section.name === "media");
+  if (mediaSection) mediaSection.count = mediaCounts.assetCount;
   entries.set(ARCHIVE_PATHS.manifest, jsonBuffer(manifest));
 }
 
@@ -648,11 +1434,97 @@ function boundaryCollection(count) {
   };
 }
 
+function entityBackupSource(memoryId) {
+  const timestamp = "2026-07-16T00:00:00.000Z";
+  return {
+    entities: [{ id: "entity-archive-person", type: "person", canonicalName: "林岚" }],
+    aliases: [{
+      id: "alias-archive-person",
+      entityId: "entity-archive-person",
+      alias: "岚姨",
+      source: "user",
+      confirmedAt: timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    }],
+    memoryLinks: [{
+      entityId: "entity-archive-person",
+      memoryId,
+      sourceField: "people",
+      mentionText: "岚姨",
+      confirmedAt: timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    }]
+  };
+}
+
+function capsuleBackupFixture(assetId) {
+  const timestamp = "2026-07-17T00:00:00.000Z";
+  return {
+    mode: "full",
+    schemaVersion: 9,
+    capsules: [{
+      id: "capsule-archive-canary",
+      title: "给未来的旧操场",
+      shellMessage: "等到那一天，再慢慢打开。",
+      opensOn: "2040-02-29",
+      timezone: "Asia/Shanghai",
+      ceremonialGate: "local-date-ritual",
+      needsReview: false,
+      exhibitionId: "exhibition-archive-canary",
+      snapshot: {
+        version: 1,
+        title: "给未来的旧操场",
+        theme: "重逢",
+        opening: "晚风又吹过旧操场。",
+        sections: [{
+          key: "section-1",
+          title: "第一章",
+          summary: "一份不携带内部 ID 的安全快照。",
+          items: [{
+            key: "item-1",
+            title: "旧操场",
+            excerpt: "那天我们绕着操场散步。",
+            curatorNote: "留给未来。",
+            confirmedQuotes: ["那天我们绕着操场散步。"],
+            confirmedTranscripts: []
+          }]
+        }]
+      },
+      mediaLinks: [{
+        assetId,
+        itemKey: "item-1",
+        position: 0,
+        altText: "傍晚操场旁的一张旧照片",
+        caption: "旧操场照片"
+      }],
+      createdAt: timestamp,
+      updatedAt: timestamp
+    }]
+  };
+}
+
+function capsuleCanaries(backup) {
+  const capsule = backup.capsules[0];
+  return [
+    capsule.id,
+    capsule.title,
+    capsule.shellMessage,
+    capsule.opensOn,
+    capsule.timezone,
+    capsule.exhibitionId,
+    capsule.mediaLinks[0].assetId,
+    capsule.mediaLinks[0].itemKey,
+    capsule.snapshot.opening
+  ];
+}
+
 function createUncheckedRedactedArchive(collection) {
   const collectionData = jsonBuffer(collection);
   const manifest = {
     format: ARCHIVE_FORMAT,
-    formatVersion: ARCHIVE_FORMAT_VERSION,
+    formatVersion: 1,
     extension: ".time-isle",
     appVersion: "4.0.0",
     schemaVersion: 4,

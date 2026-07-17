@@ -2,6 +2,11 @@ const fs = require("fs");
 const path = require("path");
 const { DatabaseSync } = require("node:sqlite");
 const { initializeMediaDatabase } = require("./lib/media-database");
+const { initializeExhibitionDatabase } = require("./lib/exhibition-database");
+const { initializeRevisitDatabase } = require("./lib/revisit-database");
+const { initializeClueDatabase } = require("./lib/clue-database");
+const { initializeVoiceDatabase } = require("./lib/voice-database");
+const { initializeCapsuleDatabase } = require("./lib/capsule-database");
 
 function createMemoryStore({ dbPath, halls, schemaVersion }) {
   const normalizedDbPath = path.resolve(dbPath);
@@ -216,6 +221,41 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
   const mediaDatabase = initializeMediaDatabase({
     db,
     withTransaction,
+    now: () => new Date().toISOString(),
+    createId
+  });
+  const exhibitionDatabase = initializeExhibitionDatabase({
+    db,
+    withTransaction,
+    schemaVersion,
+    now: () => new Date().toISOString(),
+    createId
+  });
+  const revisitDatabase = initializeRevisitDatabase({
+    db,
+    withTransaction,
+    schemaVersion,
+    now: () => new Date().toISOString()
+  });
+  const clueDatabase = initializeClueDatabase({
+    db,
+    withTransaction,
+    schemaVersion,
+    now: () => new Date().toISOString(),
+    createId
+  });
+  const voiceDatabase = initializeVoiceDatabase({
+    db,
+    withTransaction,
+    schemaVersion,
+    now: () => new Date().toISOString(),
+    createId,
+    onConfirmedTranscriptChanged: (memoryId) => clueDatabase.syncMemoryClues(memoryId)
+  });
+  const capsuleDatabase = initializeCapsuleDatabase({
+    db,
+    withTransaction,
+    schemaVersion,
     now: () => new Date().toISOString(),
     createId
   });
@@ -450,15 +490,15 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
   function saveMemory(memory, options = {}) {
     const transaction = options.transaction !== false;
     const writeMemory = () => {
-      saveMemoryRow(memory);
+      saveMemoryRow(memory, options);
       return getMemory(memory.id);
     };
     return transaction ? withTransaction(writeMemory) : writeMemory();
   }
 
-  function importMemories(memories) {
+  function importMemories(memories, options = {}) {
     return withTransaction(() => {
-      memories.forEach(saveMemoryRow);
+      memories.forEach((memory) => saveMemoryRow(memory, options));
       return { imported: memories.length, memories: listMemories() };
     });
   }
@@ -467,6 +507,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     const memory = getMemory(id);
     if (!memory) return false;
     return withTransaction(() => {
+      clueDatabase.removeMemoryClues(id);
       const result = statements.deleteMemory.run(id);
       if (memory.agentRunId) statements.deleteAgentRun.run(memory.agentRunId);
       const now = new Date().toISOString();
@@ -483,6 +524,11 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     const agentRunsDeleted = Number(statements.countAgentRuns.get()?.count) || 0;
     const memoryEventsDeleted = Number(statements.countMemoryEvents.get()?.count) || 0;
     return withTransaction(() => {
+      const capsuleCleanup = capsuleDatabase.clearCapsules();
+      const voiceCleanup = voiceDatabase.clearVoiceData();
+      const clueCleanup = clueDatabase.clearClues();
+      const revisitStatesDeleted = revisitDatabase.clearRevisitStates().revisitStatesDeleted;
+      const exhibitionsDeleted = exhibitionDatabase.clearExhibitions().exhibitionsDeleted;
       db.exec(`
         DELETE FROM media_observations;
         DELETE FROM memory_media;
@@ -501,7 +547,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
         DELETE FROM agent_runs;
         DELETE FROM memories;
       `);
-      return { memoriesDeleted, agentRunsDeleted, memoryEventsDeleted };
+      return { memoriesDeleted, agentRunsDeleted, memoryEventsDeleted, exhibitionsDeleted, revisitStatesDeleted, ...capsuleCleanup, ...clueCleanup, ...voiceCleanup };
     });
   }
 
@@ -933,6 +979,9 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
 
   function getStats() {
     const memories = listMemories();
+    const clueStats = clueDatabase.getClueStats();
+    const voiceStats = voiceDatabase.getVoiceStats();
+    const capsuleStats = capsuleDatabase.getCapsuleStats();
     return {
       memories: memories.length,
       halls: new Set(memories.map((memory) => memory.hall)).size,
@@ -940,40 +989,47 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
       emotions: new Set(memories.flatMap((memory) => memory.emotions)).size,
       people: new Set(memories.flatMap((memory) => memory.people)).size,
       favorites: memories.filter((memory) => memory.favorite).length,
-      agentRuns: Number(statements.countAgentRuns.get()?.count) || 0
+      agentRuns: Number(statements.countAgentRuns.get()?.count) || 0,
+      exhibitions: exhibitionDatabase.getExhibitionStats().exhibitions,
+      revisitStates: revisitDatabase.getRevisitStats().states,
+      entities: clueStats.entities,
+      entityAliases: clueStats.aliases,
+      searchDocuments: clueStats.searchDocuments,
+      voiceAssets: voiceStats.assets,
+      voiceLinks: voiceStats.memoryLinks,
+      voiceTranscripts: voiceStats.transcripts,
+      confirmedVoiceTranscripts: voiceStats.confirmedTranscripts,
+      capsules: capsuleStats.capsules,
+      capsuleMediaLinks: capsuleStats.mediaLinks
     };
   }
 
-  function searchMemories(query, options = {}) {
+  function searchClues(query, options = {}) {
     const limit = Math.min(50, Math.max(1, Number(options.limit) || 12));
     const mode = ["keyword", "semantic", "hybrid"].includes(options.mode) ? options.mode : "hybrid";
     const keywordTerms = buildSearchTerms(query);
     const semanticTerms = mode === "keyword" ? [] : buildSemanticTerms(keywordTerms, query);
-    const terms = [...new Set([...keywordTerms, ...semanticTerms])];
-
-    if (!terms.length) {
-      const recent = listMemories().slice(0, limit);
-      return options.includeMeta ? recent.map((memory) => ({
-        memory,
-        score: 0,
-        matchedTerms: [],
-        matchedFields: [],
-        confidence: { level: "weak", label: "最近展品", reason: "没有有效检索词。" },
-        reason: "按最近记录返回"
-      })) : recent;
-    }
-
-    const results = listMemories()
-      .map((memory, index) => ({ memory, index, ...scoreMemory(memory, terms, semanticTerms) }))
-      .filter((item) => item.score > 0)
-      .sort((a, b) => b.score - a.score || a.index - b.index)
-      .slice(0, limit);
-    return options.includeMeta
-      ? results.map(({ index, ...item }) => item)
-      : results.map((item) => item.memory);
+    const response = clueDatabase.searchClues(keywordTerms.join(" "), {
+      limit,
+      ruleExpansions: semanticTerms
+    });
+    return {
+      ...response,
+      originalQuery: String(query || ""),
+      results: response.results.map((item) => ({
+        ...item,
+        memory: getMemory(item.memoryId) || item.memory,
+        entityRefs: clueDatabase.getMemoryEntityRefs(item.memoryId)
+      }))
+    };
   }
 
-  function saveMemoryRow(memory) {
+  function searchMemories(query, options = {}) {
+    const response = searchClues(query, options);
+    return options.includeMeta ? response.results : response.results.map((item) => item.memory);
+  }
+
+  function saveMemoryRow(memory, options = {}) {
     statements.upsertMemory.run(
       memory.id,
       memory.schemaVersion || schemaVersion,
@@ -998,6 +1054,8 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     replaceRelated(memory.id, statements.deleteTags, statements.insertTag, memory.tags || []);
     replaceRelated(memory.id, statements.deleteEmotions, statements.insertEmotion, memory.emotions || []);
     revalidateMemoryClaims(memory.id);
+    exhibitionDatabase.revalidateCitationsForMemory(memory.id);
+    if (!['defer', 'none'].includes(options.clueMode)) clueDatabase.syncMemoryClues(memory.id);
   }
 
   function revalidateMemoryClaims(memoryId) {
@@ -1402,9 +1460,15 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     saveCuratorQuestion,
     listCuratorQuestions,
     getStats,
-    searchMemories,
     withTransaction,
     ...mediaDatabase,
+    ...exhibitionDatabase,
+    ...revisitDatabase,
+    ...clueDatabase,
+    ...voiceDatabase,
+    ...capsuleDatabase,
+    searchClues,
+    searchMemories,
     close: () => db.close()
   };
 }
@@ -1444,52 +1508,6 @@ function buildSemanticTerms(keywords, query) {
     if (group.some((term) => text.includes(term) || keywords.includes(term))) group.forEach((term) => expanded.add(term));
   });
   return [...expanded].filter((term) => !keywords.includes(term)).slice(0, 12);
-}
-
-function scoreMemory(memory, terms, semanticTerms) {
-  let score = 0;
-  const matchedTerms = new Set();
-  const matchedFields = new Set();
-  const semanticSet = new Set(semanticTerms);
-  for (const term of terms) {
-    const multiplier = semanticSet.has(term) ? 0.72 : 1;
-    const before = score;
-    score += scoreField(memory.title, term, 6, "标题", matchedFields) * multiplier;
-    score += scoreField(memory.exhibitText, term, 4, "展品说明", matchedFields) * multiplier;
-    score += scoreField(memory.rawContent, term, 3, "原始记忆", matchedFields) * multiplier;
-    score += scoreField(memory.location, term, 3, "地点", matchedFields) * multiplier;
-    score += scoreField(memory.sourceType, term, 2, "来源", matchedFields) * multiplier;
-    score += scoreList(memory.tags, term, 5, "标签", matchedFields) * multiplier;
-    score += scoreList(memory.emotions, term, 5, "情绪", matchedFields) * multiplier;
-    score += scoreList(memory.people, term, 4, "人物", matchedFields) * multiplier;
-    if (score > before) matchedTerms.add(term);
-  }
-  const semanticHits = [...matchedTerms].filter((term) => semanticSet.has(term));
-  const confidence = score >= 12 && matchedFields.size >= 2
-    ? { level: "high", label: "强证据", reason: "多个字段同时命中。" }
-    : score >= 6 || semanticHits.length
-      ? { level: "medium", label: "可参考", reason: semanticHits.length ? "包含语义扩展命中。" : "存在明确字段命中。" }
-      : { level: "low", label: "弱关联", reason: "命中线索较少。" };
-  const fieldText = [...matchedFields].join("、") || "未命中字段";
-  return {
-    score: Number(score.toFixed(2)),
-    matchedTerms: [...matchedTerms].slice(0, 8),
-    matchedFields: [...matchedFields].slice(0, 8),
-    confidence,
-    reason: semanticHits.length ? `命中${fieldText}，并扩展语义：${semanticHits.slice(0, 4).join("、")}` : `命中${fieldText}`
-  };
-}
-
-function scoreField(value, term, weight, field, matches) {
-  if (!String(value || "").toLowerCase().includes(term)) return 0;
-  matches.add(field);
-  return weight;
-}
-
-function scoreList(values, term, weight, field, matches) {
-  if (!(values || []).some((value) => String(value || "").toLowerCase().includes(term))) return 0;
-  matches.add(field);
-  return weight;
 }
 
 module.exports = { createMemoryStore };

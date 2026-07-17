@@ -4,8 +4,19 @@ const os = require("os");
 const path = require("path");
 const { randomUUID } = require("crypto");
 const { createMemoryStore } = require("./database");
+const { createCollectionExporter } = require("./lib/collection-export");
+const { createCollectionImporter } = require("./lib/collection-import");
+const { createExhibitionApi } = require("./lib/exhibition-api");
+const { createRevisitApi } = require("./lib/revisit-api");
+const { createClueApi } = require("./lib/clue-api");
+const { createCapsuleApi } = require("./lib/capsule-api");
+const { createOfflineExhibitApi } = require("./lib/offline-exhibit-api");
+const { buildSafeSnapshot } = require("./lib/capsule-service");
+const { createPrivacySummary } = require("./lib/privacy-summary");
 const { createMediaStorage } = require("./lib/media-storage");
 const { createMediaApi } = require("./lib/media-api");
+const { createVoiceStorage } = require("./lib/voice-storage");
+const { createVoiceApi, publicAsset: publicVoiceAsset, publicTranscript: publicVoiceTranscript } = require("./lib/voice-api");
 const { listImageEvidenceForMemory } = require("./lib/media-evidence");
 const {
   buildConnections,
@@ -33,8 +44,9 @@ const DB_PATH = process.env.DB_PATH || (INTERVIEW_DEMO
 const MEDIA_ROOT = process.env.MEDIA_ROOT || (INTERVIEW_DEMO
   ? path.join(os.tmpdir(), "ai-memory-museum-interview-demo-media")
   : path.join(path.dirname(DB_PATH), "media"));
-const APP_VERSION = "4.0.0";
-const SCHEMA_VERSION = 4;
+const VOICE_ROOT = INTERVIEW_DEMO ? path.join(MEDIA_ROOT, "voice") : (process.env.VOICE_ROOT || path.join(MEDIA_ROOT, "voice"));
+const APP_VERSION = "7.0.0";
+const SCHEMA_VERSION = 9;
 const MAX_RAW_LENGTH = 4000;
 const MAX_BODY_LENGTH = 2 * 1024 * 1024;
 const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS) || 20000;
@@ -59,6 +71,35 @@ const store = createMemoryStore({ dbPath: DB_PATH, halls, schemaVersion: SCHEMA_
 const demoCapacity = createDemoCapacityGuard({ enabled: INTERVIEW_DEMO, withTransaction: store.withTransaction, errorFactory: httpError });
 const mediaStorage = createMediaStorage({ root: MEDIA_ROOT });
 const mediaApi = createMediaApi({ store, storage: mediaStorage, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
+const voiceStorage = createVoiceStorage({ root: VOICE_ROOT });
+const voiceApi = createVoiceApi({ store, storage: voiceStorage, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
+const exhibitionApi = createExhibitionApi({ database: store, store, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
+const revisitApi = createRevisitApi({ database: store, store, interviewDemo: INTERVIEW_DEMO, decorateMemory: withMemoryMedia, sendJson, readJsonBody, httpError });
+const clueApi = createClueApi({ database: store, store, interviewDemo: INTERVIEW_DEMO, decorateMemory: withMemoryMedia, sendJson, readJsonBody, httpError });
+const capsuleApi = createCapsuleApi({ database: store, store, buildSafeSnapshot, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
+const offlineExhibitApi = createOfflineExhibitApi({ database: store, store, buildSafeSnapshot, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
+const buildCollectionExport = createCollectionExporter({ store, appVersion: APP_VERSION, schemaVersion: SCHEMA_VERSION, buildArchaeologyBackup });
+const importCollection = createCollectionImporter({
+  store,
+  normalizeMemory,
+  sanitizeId,
+  createId,
+  validateArchaeologyBackup,
+  restoreArchaeologyBackup,
+  httpError,
+  schemaVersion: SCHEMA_VERSION
+});
+const buildPrivacySummary = createPrivacySummary({
+  interviewDemo: INTERVIEW_DEMO,
+  aiEnabled: AI_ENABLED,
+  featureLocations: [
+    { name: "时光胶囊与加密离线展览", location: "胶囊外壳与安全快照分表保存在本机 SQLite；分享口令只在浏览器内用于加密，不发送给服务端，也不写入导出文件" },
+    { name: "记忆回访状态", location: "仅保存于本机 SQLite，用于避免同一天重复推荐，不生成心理判断" },
+    { name: "实体线索、别名与检索索引", location: "仅保存于本机 SQLite；同名默认只是线索，只有明确确认后才会新增别名或合并档案" },
+    { name: "声音片段与人工文字稿", location: "声音文件仅保存在本机内容寻址目录；只有人工确认的文字稿会进入本地检索，不发送给外部模型" }
+  ],
+  featureControls: ["实体别名与合并必须先预览，再由用户明确确认", "声音文字稿只有人工确认后才会公开展示并进入检索"]
+});
 seedInterviewDemoData();
 let mediaMaintenancePromise = null;
 const startupMaintenance = runMediaMaintenance().catch((error) => console.error("媒体维护失败：", error.message));
@@ -76,6 +117,10 @@ async function performMediaMaintenance(minimumAgeMs = 0) {
   await mediaApi.reconcileAssetDirectories();
   await mediaApi.garbageCollect({ status: "pending_delete", before, limit: 500 });
   await mediaApi.garbageCollect({ status: "ready", limit: 500 });
+  await voiceApi.reconcileQuarantine({ minimumAgeMs });
+  await voiceApi.withVoiceOperation(() => voiceStorage.cleanupStaleStages());
+  await voiceApi.garbageCollect({ status: "pending_delete", before, limit: 500 });
+  await voiceApi.garbageCollect({ status: "ready", limit: 500 });
 }
 
 async function handleRequest(request, response) {
@@ -88,6 +133,7 @@ async function handleRequest(request, response) {
       url.pathname.startsWith("/api/") &&
       ["POST", "PUT"].includes(request.method) &&
       !mediaApi.isRawMediaRequest(request, url) &&
+      !voiceApi.isRawVoiceRequest(request, url) &&
       !isArchiveRestoreRequest(request, url) &&
       !String(request.headers["content-type"] || "").toLowerCase().includes("application/json")
     ) {
@@ -105,6 +151,12 @@ async function handleRequest(request, response) {
         mode: INTERVIEW_DEMO ? "interview-demo" : "local",
         storage: INTERVIEW_DEMO ? "ephemeral-sqlite" : "local-sqlite",
         aiMode: AI_ENABLED ? "configured" : "mock-fallback",
+        search: {
+          mode: "semantic-clues",
+          engine: "fts5-trigram",
+          shortQueryFallback: "parameterized-like",
+          externalModelRequired: false
+        },
         stats: store.getStats()
       });
     }
@@ -116,8 +168,13 @@ async function handleRequest(request, response) {
         tagline: "AI 私人记忆策展工具",
         version: APP_VERSION,
         runtime: `Node.js ${process.version}`,
-        architecture: ["Vanilla JS", "Node.js HTTP", "SQLite", "内容寻址影像", "证据锚点"],
-        productFlow: ["记录", "AI 整理", "照片归档", "检索与讲解", "记忆考古", "安全导出"],
+        architecture: ["Vanilla JS", "Node.js HTTP", "SQLite", "FTS5 Trigram + LIKE 回退", "实体线索档案", "内容寻址影像与声音", "人工确认转写", "证据锚点", "迁移账本"],
+        productFlow: ["记录", "AI 整理", "照片与声音归档", "语义线索检索与讲解", "主题策展", "记忆回访", "时光胶囊与加密分享", "记忆考古", "安全导出"],
+        v7: {
+          timeCapsules: "未到期只返回外壳；本地日期是仪式门槛，不是密码学时间锁",
+          offlineSharing: "浏览器端 PBKDF2-SHA-256 + AES-256-GCM，口令不上传、不持久化",
+          offlineFile: "单个 HTML、无外链、可断网阅读"
+        },
         demo: buildInterviewDemoStatus()
       });
     }
@@ -136,19 +193,32 @@ async function handleRequest(request, response) {
 
     const mediaHandled = await mediaApi.handle(request, response, url);
     if (mediaHandled !== false) return mediaHandled;
+    const voiceHandled = await voiceApi.handle(request, response, url);
+    if (voiceHandled !== false) return voiceHandled;
+    const exhibitionHandled = await exhibitionApi.handle(request, response, url);
+    if (exhibitionHandled !== false) return exhibitionHandled;
+    const revisitHandled = await revisitApi.handle(request, response, url);
+    if (revisitHandled !== false) return revisitHandled;
+    const clueHandled = await clueApi.handle(request, response, url);
+    if (clueHandled !== false) return clueHandled;
+    const capsuleHandled = await capsuleApi.handle(request, response, url);
+    if (capsuleHandled !== false) return capsuleHandled;
+    const offlineExhibitHandled = await offlineExhibitApi.handle(request, response, url);
+    if (offlineExhibitHandled !== false) return offlineExhibitHandled;
 
     if (request.method === "GET" && url.pathname === "/api/archive/export") {
       const mode = url.searchParams.get("mode") === "redacted" ? "redacted" : "full";
-      const archive = await mediaApi.withMediaOperation(() => {
+      const archive = await mediaApi.withMediaOperation(() => voiceApi.withVoiceOperation(() => {
         const collection = buildCollectionExport(store.listMemories().map(withMemoryMedia), mode);
         return buildMediaArchive({
           collection,
           store,
           storage: mediaStorage,
+          voiceStorage,
           appVersion: APP_VERSION,
           schemaVersion: SCHEMA_VERSION
         });
-      });
+      }));
       return sendArchive(response, archive, mode);
     }
 
@@ -157,16 +227,30 @@ async function handleRequest(request, response) {
       const restoreParent = path.join(MEDIA_ROOT, ".restore");
       const stagingRoot = path.join(restoreParent, `restore-${randomUUID()}`);
       try {
-        const prepared = await prepareMediaArchive(request, { stagingRoot });
-        const restored = await mediaApi.withMediaOperation(() => restorePreparedArchive({
+        const prepared = await prepareMediaArchive(request, {
+          stagingRoot,
+          validateVoiceBackup: store.validateVoiceBackup
+        });
+        const restored = await mediaApi.withMediaOperation(() => voiceApi.withVoiceOperation(() => restorePreparedArchive({
           prepared,
           store,
           storage: mediaStorage,
+          voiceStorage,
           normalizeMemory,
           validateArchaeologyBackup,
           restoreArchaeologyBackup,
+          validateExhibitionBackup: store.validateExhibitionBackup,
+          restoreExhibitionBackup: store.restoreExhibitionBackup,
+          validateRevisitBackup: store.validateRevisitBackup,
+          restoreRevisitBackup: store.restoreRevisitBackup,
+          validateEntityBackup: store.validateClueBackup,
+          restoreEntityBackup: store.restoreClueBackup,
+          validateVoiceBackup: store.validateVoiceBackup,
+          restoreVoiceBackup: store.restoreVoiceBackup,
+          validateCapsuleBackup: store.validateCapsuleBackup,
+          restoreCapsuleBackup: store.restoreCapsuleBackup,
           createId
-        }));
+        })));
         return sendJson(response, 200, { ok: true, ...restored });
       } catch (error) {
         if (/^(ARCHIVE|MEDIA_ARCHIVE|MEDIA_RESTORE)_/.test(String(error?.code || ""))) {
@@ -187,7 +271,8 @@ async function handleRequest(request, response) {
         sourceTypes,
         importanceLabels,
         limits: { rawContent: MAX_RAW_LENGTH, body: MAX_BODY_LENGTH },
-        mediaPolicy: mediaStorage.policy
+        mediaPolicy: mediaStorage.policy,
+        voicePolicy: voiceApi.policy
       });
     }
 
@@ -202,43 +287,7 @@ async function handleRequest(request, response) {
 
     if (request.method === "POST" && url.pathname === "/api/memories/import") {
       const body = await readJsonBody(request);
-      const incoming = Array.isArray(body) ? body : body.memories;
-      if (!Array.isArray(incoming)) throw httpError(400, "memories 数组不能为空。");
-      const backupArchaeology = !Array.isArray(body) ? body.archaeology : null;
-      if (backupArchaeology) {
-        try {
-          validateArchaeologyBackup(backupArchaeology, incoming.slice(0, 500).map((memory) => sanitizeId(memory?.id)).filter(Boolean));
-        } catch (error) {
-          throw httpError(400, `记忆考古备份无法恢复：${error.message}`);
-        }
-      }
-      const existingIds = new Set(store.listMemories().map((memory) => memory.id));
-      const memoryIdMap = new Map();
-      const normalized = incoming.slice(0, 500).map((memory) => {
-        const sourceId = sanitizeId(memory?.id);
-        const item = normalizeMemory(memory);
-        // The JSON backup currently contains memories, not the referenced Agent run tables.
-        // Clearing the foreign reference avoids attaching an imported copy to an unrelated run.
-        item.agentRunId = "";
-        if (existingIds.has(item.id)) item.id = createId("memory");
-        existingIds.add(item.id);
-        if (sourceId) memoryIdMap.set(sourceId, item.id);
-        return item;
-      });
-      let result;
-      try {
-        result = store.importMemories(normalized);
-        const archaeology = backupArchaeology
-          ? restoreArchaeologyBackup(store, backupArchaeology, memoryIdMap)
-          : { events: 0, claims: 0, decisions: 0, questions: 0, skipped: 0 };
-        if (archaeology.skipped) throw new Error(`${archaeology.skipped} 项关系数据未能恢复。`);
-        return sendJson(response, 200, { imported: result.imported, memories: result.memories, archaeology });
-      } catch (error) {
-        normalized.slice().reverse().forEach((memory) => {
-          try { store.deleteMemory(memory.id); } catch { /* Best-effort compensation for a rejected archive. */ }
-        });
-        throw httpError(400, `导入已取消，未保留不完整数据：${error.message}`);
-      }
+      return sendJson(response, 200, importCollection(body));
     }
 
     if (request.method === "DELETE" && url.pathname === "/api/memories/purge") {
@@ -246,16 +295,17 @@ async function handleRequest(request, response) {
       if (body.confirm !== "DELETE") throw httpError(400, "confirm 必须是 DELETE。");
       let result;
       try {
-        result = await mediaApi.purgeAll(() => store.purgeAll());
+        result = await mediaApi.purgeAll(() => voiceApi.purgeAll(() => store.purgeAll()));
       } catch (error) {
         if (error.rollbackError) console.error("清空馆藏失败且媒体隔离回滚不完整：", error.rollbackError);
         throw error;
       }
       return sendJson(response, 200, {
         ok: true,
-        purge: result.purge,
-        mediaCleanupPending: result.cleanup.pending.length > 0,
-        mediaFilesRemoved: result.cleanup.removed.length
+        purge: result.purge.purge,
+        mediaCleanupPending: result.cleanup.pending.length > 0 || result.purge.cleanup.pending.length > 0,
+        mediaFilesRemoved: result.cleanup.removed.length,
+        voiceFilesRemoved: result.purge.cleanup.removed.length
       });
     }
 
@@ -272,28 +322,6 @@ async function handleRequest(request, response) {
       result.workflow.run.eventCount = savedRun.eventCount;
       result.draft.agentRunId = savedRun.id;
       return sendJson(response, 200, result);
-    }
-
-    if (request.method === "GET" && url.pathname === "/api/search") {
-      const query = limitText(url.searchParams.get("query") || url.searchParams.get("q"), 160);
-      const mode = ["keyword", "semantic", "hybrid"].includes(url.searchParams.get("mode"))
-        ? url.searchParams.get("mode")
-        : "hybrid";
-      const limit = clampInteger(url.searchParams.get("limit"), 1, 50, 20);
-      const results = store.searchMemories(query, { mode, limit, includeMeta: true });
-      return sendJson(response, 200, {
-        query,
-        mode,
-        count: results.length,
-        results: results.map((item) => ({
-          memory: withMemoryMedia(item.memory),
-          score: item.score,
-          matchedTerms: item.matchedTerms,
-          matchedFields: item.matchedFields,
-          confidence: item.confidence,
-          reason: item.reason
-        }))
-      });
     }
 
     if (request.method === "POST" && url.pathname === "/api/guide") {
@@ -488,10 +516,12 @@ async function handleRequest(request, response) {
       if (request.method === "DELETE") {
         const deleted = store.deleteMemory(id);
         let mediaCleanupPending = false;
+        let voiceCleanupPending = false;
         if (deleted) {
           try { await mediaApi.garbageCollect({ status: "ready", limit: 500 }); } catch { mediaCleanupPending = true; }
+          try { await voiceApi.garbageCollect({ status: "ready", limit: 500 }); } catch { voiceCleanupPending = true; }
         }
-        return sendJson(response, 200, { ok: deleted, id, mediaCleanupPending });
+        return sendJson(response, 200, { ok: deleted, id, mediaCleanupPending, voiceCleanupPending });
       }
     }
 
@@ -717,10 +747,30 @@ function summarizeMemoryEvent(event) {
 
 function withMemoryMedia(memory) {
   if (!memory) return memory;
-  const media = mediaApi.publicMediaList(memory.id);
+  const storedMemory = memory.id ? store.getMemory(memory.id) : null;
+  const resolvedMemory = storedMemory ? { ...storedMemory, ...memory } : memory;
+  const media = mediaApi.publicMediaList(resolvedMemory.id);
   const cover = media.find((item) => item.role === "cover") || media[0] || null;
+  const entityRefs = typeof store.getMemoryEntityRefs === "function"
+    ? store.getMemoryEntityRefs(resolvedMemory.id)
+    : Array.isArray(resolvedMemory.entityRefs) ? resolvedMemory.entityRefs : [];
+  const voices = typeof store.listVoiceForMemory === "function"
+    ? store.listVoiceForMemory(resolvedMemory.id).map((item, index) => ({
+        assetId: item.assetId,
+        position: Number.isSafeInteger(item.position) ? item.position : index,
+        label: item.label || "",
+        asset: publicVoiceAsset(item.asset || { id: item.assetId }),
+        transcript: item.transcript ? publicVoiceTranscript(item.transcript) : null
+      }))
+    : [];
   return {
-    ...memory,
+    ...resolvedMemory,
+    entityRefs,
+    voices,
+    voiceSummary: {
+      count: voices.length,
+      confirmedTranscriptCount: voices.filter((item) => item.transcript?.confirmed === true).length
+    },
     media,
     mediaSummary: {
       count: media.length,
@@ -778,57 +828,6 @@ function questionPriority(field) {
 function dedupeById(items) {
   const seen = new Set();
   return items.filter((item) => item?.id && !seen.has(item.id) && seen.add(item.id));
-}
-
-function buildCollectionExport(memories, mode) {
-  const exported = mode === "redacted" ? memories.map(redactMemory) : memories;
-  const archaeology = buildArchaeologyBackup(store, memories, mode);
-  return {
-    product: "时屿",
-    productEnglish: "TIME ISLE",
-    version: APP_VERSION,
-    schemaVersion: SCHEMA_VERSION,
-    mode,
-    exportedAt: new Date().toISOString(),
-    count: exported.length,
-    privacy: mode === "redacted" ? "原始正文、人物、地点和媒体备注已隐藏。" : "包含馆藏与记忆考古数据，不包含 Agent 运行日志，请妥善保管。",
-    memories: exported,
-    archaeology
-  };
-}
-
-function redactMemory(memory) {
-  return {
-    ...memory,
-    rawContent: "[已隐藏原始记忆]",
-    exhibitText: limitText(memory.exhibitText, 160),
-    people: memory.people?.length ? ["[已隐藏人物]"] : [],
-    location: memory.location ? "[已隐藏地点]" : "",
-    coverImage: "",
-    mediaNote: memory.mediaNote ? "[已隐藏媒体备注]" : "",
-    attachments: [],
-    media: [],
-    mediaSummary: { count: memory.media?.length || 0, coverAssetId: "", coverThumbnailUrl: "" }
-  };
-}
-
-function buildPrivacySummary() {
-  return {
-    mode: INTERVIEW_DEMO ? "interview-demo" : "local-first",
-    summary: INTERVIEW_DEMO
-      ? "当前是共享的公开面试 Demo，只使用示例数据和临时 SQLite；请勿提交私人内容。"
-      : "记忆默认保存在本机 SQLite，只有配置 AI Key 并主动整理或提问时才会调用模型。",
-    dataLocations: [
-      { name: "记忆、拼图与 Agent 记录", location: INTERVIEW_DEMO ? "Vercel /tmp 临时 SQLite" : "本机 data/memory-museum.sqlite" },
-      { name: "原图与缩略图", location: INTERVIEW_DEMO ? "公开 Demo 只读示例媒体" : "本机 data/media 内容寻址目录" },
-      { name: "EXIF、相似候选与文字摘录", location: "默认在本机或浏览器内处理；GPS 不反查地点，文字草稿确认前不保存" },
-      { name: "记忆航线与原文核验", location: "在服务端本地规则中计算，不发送给外部模型" },
-      { name: "AI 请求", location: AI_ENABLED ? "配置的 OpenAI-compatible API" : "未发送，使用本地 Mock" },
-      { name: "导出文件", location: "由浏览器下载到用户选择的位置" }
-    ],
-    controls: ["自校验 .time-isle 完整备份", "原图或安全展示图二选一", "物理排除图片的脱敏归档", "损坏归档零写入恢复", "明确确认后清空本地数据库"],
-    destructiveActionsBlocked: INTERVIEW_DEMO
-  };
 }
 
 function normalizeMemory(input = {}) {
@@ -1257,8 +1256,8 @@ function setSecurityHeaders(response) {
   response.setHeader("X-Content-Type-Options", "nosniff");
   response.setHeader("Referrer-Policy", "same-origin");
   response.setHeader("X-Frame-Options", "DENY");
-  response.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-  response.setHeader("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+  response.setHeader("Permissions-Policy", `camera=(), microphone=${INTERVIEW_DEMO ? "()" : "(self)"}, geolocation=()`);
+  response.setHeader("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
 }
 
 function sendJson(response, statusCode, payload) {
@@ -1282,9 +1281,10 @@ function sendArchive(response, archive, mode) {
 function sendError(response, error) {
   const statusCode = Number(error.statusCode) || 500;
   if (statusCode >= 500) console.error(error);
-  return sendJson(response, statusCode, {
-    error: statusCode >= 500 ? "服务器暂时无法完成请求。" : error.message
-  });
+  const payload = { error: statusCode >= 500 ? "服务器暂时无法完成请求。" : error.message };
+  if (error.interviewDemo === true) payload.interviewDemo = true;
+  if (/^[A-Z0-9_]{3,80}$/.test(String(error.code || ""))) payload.code = error.code;
+  return sendJson(response, statusCode, payload);
 }
 
 function httpError(statusCode, message) {

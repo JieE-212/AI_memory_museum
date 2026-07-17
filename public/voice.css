@@ -1,0 +1,446 @@
+.voice-field {
+  margin: -1px 0 20px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.voice-field [hidden],
+.memory-voice-detail [hidden] {
+  display: none !important;
+}
+
+.voice-field > summary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 2px;
+  list-style: none;
+}
+
+.voice-field > summary::-webkit-details-marker,
+.voice-transcript > summary::-webkit-details-marker {
+  display: none;
+}
+
+.voice-field > summary strong,
+.voice-field > summary small {
+  display: block;
+}
+
+.voice-field > summary strong {
+  color: var(--ink);
+  font-family: "Noto Serif SC", "Songti SC", Georgia, serif;
+  font-size: 1rem;
+}
+
+.voice-field > summary small {
+  margin-top: 1px;
+  color: var(--ink-soft);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.voice-field > summary > span:last-child {
+  flex: 0 0 auto;
+  color: var(--accent-dark);
+  font-size: 1.15rem;
+  transition: transform 160ms ease;
+}
+
+.voice-field[open] > summary > span:last-child {
+  transform: rotate(45deg);
+}
+
+.voice-field > summary:focus-visible,
+.voice-transcript > summary:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--accent);
+}
+
+.voice-field-body {
+  padding-top: 16px;
+}
+
+.voice-actions,
+.voice-recording,
+.voice-transcript-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+}
+
+.voice-recording[hidden] {
+  display: none;
+}
+
+.voice-actions .button,
+.voice-recording .button,
+.voice-transcript-actions .button,
+.voice-item .button,
+.voice-item-error button {
+  min-height: 44px;
+}
+
+.voice-file-label {
+  margin: 0;
+}
+
+.voice-file-label.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.voice-actions > label[for="voiceFileInput"]:has(+ #voiceFileInput:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.voice-fallback-help {
+  margin: 9px 0 0;
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+  line-height: 1.55;
+}
+
+.voice-recording {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-small);
+  background: var(--accent-soft);
+}
+
+.voice-recording-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+  color: var(--accent-dark);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-recording-indicator::before {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warm);
+  content: "";
+}
+
+.voice-list {
+  display: grid;
+  gap: 10px;
+  margin: 15px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.voice-list:empty {
+  display: none;
+}
+
+.voice-item {
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+}
+
+.voice-item.is-error {
+  border-color: var(--danger);
+}
+
+.voice-item-main {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.9fr) minmax(160px, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.voice-item audio,
+.memory-voice-detail-item audio {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+}
+
+.voice-item-main label {
+  min-width: 0;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+}
+
+.voice-item-main input {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 3px;
+}
+
+.voice-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+  margin-top: 6px;
+  color: var(--ink-soft);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-item-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 9px;
+  color: var(--danger);
+  font-size: 0.74rem;
+}
+
+.voice-item-error button {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  border: 1px solid var(--danger);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--danger);
+  font-weight: 750;
+}
+
+.voice-transcript {
+  margin-top: 9px;
+  border-top: 1px solid var(--line);
+}
+
+.voice-transcript > summary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 2px 2px;
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 800;
+  list-style: none;
+}
+
+.voice-transcript > summary::after {
+  color: var(--accent-dark);
+  content: "＋";
+  font-size: 1rem;
+}
+
+.voice-transcript[open] > summary::after {
+  content: "－";
+}
+
+.voice-transcript > summary small {
+  margin-left: auto;
+  color: var(--ink-soft);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-align: right;
+}
+
+.voice-transcript-body {
+  padding-top: 9px;
+}
+
+.voice-transcript-body label {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+}
+
+.voice-transcript-body textarea {
+  min-height: 104px;
+  margin-top: 4px;
+  resize: vertical;
+}
+
+.voice-transcript-body p {
+  margin: 7px 0 10px;
+  color: var(--ink-soft);
+  font-size: 0.7rem;
+  line-height: 1.55;
+}
+
+.memory-voice-count {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 26px;
+  margin-top: 10px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-soft);
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
+.memory-voice-detail {
+  margin: 18px 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+}
+
+.memory-voice-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.memory-voice-heading h3 {
+  margin: 0;
+}
+
+.memory-voice-heading span,
+.memory-voice-detail-item > div > span {
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+}
+
+.memory-voice-detail-list {
+  display: grid;
+  gap: 12px;
+}
+
+.memory-voice-detail-item {
+  min-width: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.memory-voice-detail-item:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.memory-voice-detail-item > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+
+.memory-voice-detail-item strong {
+  overflow-wrap: anywhere;
+}
+
+.confirmed-transcript {
+  margin-top: 8px;
+}
+
+.confirmed-transcript summary {
+  min-height: 44px;
+  padding: 9px 2px;
+  color: var(--accent-dark);
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.confirmed-transcript p,
+.voice-unavailable {
+  margin: 3px 0 0;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.voice-status {
+  min-height: 1.45em;
+  margin-top: 10px;
+}
+
+@media (max-width: 650px) {
+  .voice-field-body {
+    padding-right: max(0px, env(safe-area-inset-right));
+    padding-left: max(0px, env(safe-area-inset-left));
+  }
+
+  .voice-item-main {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .voice-item-main .button {
+    width: 100%;
+  }
+
+  .voice-recording {
+    align-items: stretch;
+  }
+
+  .voice-recording-indicator {
+    width: 100%;
+  }
+
+  .memory-voice-detail {
+    margin-right: max(0px, env(safe-area-inset-right));
+    margin-left: max(0px, env(safe-area-inset-left));
+  }
+}
+
+@media (max-width: 390px) {
+  .voice-actions,
+  .voice-transcript-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .voice-actions .button,
+  .voice-actions .voice-file-label,
+  .voice-transcript-actions .button {
+    width: 100%;
+    text-align: center;
+  }
+
+  .voice-item {
+    padding: 11px;
+  }
+
+  .voice-transcript > summary {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .voice-transcript > summary small {
+    order: 3;
+    width: 100%;
+    margin-left: 0;
+    text-align: left;
+  }
+}
+
+@media (max-width: 320px) {
+  .voice-field > summary {
+    gap: 7px;
+  }
+
+  .memory-voice-detail {
+    padding: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-field > summary > span:last-child {
+    transition: none;
+  }
+}

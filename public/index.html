@@ -2,12 +2,17 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="时屿（TIME ISLE）——把散落的生活片段整理成可检索、可回顾的私人展览。" />
     <title>时屿｜AI 私人记忆策展工具</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/styles.css?v=7.0.0" />
     <link rel="stylesheet" href="/archaeology.css" />
+    <link rel="stylesheet" href="/exhibitions.css?v=7.0.0" />
+    <link rel="stylesheet" href="/capsules.css?v=7.0.0" />
+    <link rel="stylesheet" href="/revisits.css?v=7.0.0" />
+    <link rel="stylesheet" href="/clues.css?v=7.0.0" />
     <link rel="stylesheet" href="/media.css" />
+    <link rel="stylesheet" href="/voice.css?v=7.0.0" />
     <link rel="stylesheet" href="/media-evidence.css" />
     <link rel="stylesheet" href="/media-compare.css" />
     <link rel="stylesheet" href="/media-ocr.css" />
@@ -26,10 +31,10 @@
       </a>
 
       <nav class="main-nav" aria-label="主要功能">
-        <button type="button" class="nav-button is-active" data-view="collection" aria-controls="view-collection" aria-current="page">展品库</button>
-        <button type="button" class="nav-button" data-view="compose" aria-controls="view-compose">记录记忆</button>
-        <button type="button" class="nav-button" data-view="reflect" aria-controls="view-reflect">讲解与回顾</button>
-        <button type="button" class="nav-button" data-view="data" aria-controls="view-data">数据与项目</button>
+        <button type="button" class="nav-button is-active" data-view="collection" aria-controls="view-collection" aria-current="page" aria-label="展品库"><span class="nav-label-full">展品库</span><span class="nav-label-compact" aria-hidden="true">展品</span></button>
+        <button type="button" class="nav-button" data-view="compose" aria-controls="view-compose" aria-label="记录记忆"><span class="nav-label-full">记录记忆</span><span class="nav-label-compact" aria-hidden="true">记录</span></button>
+        <button type="button" class="nav-button" data-view="reflect" aria-controls="view-reflect" aria-label="讲解与回顾"><span class="nav-label-full">讲解与回顾</span><span class="nav-label-compact" aria-hidden="true">回顾</span></button>
+        <button type="button" class="nav-button" data-view="data" aria-controls="view-data" aria-label="数据与项目"><span class="nav-label-full">数据与项目</span><span class="nav-label-compact" aria-hidden="true">项目</span></button>
       </nav>
 
       <div class="runtime-badge" id="runtimeBadge" aria-live="polite">正在连接</div>
@@ -167,6 +172,28 @@
                 </div>
               </details>
 
+              <details class="voice-field">
+                <summary>
+                  <span><strong>添加声音</strong><small>可选 · 最多 3 段，每段 3 分钟</small></span>
+                  <span aria-hidden="true">＋</span>
+                </summary>
+                <div class="voice-field-body">
+                  <div class="voice-actions">
+                    <button class="button secondary compact" id="voiceRecordButton" type="button" disabled>连接后可录音</button>
+                    <label class="button secondary compact voice-file-label is-disabled" id="voiceFileLabel" for="voiceFileInput" aria-disabled="true">选择音频</label>
+                    <input id="voiceFileInput" class="sr-only" type="file" multiple disabled />
+                  </div>
+                  <p class="voice-fallback-help" id="voiceFallbackHelp">支持 WebM/Opus 或 M4A/AAC；声音只保存在本地。</p>
+                  <div class="voice-recording" id="voiceRecording" role="group" aria-label="正在录音" hidden>
+                    <span class="voice-recording-indicator">录音中 <output id="voiceRecordingTimer">00:00</output></span>
+                    <button class="button primary compact" id="voiceStopButton" type="button">停止录音</button>
+                    <button class="button text-button compact" id="voiceCancelButton" type="button">取消</button>
+                  </div>
+                  <ul class="voice-list" id="voiceList" aria-label="待保存声音"></ul>
+                  <p class="inline-status voice-status" id="voiceStatus" role="status" aria-live="polite">正在连接本地声音服务…</p>
+                </div>
+              </details>
+
               <div class="form-actions">
                 <button type="button" class="button secondary" id="sampleButton">放入示例</button>
                 <button type="submit" class="button primary" id="analyzeButton">AI 帮我整理</button>
@@ -243,6 +270,22 @@
         </div>
 
         <div class="reflect-layout shell">
+          <section class="revisit-card" id="revisitCard" aria-labelledby="revisitTitle">
+            <header class="revisit-heading">
+              <div>
+                <p class="eyebrow">Daily revisit</p>
+                <h2 id="revisitTitle">今日回访</h2>
+              </div>
+              <div class="revisit-mode-group" id="revisitModeGroup" role="group" aria-label="选择回访方式">
+                <button type="button" data-revisit-kind="on-this-day" aria-pressed="true">往年今日</button>
+                <button type="button" data-revisit-kind="long-unseen" aria-pressed="false">很久没见</button>
+                <button type="button" data-revisit-kind="random" aria-pressed="false">随机漫游</button>
+              </div>
+            </header>
+            <p class="revisit-status" id="revisitStatus"></p>
+            <div class="revisit-content" id="revisitContent"></div>
+          </section>
+
           <section class="guide-card" aria-labelledby="guideTitle">
             <div class="section-heading compact-heading">
               <div>
@@ -275,6 +318,16 @@
               <button type="button" class="button secondary compact" id="refreshInsightsButton">刷新回顾</button>
             </div>
             <div class="insight-summary" id="insightSummary"></div>
+            <div class="exhibition-studio-entry">
+              <div>
+                <strong>让馆藏成为一场可以重逢的展览</strong>
+                <span>先用原文依据策展；确认后还可封存到未来，或生成口令加密的离线单文件。</span>
+              </div>
+              <div class="exhibition-studio-actions">
+                <button type="button" class="button secondary compact" id="exhibitionStudioButton">策划主题展览</button>
+                <button type="button" class="button secondary compact" id="capsuleStudioButton">胶囊与分享</button>
+              </div>
+            </div>
             <div class="insight-tabs" role="tablist" aria-label="回顾方式">
               <button type="button" class="is-active" id="insightTabTimeline" role="tab" aria-selected="true" aria-controls="timelinePanel" tabindex="0" data-insight-tab="timeline">时间线</button>
               <button type="button" id="insightTabThemes" role="tab" aria-selected="false" aria-controls="themesPanel" tabindex="-1" data-insight-tab="themes">主题</button>
@@ -365,6 +418,18 @@
       </div>
     </dialog>
 
+    <dialog class="memory-dialog entity-dialog" id="entityDialog" aria-labelledby="entityDialogTitle">
+      <div class="dialog-header">
+        <div>
+          <p class="eyebrow" id="entityDialogKind">Memory clue</p>
+          <h2 id="entityDialogTitle" tabindex="-1">实体档案</h2>
+        </div>
+        <button type="button" class="icon-button" data-entity-close aria-label="关闭实体档案">×</button>
+      </div>
+      <p class="entity-dialog-status" id="entityDialogStatus"></p>
+      <div class="dialog-body entity-dialog-body" id="entityDialogBody"></div>
+    </dialog>
+
     <dialog class="memory-dialog puzzle-dialog" id="puzzleDialog" aria-labelledby="puzzleTitle">
       <form method="dialog" class="dialog-header">
         <div>
@@ -395,20 +460,135 @@
       </div>
     </dialog>
 
+    <dialog class="memory-dialog exhibition-dialog" id="exhibitionDialog" aria-labelledby="exhibitionDialogTitle">
+      <form method="dialog" class="dialog-header exhibition-dialog-header">
+        <div>
+          <p class="eyebrow">Curate with evidence</p>
+          <h2 id="exhibitionDialogTitle">主题展览工作室</h2>
+        </div>
+        <button type="button" class="icon-button" value="close" data-exhibition-close aria-label="关闭主题展览工作室">×</button>
+      </form>
+      <div class="dialog-body exhibition-dialog-body">
+        <form id="exhibitionForm">
+          <label for="exhibitionTheme">这场展览想讲什么？
+            <input id="exhibitionTheme" type="text" maxlength="60" required placeholder="例如：和朋友一起长大的那些夏天" />
+          </label>
+          <div id="exhibitionMemoryChoices"></div>
+          <div class="form-actions">
+            <button type="submit" class="button primary" id="exhibitionGenerateButton">生成展览预览</button>
+          </div>
+        </form>
+        <p class="inline-status" id="exhibitionPreviewStatus" aria-live="polite"></p>
+        <section id="exhibitionPreview" aria-label="主题展览预览" hidden></section>
+        <div class="form-actions exhibition-save-actions" id="exhibitionSaveActions" hidden>
+          <button type="button" class="button primary" id="exhibitionSaveButton" disabled>确认并保存主题展览</button>
+        </div>
+        <section id="exhibitionShelf" aria-label="已保存主题展览"></section>
+      </div>
+    </dialog>
+
+    <dialog class="memory-dialog capsule-dialog" id="capsuleDialog" aria-labelledby="capsuleDialogTitle">
+      <div class="dialog-header capsule-dialog-header">
+        <div>
+          <p class="eyebrow">Seal and share</p>
+          <h2 id="capsuleDialogTitle" tabindex="-1">时光胶囊与加密展览</h2>
+        </div>
+        <button type="button" class="icon-button" data-capsule-close aria-label="关闭时光胶囊">×</button>
+      </div>
+      <div class="dialog-body capsule-dialog-body">
+        <p class="capsule-status" id="capsuleStatus" role="status" aria-live="polite"></p>
+        <section class="capsule-reader" id="capsuleReader" aria-label="已开启胶囊" hidden></section>
+        <section class="capsule-shelf" id="capsuleShelf" aria-labelledby="capsuleShelfTitle">
+          <div class="capsule-section-heading">
+            <div><p class="eyebrow">Sealed memories</p><h3 id="capsuleShelfTitle">我的时光胶囊</h3></div>
+          </div>
+          <div class="capsule-empty">打开后读取胶囊外壳。</div>
+        </section>
+
+        <details class="capsule-create-panel" id="capsuleCreatePanel">
+          <summary><span><strong>新建胶囊或加密分享</strong><small>只使用已经确认的主题展览</small></span><span aria-hidden="true">＋</span></summary>
+          <form class="capsule-form" id="capsuleForm">
+            <label for="capsuleExhibitionSelect">来源主题展览
+              <select id="capsuleExhibitionSelect" required>
+                <option value="">先选择一场已确认展览</option>
+              </select>
+            </label>
+            <p class="capsule-candidate-status" id="capsuleCandidateStatus">选择展览后，再决定哪些安全展示图和已确认文字稿可以进入胶囊或分享包。</p>
+            <div class="capsule-candidates" id="capsuleCandidateList"></div>
+
+            <section class="capsule-seal-fields" aria-labelledby="capsuleSealTitle">
+              <div class="capsule-section-heading compact">
+                <div><p class="eyebrow">Ceremonial gate</p><h3 id="capsuleSealTitle">封存到未来</h3></div>
+              </div>
+              <p class="capsule-boundary">开启日期只是一道仪式门槛，并不是不可破解的密码学时间锁。</p>
+              <div class="capsule-field-grid">
+                <label for="capsuleTitle">胶囊标题
+                  <input id="capsuleTitle" type="text" maxlength="120" required placeholder="例如：留给明年夏天的我们" />
+                </label>
+                <label for="capsuleOpensOn">开启日期
+                  <input id="capsuleOpensOn" type="date" required />
+                </label>
+                <label class="capsule-wide-field" for="capsuleShellMessage">未开启时可见的留言
+                  <textarea id="capsuleShellMessage" maxlength="500" placeholder="只写愿意公开在外壳上的话。"></textarea>
+                </label>
+                <label class="capsule-wide-field" for="capsuleTimezone">日期所在时区
+                  <input id="capsuleTimezone" type="text" readonly />
+                </label>
+              </div>
+              <div class="capsule-form-actions">
+                <button type="submit" class="button primary" id="capsuleSealButton">确认并封存</button>
+                <button type="button" class="button secondary" id="capsulePrepareExportButton">准备加密离线展览</button>
+              </div>
+            </section>
+          </form>
+        </details>
+
+        <section class="capsule-export-panel" id="capsuleExportPanel" aria-labelledby="capsuleExportTitle" hidden>
+          <div class="capsule-section-heading compact">
+            <div><p class="eyebrow">Encrypted offline file</p><h3 id="capsuleExportTitle">设置离线展览口令</h3></div>
+          </div>
+          <p>安全素材已经读取完成。接下来不会再发送网络请求；口令只用于当前浏览器内加密，无法找回。</p>
+          <div class="capsule-passphrase-grid">
+            <label for="capsulePassphrase">口令（至少 12 个字符）
+              <input id="capsulePassphrase" type="password" minlength="12" maxlength="200" autocomplete="new-password" spellcheck="false" />
+            </label>
+            <label for="capsulePassphraseConfirm">再次输入口令
+              <input id="capsulePassphraseConfirm" type="password" minlength="12" maxlength="200" autocomplete="new-password" spellcheck="false" />
+            </label>
+          </div>
+          <div class="capsule-form-actions">
+            <button type="button" class="button primary" id="capsuleDownloadButton">生成单文件展览</button>
+            <button type="button" class="button text-button" id="capsuleCancelExportButton">取消</button>
+          </div>
+        </section>
+
+        <details class="capsule-privacy-note">
+          <summary>这个分享文件里不会有什么？</summary>
+          <p>物理排除原图、EXIF/GPS、未确认文字稿、Agent 整理日志、内部 ID 和未勾选内容。首版也不携带原始音频，避免音频容器元数据泄露。</p>
+        </details>
+      </div>
+    </dialog>
+
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
     <footer class="site-footer">
       <span>时屿 · 让记忆可整理，也让 AI 的依据可回看。</span>
-      <span id="footerVersion">v4.0.0</span>
+      <span id="footerVersion">v7.0.0</span>
     </footer>
 
     <script src="/assets/portability.js"></script>
     <script src="/assets/media-intelligence.js"></script>
     <script src="/assets/media.js"></script>
+    <script src="/assets/voice.js?v=7.0.0"></script>
     <script src="/assets/media-evidence.js"></script>
     <script src="/assets/media-compare.js"></script>
     <script src="/assets/media-ocr.js"></script>
     <script src="/assets/media-lab.js"></script>
-    <script src="/assets/app.js"></script>
+    <script src="/assets/exhibitions.js?v=7.0.0"></script>
+    <script src="/assets/capsule-crypto.js?v=7.0.0"></script>
+    <script src="/assets/capsules.js?v=7.0.0"></script>
+    <script src="/assets/revisits.js?v=7.0.0"></script>
+    <script src="/assets/clues.js?v=7.0.0"></script>
+    <script src="/assets/app.js?v=7.0.0"></script>
   </body>
 </html>
