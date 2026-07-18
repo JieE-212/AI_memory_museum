@@ -13,6 +13,7 @@ const {
 } = require("../lib/curator-agent-service");
 const {
   CURATOR_AGENT_MIGRATION,
+  MAX_CURATOR_AGENT_RUNS,
   decisionRequestSha256,
   initializeCuratorAgentDatabase
 } = require("../lib/curator-agent-database");
@@ -525,6 +526,49 @@ function runCoreChecks() {
   return reopened;
 }
 
+function runCapacityAndClockChecks() {
+  equal(MAX_CURATOR_AGENT_RUNS, 12, "retained curator workspaces have a fixed archive-safe limit");
+  const request = {
+    intent: "draft_exhibition",
+    query: "bounded capacity",
+    memoryIds: ["memory-one", "memory-two"],
+    title: "Bounded capacity",
+    theme: "audit"
+  };
+  const capacity = initializeFixture();
+  for (let index = 0; index < MAX_CURATOR_AGENT_RUNS; index += 1) {
+    capacity.database.createCuratorAgentRun(request, { idempotencyKey: `capacity-${index}` });
+  }
+  equal(
+    capacity.db.prepare("SELECT COUNT(*) AS count FROM curator_agent_runs WHERE deleted_at = ''").get().count,
+    MAX_CURATOR_AGENT_RUNS,
+    "create retains every run up to the archive-safe limit"
+  );
+  ok(
+    capacity.database.createCuratorAgentRun(request, { idempotencyKey: "capacity-0" }).idempotent,
+    "an exact replay remains available when capacity is full"
+  );
+  throwsCode(
+    () => capacity.database.createCuratorAgentRun(request, { idempotencyKey: "capacity-overflow" }),
+    "CURATOR_AGENT_RUN_LIMIT",
+    "count and insert reject a new run at the fixed capacity boundary"
+  );
+  equal(
+    capacity.db.prepare("SELECT COUNT(*) AS count FROM curator_agent_runs WHERE deleted_at = ''").get().count,
+    MAX_CURATOR_AGENT_RUNS,
+    "capacity rejection leaves the retained run set unchanged"
+  );
+
+  const offsetClock = initializeFixture({
+    clock: {
+      now: () => "2026-03-01T08:00:00+08:00",
+      monotonicNow: () => 0
+    }
+  });
+  const normalized = offsetClock.database.createCuratorAgentRun(request, { idempotencyKey: "offset-clock" });
+  equal(normalized.workspace.run.createdAt, "2026-03-01T00:00:00.000Z", "database timestamps normalize to canonical UTC before persistence");
+}
+
 function runServiceBoundaryChecks(fixture) {
   const request = normalizeCuratorRunRequest({ query: "campus", memoryIds: ["memory-one", "memory-two"] });
   throwsCode(
@@ -661,6 +705,7 @@ async function runApiChecks(fixture) {
 
 async function main() {
   const fixture = runCoreChecks();
+  runCapacityAndClockChecks();
   runServiceBoundaryChecks(fixture);
   await runApiChecks(fixture);
   console.log(`Curator-agent checks passed (${assertions} assertions).`);

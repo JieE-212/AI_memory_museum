@@ -27,7 +27,7 @@ const {
   buildFeaturedRoute
 } = require("./lib/archaeology");
 const { buildArchaeologyBackup, restoreArchaeologyBackup, validateArchaeologyBackup } = require("./lib/archaeology-backup");
-const { buildMediaArchiveFile, prepareMediaArchive } = require("./lib/media-backup");
+const { buildMediaArchiveFile, parseExportMode, prepareMediaArchive } = require("./lib/media-backup");
 const { restorePreparedArchive } = require("./lib/media-restore");
 const { sendArchiveFile, withRequestAbort } = require("./lib/archive-http");
 const { cleanupArchiveStaging } = require("./lib/archive-staging");
@@ -242,7 +242,7 @@ async function handleRequest(request, response) {
     if (archiveInspectionHandled !== false) return archiveInspectionHandled;
 
     if (request.method === "GET" && url.pathname === "/api/archive/export") {
-      const mode = url.searchParams.get("mode") === "redacted" ? "redacted" : "full";
+      const mode = parseExportMode(url.searchParams);
       return await withRequestAbort(request, response, async (signal) => {
         const archive = await mediaApi.withMediaOperation(() => voiceApi.withVoiceOperation(() => {
           const collection = buildCollectionExport(store.listMemories().map(withMemoryMedia), mode);
@@ -320,7 +320,7 @@ async function handleRequest(request, response) {
     }
 
     if (request.method === "GET" && url.pathname === "/api/memories/export") {
-      const mode = url.searchParams.get("mode") === "redacted" ? "redacted" : "full";
+      const mode = parseExportMode(url.searchParams);
       return sendJson(response, 200, buildCollectionExport(store.listMemories().map(withMemoryMedia), mode));
     }
 

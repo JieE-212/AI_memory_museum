@@ -9,6 +9,7 @@ const zlib = require("node:zlib");
 const { createArchive, extractArchive } = require("../lib/time-isle-archive");
 const {
   buildMediaArchive,
+  parseExportMode,
   prepareMediaArchive,
   ARCHIVE_FORMAT,
   ARCHIVE_FORMAT_VERSION,
@@ -55,6 +56,7 @@ async function main() {
 }
 
 async function runChecks(temporaryRoot) {
+  checkExportModeParsing();
   const fixture = createFixture(temporaryRoot);
   const collection = {
     product: "时屿",
@@ -164,6 +166,19 @@ async function runChecks(temporaryRoot) {
   await checkObservationPrivacy(temporaryRoot, fixture, collection, pristineEntries);
   await checkArchiveLimits(temporaryRoot, fixture, collection);
   await checkRedactedArchive(temporaryRoot, collection);
+}
+
+function checkExportModeParsing() {
+  equal(parseExportMode(new URLSearchParams()), "full", "导出 mode 缺省时应精确默认为 full");
+  equal(parseExportMode(new URLSearchParams("mode=full")), "full", "导出 mode 应接受精确 full");
+  equal(parseExportMode(new URLSearchParams("mode=redacted")), "redacted", "导出 mode 应接受精确 redacted");
+  for (const value of ["mode=", "mode=Full", "mode=redact", "mode=unknown", "mode=full%20", "mode=full&mode=full", "mode=full&mode=redacted"]) {
+    throwsCode(
+      "MEDIA_ARCHIVE_EXPORT_MODE_INVALID",
+      () => parseExportMode(new URLSearchParams(value)),
+      `导出 mode 必须拒绝空值、拼错、未知值和重复参数：${value}`
+    );
+  }
 }
 
 async function checkArchiveVersioning(temporaryRoot, pristineEntries) {
@@ -1996,6 +2011,26 @@ async function checkArchiveLimits(temporaryRoot, fixture, fullCollection) {
   const oneMemory = boundaryCollection(1);
   const baseline = buildMediaArchive({ collection: oneMemory, appVersion: "4.0.0", schemaVersion: 4 });
   const baselineEntries = await readArchiveEntries(baseline, path.join(temporaryRoot, "measure-export-limits"));
+  const descriptorFlood = cloneEntries(baselineEntries);
+  const descriptorFloodManifest = parseJson(descriptorFlood.get(ARCHIVE_PATHS.manifest));
+  const collectionDescriptor = descriptorFloodManifest.entries.find((entry) => entry.path === ARCHIVE_PATHS.collection);
+  descriptorFloodManifest.entries = [
+    null,
+    collectionDescriptor,
+    { ...collectionDescriptor, path: "optional/overflow.json" }
+  ];
+  descriptorFloodManifest.entryCount = descriptorFloodManifest.entries.length;
+  descriptorFlood.set(ARCHIVE_PATHS.manifest, jsonBuffer(descriptorFloodManifest));
+  const descriptorFloodRoot = path.join(temporaryRoot, "reject-manifest-descriptor-limit");
+  await rejectsCode(
+    "MEDIA_ARCHIVE_LIMIT_EXCEEDED",
+    () => prepareMediaArchive(repack(descriptorFlood), {
+      stagingRoot: descriptorFloodRoot,
+      limits: { maxEntries: 3 }
+    }),
+    "prepare 必须在遍历 manifest descriptors 前按含 manifest 的归档条目上限提前拒绝"
+  );
+  equal(fs.existsSync(descriptorFloodRoot), false, "manifest descriptor 超限拒绝后不应残留暂存目录");
   const largestEntryBytes = Math.max(...[...baselineEntries.values()].map((data) => data.length));
   const totalEntryBytes = [...baselineEntries.values()].reduce((sum, data) => sum + data.length, 0);
   check(Buffer.isBuffer(buildMediaArchive({

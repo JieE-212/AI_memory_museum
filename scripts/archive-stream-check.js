@@ -203,6 +203,32 @@ async function checkMediaArchiveDescriptor(root) {
   deepEqual(fs.readFileSync(fullDescriptor.path), fullLegacy, "真实媒体文件描述符保持旧归档确定性字节格式");
   await fullDescriptor.cleanup();
 
+  let deletedInSameTick = false;
+  const volatileStore = {
+    ...fixture.store,
+    listMediaForMemory(memoryId) {
+      return deletedInSameTick ? [] : fixture.store.listMediaForMemory(memoryId);
+    },
+    getMediaAsset(assetId) {
+      return deletedInSameTick ? null : fixture.store.getMediaAsset(assetId);
+    },
+    listMediaVariants(assetId) {
+      return deletedInSameTick ? [] : fixture.store.listMediaVariants(assetId);
+    },
+    listMediaObservations(options) {
+      return deletedInSameTick ? [] : fixture.store.listMediaObservations(options);
+    }
+  };
+  const sameTickExport = buildMediaArchiveFile({ ...fullOptions, store: volatileStore, outputRoot: root });
+  deletedInSameTick = true;
+  const sameTickDescriptor = await sameTickExport;
+  deepEqual(
+    fs.readFileSync(sameTickDescriptor.path),
+    fullLegacy,
+    "同 tick 删除元数据不得让 collection JSON 与媒体描述符跨首次 await 静默漏图"
+  );
+  await sameTickDescriptor.cleanup();
+
   const beforeFailure = exportDirectories(root);
   await assert.rejects(
     () => buildMediaArchiveFile({

@@ -95,6 +95,10 @@ function checkExactKeysAndHashes() {
     ["决定哈希", (state) => { state.runs[0].decisions[0].requestSha256 = "0".repeat(64); }, "CURATOR_AGENT_HASH_MISMATCH"],
     ["非规范 SHA", (state) => { state.runs[0].steps[0].resultSha256 = "A".repeat(64); }, "CURATOR_AGENT_HASH_INVALID"],
     ["非规范时间", (state) => { state.runs[0].run.updatedAt = "2026-07-18 06:00:01Z"; }, "CURATOR_AGENT_TIMESTAMP_INVALID"],
+    ["开始晚于更新时间", (state) => { state.runs[0].run.startedAt = "2026-07-18T06:00:02.000Z"; }, "CURATOR_AGENT_TIMESTAMP_INVALID"],
+    ["完成早于开始", (state) => { state.runs[0].run.completedAt = "2026-07-18T05:59:59.000Z"; }, "CURATOR_AGENT_TIMESTAMP_INVALID"],
+    ["提案晚于运行完成", (state) => { state.runs[0].proposal.createdAt = state.runs[0].run.updatedAt; }, "CURATOR_AGENT_TIMESTAMP_INVALID"],
+    ["决定早于提案完成", (state) => { state.runs[0].decisions[0].createdAt = "2026-07-18T06:00:00.900Z"; }, "CURATOR_AGENT_TIMESTAMP_INVALID"],
     ["非白名单工具", (state) => { state.runs[0].steps[0].toolName = "delete_memory"; }, "CURATOR_AGENT_VALUE_INVALID"],
     ["后端分享决定", (state) => { state.runs[0].decisions[0].action = "share_exhibition"; }, "CURATOR_AGENT_VALUE_INVALID"]
   ];
@@ -436,7 +440,8 @@ function fullState() {
   });
   const requestSha256 = buildCuratorRequestSha256(request);
   const createdAt = "2026-07-18T06:00:00.000Z";
-  const updatedAt = "2026-07-18T06:00:01.000Z";
+  const completedAt = "2026-07-18T06:00:01.000Z";
+  const updatedAt = "2026-07-18T06:00:01.100Z";
   const run = {
     id: "curator-run-source",
     schemaVersion: 14,
@@ -453,7 +458,7 @@ function fullState() {
     createdAt,
     startedAt: createdAt,
     updatedAt,
-    completedAt: updatedAt,
+    completedAt,
     cancelledAt: "",
     interruptedAt: "",
     failedAt: "",
@@ -477,7 +482,7 @@ function fullState() {
     id: "curator-proposal-source",
     runId: run.id,
     ...clone(executed.proposal),
-    createdAt: "2026-07-18T06:00:00.800Z"
+    createdAt: completedAt
   };
   const state = {
     mode: "full",
@@ -501,7 +506,7 @@ function decisionFor(state, action, decision, outcome, idempotencyKey) {
     idempotencyKey,
     requestSha256: buildCuratorDecisionRequestSha256({ action, decision, runId }),
     outcome,
-    createdAt: "2026-07-18T06:00:00.900Z"
+    createdAt: "2026-07-18T06:00:01.100Z"
   };
 }
 

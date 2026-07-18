@@ -24,6 +24,7 @@ const halls = [{ id: "daily", name: "日常展厅", description: "测试" }];
 let sourceStore;
 let targetStore;
 let failingStore;
+let resultFailureStore;
 let privacyConflictStore;
 let corruptReusableStore;
 let boundaryStore;
@@ -1017,6 +1018,28 @@ async function main() {
     check(fs.existsSync(corruptedDisplay), "损坏的既有资产应保留给用户检查，不能用归档静默覆盖");
     equal(corruptReusable.store.listMemories().length, 0, "现有文件损坏时恢复必须零写入");
 
+    const resultFailure = createTarget(path.join(root, "result-construction-failure"));
+    resultFailureStore = resultFailure.store;
+    const resultFailurePrepared = await prepareMediaArchive(archive, {
+      stagingRoot: path.join(resultFailure.storage.root, ".restore", "result-construction-failure")
+    });
+    const originalGetMemory = resultFailure.store.getMemory;
+    resultFailure.store.getMemory = () => { throw new Error("forced result construction failure"); };
+    assert.throws(() => restorePreparedArchive({
+      prepared: resultFailurePrepared,
+      store: resultFailure.store,
+      storage: resultFailure.storage,
+      normalizeMemory,
+      validateArchaeologyBackup,
+      restoreArchaeologyBackup,
+      createId: (prefix) => `${prefix}-result-failure-${++idCounter}`
+    }), /forced result construction failure/);
+    assertions += 1;
+    resultFailure.store.getMemory = originalGetMemory;
+    equal(resultFailure.store.listMemories().length, 0, "返回结果构造失败必须回滚恢复事务，避免 500 后重试造成重复导入");
+    equal(resultFailure.store.listMediaAssets().length, 0, "返回结果构造失败必须回滚媒体元数据");
+    equal(listRegularFiles(path.join(resultFailure.storage.root, "assets")).length, 0, "返回结果构造失败必须清理本轮物化的媒体文件");
+
     const failing = createTarget(path.join(root, "failing"));
     failingStore = failing.store;
     const rejectedPrepared = await prepareMediaArchive(archive, {
@@ -1047,6 +1070,7 @@ async function main() {
       sourceStore,
       targetStore,
       failingStore,
+      resultFailureStore,
       privacyConflictStore,
       corruptReusableStore,
       boundaryStore,

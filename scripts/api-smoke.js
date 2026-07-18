@@ -194,6 +194,33 @@ async function runArchiveMediaFlow() {
       const archiveResponse = await fetch(`${baseUrl}/api/archive/export`);
       const archive = Buffer.from(await archiveResponse.arrayBuffer());
       assert("完整 .time-isle 导出包含二进制归档与下载文件名", archiveResponse.ok && archiveResponse.headers.get("content-type") === "application/vnd.time-isle" && archiveResponse.headers.get("content-disposition").includes(".time-isle") && archive.subarray(0, 2).equals(Buffer.from([0x1f, 0x8b])));
+      const explicitFullExport = await getJson(`${baseUrl}/api/memories/export?mode=full`);
+      const explicitRedactedArchiveResponse = await fetch(`${baseUrl}/api/archive/export?mode=redacted`);
+      const explicitRedactedArchive = Buffer.from(await explicitRedactedArchiveResponse.arrayBuffer());
+      assert(
+        "两类导出仅接受缺省、精确 full 或精确 redacted",
+        explicitFullExport.response.ok &&
+          explicitFullExport.payload.mode === "full" &&
+          explicitRedactedArchiveResponse.ok &&
+          explicitRedactedArchive.subarray(0, 2).equals(Buffer.from([0x1f, 0x8b]))
+      );
+      const invalidExportModes = [];
+      for (const requestPath of [
+        "/api/memories/export?mode=unknown",
+        "/api/memories/export?mode=redact",
+        "/api/memories/export?mode=full&mode=full",
+        "/api/archive/export?mode=",
+        "/api/archive/export?mode=Full",
+        "/api/archive/export?mode=full&mode=redacted"
+      ]) {
+        invalidExportModes.push(await getJson(`${baseUrl}${requestPath}`));
+      }
+      assert(
+        "两类导出对空值、未知值、拼错、大小写变体和重复 mode 统一返回 400",
+        invalidExportModes.every(({ response, payload }) => (
+          response.status === 400 && payload.code === "MEDIA_ARCHIVE_EXPORT_MODE_INVALID"
+        ))
+      );
       const inspectionResponse = await fetch(`${baseUrl}/api/archive/inspect`, {
         method: "POST",
         headers: writeHeaders(`${baseUrl}/api/archive/inspect`, { "Content-Type": "application/vnd.time-isle" }),
