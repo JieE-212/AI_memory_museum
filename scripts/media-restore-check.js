@@ -13,6 +13,8 @@ const { restorePreparedArchive } = require("../lib/media-restore");
 const { validateArchaeologyBackup, restoreArchaeologyBackup } = require("../lib/archaeology-backup");
 const { buildExhibitionPreview } = require("../lib/exhibition-curator");
 const { buildClueBackup, remapClueBackup, validateClueBackup } = require("../lib/clue-backup");
+const { memorySnapshotSha256 } = require("../lib/revision-backup");
+const { buildSourceSetSha256, buildTimeCandidates } = require("../lib/time-calibration-service");
 
 let assertions = 0;
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "time-isle-restore-"));
@@ -41,6 +43,11 @@ let capsuleCorruptStore;
 let intentHandlerDefenseStore;
 let intentTargetStore;
 let intentIncompleteStore;
+let calibrationHandlerDefenseStore;
+let calibrationTargetStore;
+let calibrationMapDefenseStore;
+let calibrationIncompleteStore;
+let calibrationRollbackStore;
 
 function check(value, message) {
   assert.ok(value, message);
@@ -198,6 +205,248 @@ async function main() {
     equal(intentIncomplete.store.listMemories().length, 0, "回访意愿 skipped 会回滚同一事务内的展品写入");
     const incompleteAssetRoot = path.join(intentIncomplete.storage.root, "assets");
     equal(countFiles(incompleteAssetRoot), 0, "回访意愿恢复失败会补偿本次物化媒体文件");
+
+    const calibrationEventId = "event-time-calibration-source";
+    const calibrationBasePrepared = await prepareMediaArchive(archive, {
+      stagingRoot: path.join(root, "calibration-prepared-success")
+    });
+    const calibrationBackup = timeCalibrationRestoreBackup(calibrationBasePrepared.collection.memories[0]);
+    const calibrationPrepared = {
+      ...calibrationBasePrepared,
+      manifest: { ...calibrationBasePrepared.manifest, mode: "full", schemaVersion: 12 },
+      collection: {
+        ...calibrationBasePrepared.collection,
+        mode: "full",
+        schemaVersion: 12,
+        memories: [
+          calibrationBasePrepared.collection.memories[0],
+          normalizeMemory({
+            id: "memory-time-calibration-second",
+            title: "Second calibration memory",
+            rawContent: "A second memory establishes the event boundary."
+          })
+        ],
+        archaeology: {
+          mode: "full",
+          events: [{
+            id: calibrationEventId,
+            title: "Calibration event",
+            summary: "Two memories mapped as one event.",
+            status: "confirmed",
+            metadata: {},
+            createdAt: "2026-07-18T12:00:00.000Z",
+            updatedAt: "2026-07-18T12:00:00.000Z",
+            members: [{
+              memoryId: "memory-source",
+              position: 0,
+              relation: "same_event",
+              confirmationNote: "",
+              confirmedAt: "2026-07-18T12:00:00.000Z",
+              metadata: {}
+            }, {
+              memoryId: "memory-time-calibration-second",
+              position: 1,
+              relation: "same_event",
+              confirmationNote: "",
+              confirmedAt: "2026-07-18T12:00:00.000Z",
+              metadata: {}
+            }]
+          }],
+          claims: [],
+          pairDecisions: [],
+          questions: []
+        },
+        exhibitions: { mode: "full", schemaVersion: 5, exhibitions: [] },
+        timeCalibrations: calibrationBackup
+      }
+    };
+    const { exhibitions: _omittedCalibrationExhibitions, ...calibrationOnlyCollection } = calibrationPrepared.collection;
+    const calibrationOnlyPrepared = { ...calibrationPrepared, collection: calibrationOnlyCollection };
+    const freshCalibrationOnlyPrepared = async (label) => {
+      const base = await prepareMediaArchive(archive, {
+        stagingRoot: path.join(root, `calibration-prepared-${label}`)
+      });
+      return {
+        ...calibrationOnlyPrepared,
+        stagingRoot: base.stagingRoot,
+        manifest: { ...base.manifest, mode: "full", schemaVersion: 12 },
+        descriptor: base.descriptor,
+        assets: base.assets,
+        links: base.links,
+        mediaObservations: base.mediaObservations,
+        media_observations: base.media_observations,
+        files: base.files
+      };
+    };
+
+    const calibrationHandlerDefense = createTarget(path.join(root, "calibration-handler-defense"), 12);
+    calibrationHandlerDefenseStore = calibrationHandlerDefense.store;
+    assert.throws(() => restorePreparedArchive({
+      prepared: calibrationOnlyPrepared,
+      store: calibrationHandlerDefense.store,
+      storage: calibrationHandlerDefense.storage,
+      normalizeMemory,
+      validateArchaeologyBackup,
+      restoreArchaeologyBackup,
+      createId: (prefix) => `${prefix}-missing-calibration-handler-${++idCounter}`
+    }), (error) => error?.code === "MEDIA_RESTORE_TIME_CALIBRATION_HANDLER_REQUIRED");
+    assertions += 1;
+    equal(calibrationHandlerDefense.store.listMemories().length, 0, "missing calibration handlers fail before any memory write");
+    equal(countFiles(path.join(calibrationHandlerDefense.storage.root, "assets")), 0, "missing calibration handlers fail before media materialization");
+
+    const calibrationTarget = createTarget(path.join(root, "calibration-target"), 12);
+    calibrationTargetStore = calibrationTarget.store;
+    calibrationTarget.store.saveMemory(normalizeMemory({
+      id: "memory-source",
+      title: "Pre-existing source ID collision",
+      rawContent: "This forces memory ID remapping."
+    }));
+    const originalGetCalibrationEvent = calibrationTarget.store.getMemoryEvent;
+    calibrationTarget.store.getMemoryEvent = (eventId) => eventId === calibrationEventId
+      ? { id: calibrationEventId }
+      : originalGetCalibrationEvent(eventId);
+    const calibrationOrder = [];
+    const originalSaveCalibrationObservation = calibrationTarget.store.saveMediaObservation;
+    calibrationTarget.store.saveMediaObservation = (...args) => {
+      calibrationOrder.push("observations");
+      return originalSaveCalibrationObservation(...args);
+    };
+    let validatedCalibrationBoundary = null;
+    let capturedCalibrationMaps = null;
+    const calibrationRestored = restorePreparedArchive({
+      prepared: calibrationPrepared,
+      store: calibrationTarget.store,
+      storage: calibrationTarget.storage,
+      normalizeMemory,
+      validateArchaeologyBackup,
+      restoreArchaeologyBackup(store, backup, memoryIdMap) {
+        calibrationOrder.push("archaeology");
+        return restoreArchaeologyBackup(store, backup, memoryIdMap);
+      },
+      validateTimeCalibrationBackup(backup, sourceMemoryIds, sourceEventIds) {
+        validatedCalibrationBoundary = {
+          memoryIds: [...sourceMemoryIds],
+          eventIds: [...sourceEventIds]
+        };
+        return calibrationTarget.store.validateTimeCalibrationBackup(backup, sourceMemoryIds, sourceEventIds);
+      },
+      restoreTimeCalibrationBackup(backup, maps) {
+        calibrationOrder.push("time-calibrations");
+        capturedCalibrationMaps = {
+          memoryIdMap: new Map(maps.memoryIdMap),
+          eventIdMap: new Map(maps.eventIdMap)
+        };
+        return calibrationTarget.store.restoreTimeCalibrationBackup(backup, maps);
+      },
+      validateExhibitionBackup: calibrationTarget.store.validateExhibitionBackup,
+      restoreExhibitionBackup(backup, memoryIdMap) {
+        calibrationOrder.push("exhibitions");
+        return calibrationTarget.store.restoreExhibitionBackup(backup, memoryIdMap);
+      },
+      createId: (prefix) => `${prefix}-calibration-${++idCounter}`
+    });
+    deepEqual(calibrationOrder, ["observations", "archaeology", "time-calibrations", "exhibitions"], "calibrations restore after media and archaeology but before downstream consumers");
+    deepEqual(validatedCalibrationBoundary, {
+      memoryIds: ["memory-source", "memory-time-calibration-second"],
+      eventIds: [calibrationEventId]
+    }, "calibration validation receives both frozen source boundaries before planning writes");
+    const mappedCalibrationMemoryId = calibrationRestored.idMap.memories["memory-source"];
+    check(mappedCalibrationMemoryId !== "memory-source", "memory target is remapped when its source ID collides");
+    equal(capturedCalibrationMaps.memoryIdMap.get("memory-source"), mappedCalibrationMemoryId, "calibration restore receives the shared memory ID map");
+    const mappedCalibrationEventId = capturedCalibrationMaps.eventIdMap.get(calibrationEventId);
+    check(mappedCalibrationEventId && mappedCalibrationEventId !== calibrationEventId, "event target uses archaeology's remapped event ID");
+    equal(calibrationRestored.timeCalibrations.calibrations, 2, "both memory and event calibrations restore in the archive transaction");
+    check(Boolean(calibrationTarget.store.getTimeCalibrationForMemory(mappedCalibrationMemoryId)), "memory calibration points at the restored memory copy");
+    check(Boolean(calibrationTarget.store.getTimeCalibrationForEvent(mappedCalibrationEventId)), "event calibration points at the restored archaeology event");
+    equal(
+      calibrationRestored.idMap.timeCalibrations[calibrationBackup.calibrations[0].id],
+      calibrationTarget.store.getTimeCalibrationForEvent(mappedCalibrationEventId).id,
+      "result exposes a direct calibration ID map"
+    );
+
+    const calibrationSourceMismatchPrepared = await freshCalibrationOnlyPrepared("source-mismatch");
+    calibrationSourceMismatchPrepared.collection = {
+      ...calibrationSourceMismatchPrepared.collection,
+      timeCalibrations: {
+        ...calibrationBackup,
+        calibrations: calibrationBackup.calibrations.map((item, index) => ({
+          ...item,
+          currentSourceSetSha256: index === 0 ? "0".repeat(64) : item.currentSourceSetSha256
+        }))
+      }
+    };
+    const calibrationSourceMismatch = createTarget(path.join(root, "calibration-source-mismatch"), 12);
+    assert.throws(() => restorePreparedArchive({
+      prepared: calibrationSourceMismatchPrepared,
+      store: calibrationSourceMismatch.store,
+      storage: calibrationSourceMismatch.storage,
+      normalizeMemory,
+      validateArchaeologyBackup,
+      restoreArchaeologyBackup,
+      validateTimeCalibrationBackup: calibrationSourceMismatch.store.validateTimeCalibrationBackup,
+      restoreTimeCalibrationBackup: calibrationSourceMismatch.store.restoreTimeCalibrationBackup,
+      createId: (prefix) => `${prefix}-calibration-source-mismatch-${++idCounter}`
+    }), (error) => error?.code === "CALIBRATION_ARCHIVE_SOURCES_MISMATCH");
+    assertions += 1;
+    assertEmptyCalibrationRestoreTarget(calibrationSourceMismatch, "archive source-boundary mismatch");
+    calibrationSourceMismatch.store.close();
+
+    const calibrationMapPrepared = await freshCalibrationOnlyPrepared("map-defense");
+    const calibrationMapDefense = createTarget(path.join(root, "calibration-map-defense"), 12);
+    calibrationMapDefenseStore = calibrationMapDefense.store;
+    assert.throws(() => restorePreparedArchive({
+      prepared: calibrationMapPrepared,
+      store: calibrationMapDefense.store,
+      storage: calibrationMapDefense.storage,
+      normalizeMemory,
+      validateArchaeologyBackup,
+      restoreArchaeologyBackup: () => ({ events: 1, claims: 0, decisions: 0, questions: 0, skipped: 0, idMap: {} }),
+      validateTimeCalibrationBackup: calibrationMapDefense.store.validateTimeCalibrationBackup,
+      restoreTimeCalibrationBackup: () => { throw new Error("calibration restore must not run without an event map"); },
+      createId: (prefix) => `${prefix}-calibration-map-defense-${++idCounter}`
+    }), (error) => error?.code === "MEDIA_RESTORE_TIME_CALIBRATION_EVENT_MAP_REQUIRED");
+    assertions += 1;
+    assertEmptyCalibrationRestoreTarget(calibrationMapDefense, "missing archaeology event map");
+
+    const calibrationIncompletePrepared = await freshCalibrationOnlyPrepared("incomplete");
+    const calibrationIncomplete = createTarget(path.join(root, "calibration-incomplete"), 12);
+    calibrationIncompleteStore = calibrationIncomplete.store;
+    assert.throws(() => restorePreparedArchive({
+      prepared: calibrationIncompletePrepared,
+      store: calibrationIncomplete.store,
+      storage: calibrationIncomplete.storage,
+      normalizeMemory,
+      validateArchaeologyBackup,
+      restoreArchaeologyBackup,
+      validateTimeCalibrationBackup: calibrationIncomplete.store.validateTimeCalibrationBackup,
+      restoreTimeCalibrationBackup: () => ({ calibrations: 1, skipped: 1, idMap: { calibrations: {} } }),
+      createId: (prefix) => `${prefix}-calibration-incomplete-${++idCounter}`
+    }), (error) => error?.code === "MEDIA_RESTORE_TIME_CALIBRATION_INCOMPLETE");
+    assertions += 1;
+    assertEmptyCalibrationRestoreTarget(calibrationIncomplete, "incomplete calibration result");
+
+    const calibrationRollbackPrepared = await freshCalibrationOnlyPrepared("rollback");
+    const calibrationRollback = createTarget(path.join(root, "calibration-rollback"), 12);
+    calibrationRollbackStore = calibrationRollback.store;
+    assert.throws(() => restorePreparedArchive({
+      prepared: calibrationRollbackPrepared,
+      store: calibrationRollback.store,
+      storage: calibrationRollback.storage,
+      normalizeMemory,
+      validateArchaeologyBackup,
+      restoreArchaeologyBackup,
+      validateTimeCalibrationBackup: calibrationRollback.store.validateTimeCalibrationBackup,
+      restoreTimeCalibrationBackup(backup, maps) {
+        calibrationRollback.store.restoreTimeCalibrationBackup({
+          ...backup,
+          calibrations: [backup.calibrations[0]]
+        }, maps);
+        throw new Error("forced failure after one calibration write");
+      },
+      createId: (prefix) => `${prefix}-calibration-rollback-${++idCounter}`
+    }), /forced failure after one calibration write/);
+    assertions += 1;
+    assertEmptyCalibrationRestoreTarget(calibrationRollback, "failure after a partial calibration write");
 
     const malformedPrepared = {
       ...firstPrepared,
@@ -815,7 +1064,12 @@ async function main() {
       capsuleCorruptStore,
       intentHandlerDefenseStore,
       intentTargetStore,
-      intentIncompleteStore
+      intentIncompleteStore,
+      calibrationHandlerDefenseStore,
+      calibrationTargetStore,
+      calibrationMapDefenseStore,
+      calibrationIncompleteStore,
+      calibrationRollbackStore
     ]) {
       try { store?.close(); } catch { /* already closed */ }
     }
@@ -1118,6 +1372,59 @@ function assertCapsuleTargetEmpty(target, reason) {
   );
 }
 
+function timeCalibrationRestoreBackup(memory) {
+  const candidates = buildTimeCandidates({
+    memories: [{
+      id: memory.id,
+      date: memory.date,
+      snapshotSha256: memorySnapshotSha256(memory)
+    }]
+  });
+  const currentSourceSetSha256 = buildSourceSetSha256(candidates);
+  return {
+    mode: "full",
+    schemaVersion: 12,
+    calibrations: [{
+      id: "calibration-event-source",
+      memoryId: "",
+      eventId: "event-time-calibration-source",
+      resolutionKind: "uncertain",
+      intervalStart: "",
+      intervalEnd: "",
+      selectedSourceKeys: [],
+      selectedSourceSnapshots: [],
+      sourceSetSha256: "e".repeat(64),
+      currentSourceSetSha256,
+      note: "Event date remains uncertain.",
+      createdAt: "2026-07-18T12:10:00.000Z",
+      updatedAt: "2026-07-18T12:20:00.000Z"
+    }, {
+      id: "calibration-memory-source",
+      memoryId: "memory-source",
+      eventId: "",
+      resolutionKind: "uncertain",
+      intervalStart: "",
+      intervalEnd: "",
+      selectedSourceKeys: [],
+      selectedSourceSnapshots: [],
+      sourceSetSha256: "f".repeat(64),
+      currentSourceSetSha256,
+      note: "Memory date remains uncertain.",
+      createdAt: "2026-07-18T12:10:00.000Z",
+      updatedAt: "2026-07-18T12:20:00.000Z"
+    }]
+  };
+}
+
+function assertEmptyCalibrationRestoreTarget(target, reason) {
+  equal(target.store.listMemories().length, 0, `${reason} must roll back memories`);
+  equal(target.store.listMediaAssets({ limit: 20 }).length, 0, `${reason} must roll back media assets`);
+  equal(target.store.listMediaObservations({ limit: 20 }).length, 0, `${reason} must roll back observations`);
+  equal(target.store.listMemoryEvents().length, 0, `${reason} must roll back archaeology events`);
+  equal(target.store.getTimeCalibrationStats().calibrations, 0, `${reason} must roll back calibrations`);
+  equal(countFiles(path.join(target.storage.root, "assets")), 0, `${reason} must clean materialized media files`);
+}
+
 function countFiles(directory) {
   if (!fs.existsSync(directory)) return 0;
   return fs.readdirSync(directory, { withFileTypes: true }).reduce((count, entry) => {
@@ -1187,10 +1494,10 @@ function malformedExhibitionBackup() {
   };
 }
 
-function createTarget(directory) {
+function createTarget(directory, schemaVersion = 4) {
   fs.mkdirSync(directory, { recursive: true });
   return {
-    store: createMemoryStore({ dbPath: path.join(directory, "museum.sqlite"), halls, schemaVersion: 4 }),
+    store: createMemoryStore({ dbPath: path.join(directory, "museum.sqlite"), halls, schemaVersion }),
     storage: createMediaStorage({ root: path.join(directory, "media") })
   };
 }

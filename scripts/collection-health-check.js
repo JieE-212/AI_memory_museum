@@ -12,12 +12,48 @@ main().catch((error) => {
 
 async function main() {
   await checkHealthyScan();
+  await checkTimeCalibrationReviewClassification();
   await checkIssueSanitizationAndTruncation();
   await checkSingleTaskAndCancellation();
   await checkFailurePrivacy();
   await checkRetentionAndIsolation();
   checkDependencyAndInputBoundaries();
   console.log(`Collection health checks passed: ${assertions} assertions.`);
+}
+
+async function checkTimeCalibrationReviewClassification() {
+  const service = createCollectionHealthService({
+    getDatabaseHealthSnapshot: async () => ({
+      ok: true,
+      checks: [{ code: "DATABASE_TIME_CALIBRATION_STRUCTURE", ok: true }],
+      counts: { timeCalibrations: 2 },
+      issues: [{
+        code: "TIME_CALIBRATION_NEEDS_REVIEW",
+        area: "curation",
+        severity: "attention",
+        recordId: "calibration-review"
+      }],
+      issueCounts: [{
+        code: "TIME_CALIBRATION_NEEDS_REVIEW",
+        area: "curation",
+        severity: "attention",
+        count: 2
+      }]
+    }),
+    media: { listAssets: async () => [], verifyVariant: async () => true },
+    voice: { listAssets: async () => [], verifyAsset: async () => true },
+    createId: () => "health-time-calibration"
+  });
+  const finished = await service.wait(service.start().id);
+  const issue = finished.issues.find((item) => item.code === "TIME_CALIBRATION_NEEDS_REVIEW");
+  equal(finished.summary.database.status, "pass", "来源变化不会把时间校准误报为数据库损坏");
+  equal(finished.summary.database.records.timeCalibrations, 2, "馆藏体检公开安全的时间校准计数");
+  equal(finished.summary.curation.needsReview, 2, "时间校准动态待复核数量进入策展汇总");
+  equal(issue?.area, "curation", "时间校准待复核保持 curation 分类");
+  equal(issue?.severity, "attention", "时间校准待复核保持温和 attention 严重度");
+  equal(issue?.message, "一项时间校准的来源已经变化，需要重新核对。", "时间校准待复核使用固定中文安全文案");
+  equal(Object.hasOwn(issue || {}, "details"), false, "时间校准健康问题不暴露来源摘要或私人内容");
+  service.destroy();
 }
 
 async function checkHealthyScan() {

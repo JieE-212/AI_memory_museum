@@ -10,17 +10,18 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="时屿" />
     <title>时屿｜AI 私人记忆策展工具</title>
-    <link rel="manifest" href="/manifest.webmanifest?v=7.3.0" />
+    <link rel="manifest" href="/manifest.webmanifest?v=8.0.0" />
     <link rel="icon" href="/assets/time-isle-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/assets/time-isle-apple-touch.png" />
     <link rel="stylesheet" href="/styles.css?v=7.2.0-touch5" />
-    <link rel="stylesheet" href="/pwa.css?v=7.3.0" />
+    <link rel="stylesheet" href="/pwa.css?v=8.0.0" />
     <link rel="stylesheet" href="/archaeology.css" />
     <link rel="stylesheet" href="/exhibitions.css?v=7.2.0" />
-    <link rel="stylesheet" href="/capsules.css?v=7.3.0" />
-    <link rel="stylesheet" href="/share-privacy.css?v=7.3.0" />
-    <link rel="stylesheet" href="/revisits.css?v=7.3.0" />
-    <link rel="stylesheet" href="/revisit-intents.css?v=7.3.0" />
+    <link rel="stylesheet" href="/capsules.css?v=8.0.0" />
+    <link rel="stylesheet" href="/share-privacy.css?v=8.0.0" />
+    <link rel="stylesheet" href="/revisits.css?v=8.0.0" />
+    <link rel="stylesheet" href="/revisit-intents.css?v=8.0.0" />
+    <link rel="stylesheet" href="/time-calibrations.css?v=8.0.0" />
     <link rel="stylesheet" href="/revisions.css?v=7.2.0-a11y2" />
     <link rel="stylesheet" href="/clues.css?v=7.2.0" />
     <link rel="stylesheet" href="/collection-health.css?v=7.2.0-a11y2" />
@@ -516,13 +517,59 @@
       <form method="dialog" class="dialog-header">
         <div>
           <p class="eyebrow">Memory archaeology</p>
-          <h2 id="puzzleTitle">时光拼图</h2>
+          <h2 id="puzzleTitle" tabindex="-1">时光拼图</h2>
         </div>
         <button class="icon-button" id="puzzleCloseButton" value="close" aria-label="关闭时光拼图">×</button>
       </form>
       <div class="dialog-body puzzle-dialog-body">
         <p class="puzzle-status" id="puzzleStatus" aria-live="polite"></p>
         <div id="puzzleBody"></div>
+        <details class="time-calibration-panel" id="timeCalibrationDetails" hidden>
+          <summary id="timeCalibrationSummary">
+            <span class="time-calibration-summary-copy">
+              <strong>校准这段时间</strong>
+              <small>两段记录的时间线索需要核对</small>
+            </span>
+            <span class="time-calibration-badge" id="timeCalibrationBadge">待核对</span>
+          </summary>
+          <div class="time-calibration-body" id="timeCalibrationBody">
+            <p class="time-calibration-intro" id="timeCalibrationIntro"></p>
+            <form id="timeCalibrationForm" novalidate>
+              <div id="timeCalibrationSources"></div>
+              <fieldset class="time-calibration-choices" id="timeCalibrationChoices">
+                <legend>你希望怎样保留这段时间？</legend>
+                <label class="time-calibration-choice">
+                  <input type="radio" name="timeCalibrationResolutionKind" value="day" />
+                  <span><strong>确认一个日期</strong><small>只在你已经核对来源时使用</small></span>
+                </label>
+                <label class="time-calibration-choice">
+                  <input type="radio" name="timeCalibrationResolutionKind" value="range" />
+                  <span><strong>确认一个时间范围</strong><small>保留范围，不制造更精确的日期</small></span>
+                </label>
+                <label class="time-calibration-choice">
+                  <input type="radio" name="timeCalibrationResolutionKind" value="alternatives" />
+                  <span><strong>保留多种时间记录</strong><small>目前不判断哪一种更准确</small></span>
+                </label>
+                <label class="time-calibration-choice">
+                  <input type="radio" name="timeCalibrationResolutionKind" value="uncertain" />
+                  <span><strong>仍不确定</strong><small>以后可以重新核对</small></span>
+                </label>
+              </fieldset>
+              <div class="time-calibration-interval" id="timeCalibrationInterval" hidden>
+                <label>开始日期<input id="timeCalibrationIntervalStart" type="date" /></label>
+                <label>结束日期<input id="timeCalibrationIntervalEnd" type="date" /></label>
+              </div>
+              <label class="time-calibration-note" for="timeCalibrationNote">核对备注（可选）</label>
+              <textarea id="timeCalibrationNote" maxlength="500" rows="3" placeholder="只记录你愿意保留的核对说明。"></textarea>
+              <p class="time-calibration-status" id="timeCalibrationStatus" role="status" aria-live="polite" aria-atomic="true" tabindex="-1"></p>
+              <div class="time-calibration-actions">
+                <button type="submit" class="button primary" id="timeCalibrationSaveButton">保存时间判断</button>
+                <button type="button" class="button text-button" id="timeCalibrationDeleteButton" hidden>恢复未校准状态</button>
+                <button type="button" class="button secondary" id="timeCalibrationRefreshButton" hidden>重新读取来源</button>
+              </div>
+            </form>
+          </div>
+        </details>
         <section class="puzzle-question" id="puzzleQuestionSection" aria-labelledby="puzzleQuestionText" hidden>
           <p class="eyebrow">补一块拼图</p>
           <h3 id="puzzleQuestionText">有一处线索值得补充</h3>
@@ -720,7 +767,7 @@
 
     <footer class="site-footer">
       <span>时屿 · 让记忆可整理，也让 AI 的依据可回看。</span>
-      <span id="footerVersion">v7.3.0</span>
+      <span id="footerVersion">v8.0.0</span>
     </footer>
 
     <script src="/assets/portability.js"></script>
@@ -732,15 +779,16 @@
     <script src="/assets/media-ocr.js"></script>
     <script src="/assets/media-lab.js"></script>
     <script src="/assets/exhibitions.js?v=7.2.0"></script>
-    <script src="/assets/capsule-crypto.js?v=7.3.0"></script>
-    <script src="/assets/share-privacy.js?v=7.3.0"></script>
-    <script src="/assets/capsules.js?v=7.3.0"></script>
-    <script src="/assets/revisit-intents.js?v=7.3.0"></script>
-    <script src="/assets/revisits.js?v=7.3.0"></script>
+    <script src="/assets/capsule-crypto.js?v=8.0.0"></script>
+    <script src="/assets/share-privacy.js?v=8.0.0"></script>
+    <script src="/assets/capsules.js?v=8.0.0"></script>
+    <script src="/assets/revisit-intents.js?v=8.0.0"></script>
+    <script src="/assets/revisits.js?v=8.0.0"></script>
+    <script src="/assets/time-calibrations.js?v=8.0.0"></script>
     <script src="/assets/revisions.js?v=7.2.0-a11y2"></script>
     <script src="/assets/clues.js?v=7.2.0"></script>
     <script src="/assets/collection-health.js?v=7.2.0-a11y2"></script>
-    <script src="/assets/pwa.js?v=7.3.0"></script>
-    <script src="/assets/app.js?v=7.3.0"></script>
+    <script src="/assets/pwa.js?v=8.0.0"></script>
+    <script src="/assets/app.js?v=8.0.0"></script>
   </body>
 </html>

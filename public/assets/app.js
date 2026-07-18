@@ -13,6 +13,7 @@ const state = {
   searchError: "",
   searchRequest: 0,
   insights: null,
+  timeCalibrationTimeline: null,
   archaeologyOverview: {},
   route: null,
   routeFocusId: "",
@@ -124,7 +125,7 @@ let searchTimer = null;
 let toastTimer = null;
 let mediaController = null, voiceController = null;
 let mediaEvidenceController = null, portabilityController = null, mediaCompareControllers = [], mediaLabController = null;
-let exhibitionsController = null, capsulesController = null, revisitsController = null, cluesController = null, revisionsController = null, collectionHealthController = null;
+let exhibitionsController = null, capsulesController = null, revisitsController = null, cluesController = null, revisionsController = null, collectionHealthController = null, timeCalibrationController = null;
 
 bindEvents();
 initialize();
@@ -161,9 +162,10 @@ async function initialize() {
     cluesController = window.TimeIsleClues?.createEntityDialogController({ demo: demo.interviewDemo, onOpenMemory: openMemory, onDataChanged: reloadMemories }) || null;
     revisionsController = window.TimeIsleRevisions?.createController({ demo: demo.interviewDemo, onOpenMemory: openMemory, onRestored: async (memory) => { await reloadMemories(); await openMemory(memory.id); } }) || null;
     collectionHealthController = window.TimeIsleCollectionHealth?.createController({ demo: demo.interviewDemo }) || null;
+    initializeTimeCalibrationController(demo.interviewDemo);
     populateOptions();
     renderApp();
-    elements.footerVersion.textContent = `v${version.version || "7.3.0"}`;
+    elements.footerVersion.textContent = `v${version.version || "8.0.0"}`;
     setRuntimeStatus(demo.interviewDemo ? "Demo 已连接" : "本地馆藏已连接", "ready");
     const initialView = normalizeView(location.hash.replace("#", ""));
     switchView(initialView, { updateHash: false });
@@ -186,6 +188,24 @@ function initializeVoiceController(policy, demo) {
   }
 }
 
+function initializeTimeCalibrationController(demo) {
+  try {
+    if (typeof window.TimeIsleTimeCalibrations?.createController !== "function") throw new Error("时间校准模块未加载");
+    timeCalibrationController = window.TimeIsleTimeCalibrations.createController({
+      demo,
+      onBusyChange: (busy) => setPuzzleBusy(busy, { fromTimeCalibration: true }),
+      onChanged: async () => {
+        state.insights = null;
+        const timelineActive = elements.insightTabs.some((button) => button.dataset.insightTab === "timeline" && button.classList.contains("is-active"));
+        if (timelineActive) await loadInsights(true);
+      }
+    });
+  } catch (error) {
+    console.error("时间校准模块初始化失败：", error);
+    timeCalibrationController = null;
+  }
+}
+
 function bindEvents() {
   elements.navButtons.forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
   document.querySelectorAll("[data-go-view]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.goView, { focusHeading: true })));
@@ -202,7 +222,7 @@ function bindEvents() {
   elements.retrySearchButton.addEventListener("click", performSearch);
   elements.memoryGrid.addEventListener("click", handleMemoryLinkClick);
   elements.citationList.addEventListener("click", handleMemoryLinkClick);
-  elements.timelinePanel.addEventListener("click", handleMemoryLinkClick);
+  elements.timelinePanel.addEventListener("click", handleTimelineClick);
   elements.themesPanel.addEventListener("click", handleMemoryLinkClick);
   elements.routesPanel.addEventListener("click", handleRouteClick);
   elements.reportPanel.addEventListener("click", handleMemoryLinkClick);
@@ -253,6 +273,7 @@ function bindEvents() {
   elements.puzzleDialog.addEventListener("close", () => {
     state.puzzleSession += 1;
     state.puzzleMutation = false;
+    timeCalibrationController?.reset();
     destroyMediaCompare();
   });
 }
@@ -695,7 +716,12 @@ async function loadInsights(force = false) {
   elements.refreshInsightsButton.disabled = true;
   elements.insightSummary.textContent = "正在整理时间、主题和重点展品…";
   try {
-    state.insights = await requestJson("/api/insights");
+    const [insights, timeCalibrationTimeline] = await Promise.all([
+      requestJson("/api/insights"),
+      requestJson("/api/timeline?limit=100&order=asc").catch(() => ({ count: 0, entries: [] }))
+    ]);
+    state.insights = insights;
+    state.timeCalibrationTimeline = timeCalibrationTimeline;
     renderInsights();
   } catch (error) {
     elements.insightSummary.textContent = `回顾生成失败：${error.message}`;
@@ -711,13 +737,14 @@ function renderInsights() {
     ? `<strong>${escapeHtml(String(insights.overview.total))} 件展品</strong> · ${escapeHtml(String(insights.overview.timelinePeriods))} 个时间段 · ${escapeHtml(String(insights.overview.themes))} 个主题 · ${escapeHtml(String(insights.overview.favorites))} 件重点`
     : "馆里还没有展品，先记录几段记忆再回来回顾。";
 
-  elements.timelinePanel.innerHTML = insights.timeline.length
+  const calibrationLedger = window.TimeIsleTimeCalibrations?.renderTimelineLedger(state.timeCalibrationTimeline?.entries || [], escapeHtml, formatDate) || "";
+  elements.timelinePanel.innerHTML = calibrationLedger + (insights.timeline.length
     ? `<div class="timeline-list">${insights.timeline.map((item) => `
         <article class="timeline-item">
           <div class="timeline-item-header"><strong>${escapeHtml(item.label)}</strong><span>${escapeHtml(String(item.count))} 件</span></div>
           <div class="memory-links">${renderMemoryLinks(item.memories)}</div>
         </article>`).join("")}</div>`
-    : '<p class="muted">展品补充日期后，会在这里形成时间线。</p>';
+    : '<p class="muted">展品补充日期后，会在这里形成时间线。</p>');
 
   elements.themesPanel.innerHTML = insights.themes.length
     ? `<div class="theme-list">${insights.themes.map((theme) => `
@@ -734,6 +761,15 @@ function renderInsights() {
       <p>${escapeHtml(insights.report.summary)}</p>
       ${(insights.report.highlights || []).map((memory) => `<div class="report-highlight"><strong>${escapeHtml(memory.title)}</strong><p>${escapeHtml(memory.excerpt)}</p><div class="memory-links"><button type="button" data-open-memory="${escapeHtml(memory.id)}">查看展品</button></div></div>`).join("")}
     </div>`;
+}
+
+function handleTimelineClick(event) {
+  const puzzleLink = event.target.closest("[data-puzzle-left][data-puzzle-right]");
+  if (puzzleLink) {
+    void openPuzzle(puzzleLink.dataset.puzzleLeft, puzzleLink.dataset.puzzleRight);
+    return;
+  }
+  handleMemoryLinkClick(event);
 }
 
 function renderMemoryLinks(memories = []) {
@@ -849,6 +885,7 @@ async function openPuzzle(leftId, rightId) {
   state.puzzleMutation = false;
   resetPuzzleDialog();
   if (!elements.puzzleDialog.open) elements.puzzleDialog.showModal();
+  requestAnimationFrame(() => document.querySelector("#puzzleTitle")?.focus({ preventScroll: true }));
   try {
     const query = new URLSearchParams({ memoryId: leftId, relatedId: rightId });
     const payload = await requestJson(`/api/archaeology/puzzle?${query}`);
@@ -891,8 +928,15 @@ function renderPuzzle() {
     ? `已保存为“${payload.event?.title || "时光拼图"}”，原文仍分别保留；需要时可以解除分组。`
     : "确认会保存版本分组，但不会合并或改写原文。";
 
+  const calibrationTarget = timeCalibrationController?.syncPuzzle({
+    payload,
+    demo: Boolean(state.demo?.interviewDemo),
+    sessionKey: state.puzzleSession
+  });
+
   const questionAlreadyHandled = (payload.savedQuestions || []).some((item) => item.question === payload.question?.question);
-  elements.puzzleQuestionSection.hidden = !payload.question?.available || questionAlreadyHandled;
+  const dateQuestionHandledByCalibration = calibrationTarget?.handlesDateQuestion && payload.question?.basedOn?.field === "date";
+  elements.puzzleQuestionSection.hidden = !payload.question?.available || questionAlreadyHandled || dateQuestionHandledByCalibration;
   if (!elements.puzzleQuestionSection.hidden) {
     elements.puzzleQuestionText.textContent = payload.question.question;
     elements.puzzleAnswer.value = "";
@@ -1007,7 +1051,7 @@ async function removePuzzleEvent() {
   const eventId = state.puzzle?.event?.id;
   const pair = state.puzzle?.puzzle?.pair;
   if (!eventId || !pair || state.puzzleMutation) return;
-  if (!window.confirm("解除这组时光拼图吗？两段原文会继续保留，已保存的字段证据会被移除。")) return;
+  if (!window.confirm("解除这组时光拼图吗？两段原文会继续保留；已保存的字段证据与这组时间校准会被移除。")) return;
   const session = state.puzzleSession;
   const activePair = puzzlePairKey(pair);
   setPuzzleBusy(true);
@@ -1018,6 +1062,7 @@ async function removePuzzleEvent() {
     state.archaeologyOverview = indexArchaeologyOverview(result.overview);
     state.puzzle.event = null;
     state.puzzle.decision = null;
+    timeCalibrationController?.reset();
     renderCollection();
     renderPuzzle();
     await loadRoutes(state.routeFocusId, true);
@@ -1033,13 +1078,14 @@ async function removePuzzleEvent() {
   }
 }
 
-function setPuzzleBusy(busy) {
+function setPuzzleBusy(busy, options = {}) {
   state.puzzleMutation = busy;
   elements.puzzleSaveAnswerButton.disabled = busy || !elements.puzzleAnswer.value.trim();
   elements.puzzleUnknownButton.disabled = busy;
   elements.puzzleSkipButton.disabled = busy;
   elements.puzzleConfirmButton.disabled = busy || Boolean(state.demo?.interviewDemo && state.puzzle?.event);
   elements.puzzleCloseButton.disabled = busy;
+  if (!options.fromTimeCalibration) timeCalibrationController?.setHostBusy?.(busy);
 }
 
 function updatePuzzleAnswerAction() {
@@ -1048,6 +1094,7 @@ function updatePuzzleAnswerAction() {
 
 function resetPuzzleDialog() {
   destroyMediaCompare();
+  timeCalibrationController?.reset();
   elements.puzzleBody.innerHTML = "";
   elements.puzzleStatus.textContent = "正在逐条核对原文证据…";
   elements.puzzleStatus.classList.remove("is-success", "is-error");
@@ -1249,6 +1296,7 @@ async function reloadMemories() {
   state.searchResponse = null;
   state.searchError = "";
   state.insights = null;
+  state.timeCalibrationTimeline = null;
   state.route = null;
   state.routeFocusId = "";
   state.routeLoadedKey = null;

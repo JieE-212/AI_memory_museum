@@ -9,6 +9,7 @@ const { initializeVoiceDatabase } = require("./lib/voice-database");
 const { initializeCapsuleDatabase } = require("./lib/capsule-database");
 const { initializeRevisionDatabase } = require("./lib/revision-database");
 const { initializeRevisitIntentDatabase } = require("./lib/revisit-intent-database");
+const { initializeTimeCalibrationDatabase } = require("./lib/time-calibration-database");
 const { createDatabaseHealthReader } = require("./lib/database-health");
 
 function createMemoryStore({ dbPath, halls, schemaVersion }) {
@@ -279,7 +280,20 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
         now: () => new Date().toISOString()
       })
     : null;
-  const databaseHealth = createDatabaseHealthReader({ db, schemaVersion });
+  const timeCalibrationDatabase = Number(schemaVersion) >= 12
+    ? initializeTimeCalibrationDatabase({
+        db,
+        withTransaction,
+        schemaVersion,
+        now: () => new Date().toISOString(),
+        createId
+      })
+    : null;
+  const databaseHealth = createDatabaseHealthReader({
+    db,
+    schemaVersion,
+    getTimeCalibrationHealthSnapshot: timeCalibrationDatabase?.getTimeCalibrationStats
+  });
 
   const upsertHall = db.prepare(`
     INSERT INTO halls (id, name, description) VALUES (?, ?, ?)
@@ -659,6 +673,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
       const clueCleanup = clueDatabase.clearClues();
       const revisitStatesDeleted = revisitDatabase.clearRevisitStates().revisitStatesDeleted;
       const revisitIntentsDeleted = revisitIntentDatabase?.clearRevisitIntents().revisitIntentsDeleted || 0;
+      const timeCalibrationsDeleted = timeCalibrationDatabase?.clearTimeCalibrations().calibrationsDeleted || 0;
       const exhibitionsDeleted = exhibitionDatabase.clearExhibitions().exhibitionsDeleted;
       db.exec(`
         DELETE FROM media_observations;
@@ -678,7 +693,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
         DELETE FROM agent_runs;
         DELETE FROM memories;
       `);
-      return { memoriesDeleted, agentRunsDeleted, memoryEventsDeleted, exhibitionsDeleted, revisitStatesDeleted, revisitIntentsDeleted, ...capsuleCleanup, ...clueCleanup, ...voiceCleanup };
+      return { memoriesDeleted, agentRunsDeleted, memoryEventsDeleted, exhibitionsDeleted, revisitStatesDeleted, revisitIntentsDeleted, timeCalibrationsDeleted, ...capsuleCleanup, ...clueCleanup, ...voiceCleanup };
     });
   }
 
@@ -1113,6 +1128,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     const clueStats = clueDatabase.getClueStats();
     const voiceStats = voiceDatabase.getVoiceStats();
     const capsuleStats = capsuleDatabase.getCapsuleStats();
+    const timeCalibrationStats = timeCalibrationDatabase?.getTimeCalibrationStats?.() || { calibrations: 0, needsReview: 0 };
     return {
       memories: memories.length,
       halls: new Set(memories.map((memory) => memory.hall)).size,
@@ -1124,6 +1140,8 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
       exhibitions: exhibitionDatabase.getExhibitionStats().exhibitions,
       revisitStates: revisitDatabase.getRevisitStats().states,
       revisitIntents: revisitIntentDatabase?.getRevisitIntentStats().intents || 0,
+      timeCalibrations: timeCalibrationStats.calibrations || 0,
+      timeCalibrationsNeedsReview: timeCalibrationStats.needsReview || 0,
       entities: clueStats.entities,
       entityAliases: clueStats.aliases,
       searchDocuments: clueStats.searchDocuments,
@@ -1623,6 +1641,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     ...capsuleDatabase,
     ...(revisionDatabase || {}),
     ...(revisitIntentDatabase || {}),
+    ...(timeCalibrationDatabase || {}),
     listRecentMemoryRevisions,
     searchClues,
     searchMemories,

@@ -200,7 +200,7 @@ async function runArchiveMediaFlow() {
         body: archive
       });
       const inspection = await inspectionResponse.json();
-      assert("备份验真只读返回可恢复边界并清理暂存", inspectionResponse.ok && inspection.inspection.restorable === true && inspection.inspection.schemaVersion === 11 && inspection.inspection.counts.memories === 2 && inspection.inspection.counts.mediaAssets === 2 && inspection.inspection.counts.voices === 1 && inspection.inspection.counts.revisions === 2 && inspection.inspection.counts.revisitIntents === 1 && (await getJson(`${baseUrl}/api/memories`)).payload.memories.length === 2 && !fs.existsSync(path.join(mediaRoot, ".inspect")));
+      assert("备份验真只读返回可恢复边界并清理暂存", inspectionResponse.ok && inspection.inspection.restorable === true && inspection.inspection.schemaVersion === 12 && inspection.inspection.counts.memories === 2 && inspection.inspection.counts.mediaAssets === 2 && inspection.inspection.counts.voices === 1 && inspection.inspection.counts.revisions === 2 && inspection.inspection.counts.revisitIntents === 1 && inspection.inspection.counts.timeCalibrations === 0 && (await getJson(`${baseUrl}/api/memories`)).payload.memories.length === 2 && !fs.existsSync(path.join(mediaRoot, ".inspect")));
       const archiveCollection = await getJson(`${baseUrl}/api/memories/export`);
       const archivedEntityCount = archiveCollection.payload.entities.entities.length;
       const archivedEntityId = archiveCollection.payload.entities.entities[0].id;
@@ -218,7 +218,7 @@ async function runArchiveMediaFlow() {
         body: archive
       });
       const restored = await restoreResponse.json();
-      assert("完整归档以单次事务恢复展品、图片、声音、胶囊、展览、回访、意愿、年轮与实体图", restoreResponse.ok && restored.imported === 2 && restored.media.assetsCreated === 2 && restored.media.links === 2 && restored.media.observations === 3 && restored.voices.assets === 1 && restored.voices.memoryLinks === 1 && restored.voices.transcripts === 1 && restored.capsules.capsules === 2 && restored.capsules.mediaLinks === 2 && restored.exhibitions.exhibitions === 1 && restored.revisits.states === 2 && restored.revisitIntents.intents === 1 && restored.revisions.revisions === 2 && restored.entities.entities === archivedEntityCount && restored.idMap.entities[archivedEntityId] && restored.idMap.revisitIntents[rightId] === restored.idMap.memories[rightId]);
+      assert("完整归档以单次事务恢复展品、图片、声音、胶囊、展览、回访、意愿、年轮、时间校准与实体图", restoreResponse.ok && restored.imported === 2 && restored.media.assetsCreated === 2 && restored.media.links === 2 && restored.media.observations === 3 && restored.voices.assets === 1 && restored.voices.memoryLinks === 1 && restored.voices.transcripts === 1 && restored.capsules.capsules === 2 && restored.capsules.mediaLinks === 2 && restored.exhibitions.exhibitions === 1 && restored.revisits.states === 2 && restored.revisitIntents.intents === 1 && restored.revisions.revisions === 2 && restored.timeCalibrations.calibrations === 0 && restored.entities.entities === archivedEntityCount && restored.idMap.entities[archivedEntityId] && restored.idMap.revisitIntents[rightId] === restored.idMap.memories[rightId]);
       const restoredLeftId = restored.idMap.memories[leftId];
       const restoredLeftAsset = restored.idMap.assets[leftAsset.id];
       const restoredVoiceId = restored.idMap.voices[sourceVoiceId];
@@ -296,7 +296,7 @@ async function runLocalFlow() {
     assert("离线页明确不缓存或展示私人馆藏", offlineResponse.ok && offlineText.includes("不会展示馆藏、照片、声音或导出内容") && !offlineText.includes("<script"));
 
     const health = await getJson(`${baseUrl}/api/health`);
-    assert("健康检查返回时屿 V7.3 与 schema 11", health.response.ok && health.response.headers.get("cache-control") === "no-store" && health.payload.ok && health.payload.version === "7.3.0" && health.payload.schemaVersion === 11 && health.payload.name === "时屿" && health.payload.englishName === "TIME ISLE" && health.payload.tagline === "AI 私人记忆策展工具" && health.payload.stats.capsules === 0);
+    assert("健康检查返回时屿 V8 与 schema 12", health.response.ok && health.response.headers.get("cache-control") === "no-store" && health.payload.ok && health.payload.version === "8.0.0" && health.payload.schemaVersion === 12 && health.payload.name === "时屿" && health.payload.englishName === "TIME ISLE" && health.payload.tagline === "AI 私人记忆策展工具" && health.payload.stats.capsules === 0 && health.payload.stats.timeCalibrations === 0);
     assert("本地模式使用 SQLite", health.payload.mode === "local" && health.payload.storage === "local-sqlite");
     assert("健康检查声明本地语义线索检索与短词回退", health.payload.search?.engine === "fts5-trigram" && health.payload.search?.shortQueryFallback === "parameterized-like" && health.payload.search?.externalModelRequired === false);
 
@@ -321,7 +321,7 @@ async function runLocalFlow() {
     assert("写请求以 403 拒绝恶意 Origin", maliciousOrigin === 403);
 
     const version = await getJson(`${baseUrl}/api/version`);
-    assert("版本接口描述 V7.3 核心产品流程", version.response.ok && version.payload.version === "7.3.0" && version.payload.productFlow.join(",") === "记录,AI 整理,照片与声音归档,语义线索检索与讲解,主题策展,记忆回访,时光胶囊与加密分享,记忆考古,历史恢复,安全导出" && version.payload.v7.offlineSharing.includes("AES-256-GCM") && version.payload.v7.pwa.includes("不缓存私人馆藏") && version.payload.v72.concurrency.includes("If-Match") && version.payload.v73.sharePrivacy.includes("浏览器内") && version.payload.v73.revisitIntent.includes("明确选择"));
+    assert("版本接口描述 V8 核心产品流程", version.response.ok && version.payload.version === "8.0.0" && version.payload.productFlow.join(",") === "记录,AI 整理,照片与声音归档,语义线索检索与讲解,主题策展,记忆回访,时光胶囊与加密分享,记忆考古,历史恢复,安全导出" && version.payload.v7.offlineSharing.includes("AES-256-GCM") && version.payload.v7.pwa.includes("不缓存私人馆藏") && version.payload.v72.concurrency.includes("If-Match") && version.payload.v73.sharePrivacy.includes("浏览器内") && version.payload.v73.revisitIntent.includes("明确选择") && version.payload.v8.uncertainTimeline.includes("不会回写展品日期") && version.payload.v8.provenanceReview.includes("待复核"));
 
     const demo = await getJson(`${baseUrl}/api/demo/status`);
     assert("本地模式未伪装成公开 Demo", demo.response.ok && demo.payload.interviewDemo === false);
@@ -608,10 +608,39 @@ async function runLocalFlow() {
     const reconfirmedEvent = await postJson(`${baseUrl}/api/archaeology/events`, { memoryIds: [memoryId, relatedId] });
     assert("解除后仍可由用户重新确认版本关系", reconfirmedEvent.response.status === 201 && reconfirmedEvent.payload.event.versionCount === 2);
 
+    const calibrationUrl = `${baseUrl}/api/time-calibrations/events/${encodeURIComponent(reconfirmedEvent.payload.event.id)}`;
+    const calibrationWorkspace = await getJson(calibrationUrl);
+    const calibrationSource = calibrationWorkspace.payload.candidates.find((candidate) => candidate.sourceType === "memory-current" && candidate.memoryId === memoryId);
+    assert("时间校准台只返回受控来源摘要而不返回整段原文或 GPS", calibrationWorkspace.response.ok && calibrationWorkspace.payload.target.memberCount === 2 && calibrationSource?.sourceKey && !/(?:rawContent|raw_content|gps|latitude|longitude)/iu.test(JSON.stringify(calibrationWorkspace.payload)));
+    const calibrationSaveResponse = await fetch(calibrationUrl, {
+      method: "PUT",
+      headers: writeHeaders(calibrationUrl, {
+        "Content-Type": "application/json",
+        "If-Match": calibrationWorkspace.response.headers.get("etag")
+      }),
+      body: JSON.stringify({
+        resolutionKind: "day",
+        intervalStart: calibrationSource.intervalStart,
+        intervalEnd: calibrationSource.intervalEnd,
+        selectedSourceKeys: [calibrationSource.sourceKey],
+        sourceSetSha256: calibrationWorkspace.payload.sourceSetSha256,
+        note: "只采用已核对的第一段记录日期。",
+        confirm: true
+      })
+    });
+    const calibrationSaved = await calibrationSaveResponse.json();
+    const calibratedMemories = await Promise.all([getJson(`${baseUrl}/api/memories/${memoryId}`), getJson(`${baseUrl}/api/memories/${relatedId}`)]);
+    assert("用户确认后保存时间线展示判断且不改写两段展品日期", calibrationSaveResponse.status === 201 && calibrationSaved.calibration.resolutionKind === "day" && calibratedMemories[0].payload.memory.date === "2025-05-20" && calibratedMemories[1].payload.memory.date === "2025-05-20");
+    const calibratedTimeline = await getJson(`${baseUrl}/api/timeline?limit=20&order=asc`);
+    const calibratedTimelineEntry = calibratedTimeline.payload.entries.find((entry) => entry.target.id === reconfirmedEvent.payload.event.id);
+    assert("不确定时间线返回可回看拼图的最小成员边界", calibratedTimeline.response.ok && calibratedTimelineEntry.target.memberIds.includes(memoryId) && calibratedTimelineEntry.target.memberIds.includes(relatedId) && calibratedTimelineEntry.target.memberIds.length === 2);
+    assert("不确定时间线摘要物理排除来源键、摘要、备注、内部校准 ID 与精确时间", Object.keys(calibratedTimelineEntry).sort().join(",") === "calibration,needsReview,target" && Object.keys(calibratedTimelineEntry.calibration).sort().join(",") === "intervalEnd,intervalStart,resolutionKind" && !/(?:selectedSource|sourceSet|note|createdAt|updatedAt|time-calibration-)/u.test(JSON.stringify(calibratedTimelineEntry)));
+
     const privacy = await getJson(`${baseUrl}/api/privacy`);
     assert("隐私接口说明本地数据位置", privacy.response.ok && privacy.payload.mode === "local-first" && privacy.payload.dataLocations.length >= 3);
     assert("隐私接口说明实体同名不自动认定且变更需确认", privacy.payload.dataLocations.some((item) => item.name.includes("实体线索") && item.location.includes("同名默认只是线索")) && privacy.payload.controls.some((item) => item.includes("先预览")));
     assert("隐私接口说明胶囊分表与口令零上传", privacy.payload.dataLocations.some((item) => item.name.includes("时光胶囊") && item.location.includes("不发送给服务端") && item.location.includes("不写入导出文件")));
+    assert("隐私接口说明时间校准不回写日期且来源变化待复核", privacy.payload.dataLocations.some((item) => item.name.includes("时间线") && item.location.includes("不会回写展品日期")) && privacy.payload.controls.some((item) => item.includes("来源集合变化") && item.includes("待复核")));
 
     const fullExport = await getJson(`${baseUrl}/api/memories/export`);
     assert("馆藏备份保留品牌和原文", fullExport.response.ok && fullExport.payload.product === "时屿" && fullExport.payload.productEnglish === "TIME ISLE" && fullExport.payload.memories.some((memory) => memory.rawContent === rawContent));
@@ -619,7 +648,7 @@ async function runLocalFlow() {
     assert("馆藏备份包含已确认主题展览", fullExport.payload.exhibitions.exhibitions.some((item) => item.id === exhibitionId));
     assert("馆藏备份包含回访与当日隐藏状态", fullExport.payload.revisits.mode === "full" && fullExport.payload.revisits.states.length === 2 && fullExport.payload.revisits.states.some((state) => state.memoryId === memoryId && state.viewCount === 1) && fullExport.payload.revisits.states.some((state) => state.memoryId === relatedId && state.dismissedLocalDate === "2026-05-20"));
     assert("馆藏完整备份包含非空 later 回访意愿", fullExport.payload.revisitIntents.mode === "full" && fullExport.payload.revisitIntents.schemaVersion === 11 && fullExport.payload.revisitIntents.intents.length === 1 && fullExport.payload.revisitIntents.intents[0].memoryId === relatedId && fullExport.payload.revisitIntents.intents[0].intent === "later" && fullExport.payload.revisitIntents.intents[0].notBeforeLocalDate === "2027-05-20" && fullExport.payload.revisitIntents.intents[0].notBeforeTimezone === "Asia/Shanghai");
-    assert("schema 11 馆藏备份包含实体、声音、胶囊、修订与回访意愿边界", fullExport.payload.schemaVersion === 11 && fullExport.payload.entities.mode === "full" && fullExport.payload.entities.entities.some((entity) => entity.aliases.some((alias) => alias.alias === "老友")) && fullExport.payload.voices.mode === "full" && fullExport.payload.capsules.mode === "full" && fullExport.payload.revisions.mode === "full" && fullExport.payload.revisitIntents.mode === "full");
+    assert("schema 12 馆藏备份包含实体、声音、胶囊、修订、回访意愿与时间校准边界", fullExport.payload.schemaVersion === 12 && fullExport.payload.entities.mode === "full" && fullExport.payload.entities.entities.some((entity) => entity.aliases.some((alias) => alias.alias === "老友")) && fullExport.payload.voices.mode === "full" && fullExport.payload.capsules.mode === "full" && fullExport.payload.revisions.mode === "full" && fullExport.payload.revisitIntents.mode === "full" && fullExport.payload.timeCalibrations.mode === "full" && fullExport.payload.timeCalibrations.calibrations.length === 1);
 
     await putJson(`${baseUrl}/api/memories/${memoryId}`, { rawContent: "这段原文已被重新整理，不再包含此前的日期、人物或地点线索。", expectedUpdatedAt: updated.payload.memory.updatedAt });
     const revalidatedExport = await getJson(`${baseUrl}/api/memories/export`);
@@ -627,11 +656,15 @@ async function runLocalFlow() {
     assert("编辑原文会重新校验并失效旧证据锚点", revisedClaims.length > 0 && revisedClaims.every((claim) => claim.evidenceValid === false && claim.status === "source_invalidated"));
     const revisedExhibition = revalidatedExport.payload.exhibitions.exhibitions.find((item) => item.id === exhibitionId);
     assert("编辑原文会让相关主题展览回到待复核草稿", revisedExhibition.requiresConfirmation === true && revisedExhibition.status === "draft" && revisedExhibition.sections.flatMap((section) => section.items).flatMap((item) => item.citations).some((citation) => citation.evidenceValid === false));
+    const staleCalibration = await getJson(calibrationUrl);
+    assert("来源变化只让旧时间判断进入待复核而不静默改写或删除", staleCalibration.response.ok && staleCalibration.payload.needsReview === true && staleCalibration.payload.calibration.resolutionKind === "day" && staleCalibration.payload.calibration.note.includes("第一段记录"));
 
     const redactedExport = await getJson(`${baseUrl}/api/memories/export?mode=redacted`);
     const redacted = redactedExport.payload.memories.find((memory) => memory.id === memoryId);
     assert("脱敏备份隐藏原文和地点", redactedExport.response.ok && redacted.rawContent.includes("已隐藏") && redacted.location.includes("已隐藏"));
     assert("脱敏备份物理排除主题展览叙事和引用", redactedExport.payload.exhibitions.mode === "redacted-summary" && !redactedExport.payload.exhibitions.exhibitions);
+    const redactedTimeCalibrations = JSON.stringify(redactedExport.payload.timeCalibrations);
+    assert("脱敏时间校准只保留固定计数且物理排除日期、来源、备注、ID 与哈希", redactedExport.payload.timeCalibrations.mode === "redacted-summary" && redactedExport.payload.timeCalibrations.calibrationCount === 1 && Object.keys(redactedExport.payload.timeCalibrations).sort().join(",") === "alternativesCount,calibrationCount,mode,note,uncertainCount" && !/(?:2025|source|memory|event|第一段|sha256)/iu.test(redactedTimeCalibrations));
     const redactedRevisits = JSON.stringify(redactedExport.payload.revisits);
     assert("脱敏备份只保留回访汇总且移除展品 ID 与精确时间", redactedExport.payload.revisits.mode === "redacted-summary" && redactedExport.payload.revisits.stateCount === 2 && !redactedExport.payload.revisits.states && !redactedRevisits.includes(memoryId) && !redactedRevisits.includes("lastViewedAt"));
     const redactedRevisitIntents = JSON.stringify(redactedExport.payload.revisitIntents);
@@ -733,7 +766,7 @@ async function runLocalFlow() {
     assert("清空馆藏不会残留可见回访候选", revisitsAfterPurge.response.ok && revisitsAfterPurge.payload.candidateCount === 0 && revisitsAfterPurge.payload.revisits.length === 0);
 
     const restored = await postJson(`${baseUrl}/api/memories/import`, revalidatedExport.payload);
-    assert("馆藏备份可恢复记忆考古、主题展览、回访、意愿、年轮与实体图", restored.response.ok && restored.payload.archaeology.events === 1 && restored.payload.archaeology.claims > 0 && restored.payload.archaeology.questions === 1 && restored.payload.exhibitions.exhibitions === 1 && restored.payload.revisits.states === 2 && restored.payload.revisitIntents.intents === 1 && restored.payload.revisions.revisions === revalidatedExport.payload.revisions.revisions.length && restored.payload.entities.entities > 0 && restored.payload.entities.aliases > 0);
+    assert("馆藏备份可恢复记忆考古、主题展览、回访、意愿、年轮、时间校准与实体图", restored.response.ok && restored.payload.archaeology.events === 1 && restored.payload.archaeology.claims > 0 && restored.payload.archaeology.questions === 1 && restored.payload.exhibitions.exhibitions === 1 && restored.payload.revisits.states === 2 && restored.payload.revisitIntents.intents === 1 && restored.payload.revisions.revisions === revalidatedExport.payload.revisions.revisions.length && restored.payload.timeCalibrations.calibrations === 1 && restored.payload.entities.entities > 0 && restored.payload.entities.aliases > 0);
     const restoredOverview = await getJson(`${baseUrl}/api/archaeology/overview`);
     assert("恢复后两个版本仍属于同一时光拼图", restoredOverview.payload.overview.filter((item) => [memoryId, relatedId].includes(item.memoryId)).length === 2 && restoredOverview.payload.overview.filter((item) => [memoryId, relatedId].includes(item.memoryId)).every((item) => item.versionCount === 2));
     const restoredExhibitionId = restored.payload.exhibitions.idMap[exhibitionId];
@@ -743,12 +776,15 @@ async function runLocalFlow() {
     assert("JSON 恢复会重写回访展品 ID 并保留同日去重状态", restored.payload.revisits.idMap[memoryId] === memoryId && restored.payload.revisits.idMap[relatedId] === relatedId && revisitsAfterJsonRestore.response.ok && revisitsAfterJsonRestore.payload.candidateCount === 0);
     const intentAfterJsonRestore = await getJson(`${baseUrl}/api/revisits/${restored.payload.revisitIntents.idMap[relatedId]}/intent`);
     assert("JSON 恢复会重写回访意愿 ID 并保留 later 日期时区", restored.payload.revisitIntents.idMap[relatedId] === relatedId && intentAfterJsonRestore.response.ok && intentAfterJsonRestore.payload.intent.choice === "later" && intentAfterJsonRestore.payload.intent.notBeforeLocalDate === "2027-05-20" && intentAfterJsonRestore.payload.intent.timezone === "Asia/Shanghai");
+    const restoredCalibrationEventId = restored.payload.archaeology.idMap.events[reconfirmedEvent.payload.event.id];
+    const calibrationAfterJsonRestore = await getJson(`${baseUrl}/api/time-calibrations/events/${encodeURIComponent(restoredCalibrationEventId)}`);
+    assert("JSON 恢复保留来源已变化的旧时间判断并明确待复核", restoredCalibrationEventId && calibrationAfterJsonRestore.response.ok && calibrationAfterJsonRestore.payload.calibration.resolutionKind === "day" && calibrationAfterJsonRestore.payload.needsReview === true);
     const deletedExhibition = await deleteJson(`${baseUrl}/api/exhibitions/${restoredExhibitionId}`);
     assert("主题展览可独立删除且不删除来源展品", deletedExhibition.response.ok && (await getJson(`${baseUrl}/api/memories/${memoryId}`)).response.ok);
 
     const beforeRejectedImport = await getJson(`${baseUrl}/api/memories`);
     const futureSchema = await postJson(`${baseUrl}/api/memories/import`, {
-      schemaVersion: 12,
+      schemaVersion: 13,
       mode: "full",
       memories: [{ ...created.payload.memory, id: "future-schema-memory" }],
       entities: { mode: "full", schemaVersion: 7, entities: [] }
@@ -783,7 +819,9 @@ async function runLocalFlow() {
       ...revalidatedExport.payload,
       revisitIntents: null
     });
-    assert("JSON 导入拒绝未来 schema、缺失必需 section 及 schema 11 的 null 回访意愿", futureSchema.response.status === 400 && missingEntities.response.status === 400 && missingVoices.response.status === 400 && missingCapsules.response.status === 400 && missingRevisions.response.status === 400 && nullRevisitIntents.response.status === 400);
+    const { timeCalibrations: omittedTimeCalibrations, ...missingTimeCalibrationBody } = revalidatedExport.payload;
+    const missingTimeCalibrations = await postJson(`${baseUrl}/api/memories/import`, missingTimeCalibrationBody);
+    assert("JSON 导入拒绝未来 schema、缺失必需 section、null 回访意愿与缺失时间校准", futureSchema.response.status === 400 && missingEntities.response.status === 400 && missingVoices.response.status === 400 && missingCapsules.response.status === 400 && missingRevisions.response.status === 400 && nullRevisitIntents.response.status === 400 && missingTimeCalibrations.response.status === 400 && omittedTimeCalibrations.mode === "full");
     const rejectedArchive = await postJson(`${baseUrl}/api/memories/import`, {
       memories: [{ ...created.payload.memory, id: "corrupt-archive-memory" }],
       archaeology: { mode: "full", events: [null], claims: [], pairDecisions: [], questions: [] }
@@ -1161,7 +1199,7 @@ async function runDemoSafetyFlow() {
       AI_BASE_URL: "http://127.0.0.1:1"
     }, async (baseUrl) => {
     const status = await getJson(`${baseUrl}/api/demo/status`);
-    assert("公开 Demo 自动注入四条示例与一场已发布展览", status.response.ok && status.payload.interviewDemo === true && status.payload.seededExamples === 4 && status.payload.seededExhibitions === 1);
+    assert("公开 Demo 自动注入四条示例、一场已发布展览与一项时间校准", status.response.ok && status.payload.interviewDemo === true && status.payload.seededExamples === 4 && status.payload.seededExhibitions === 1 && status.payload.seededTimeCalibrations === 1);
     assert("公开 Demo 使用临时存储并强制本地 Mock", status.payload.storage === "ephemeral-sqlite-on-tmp" && status.payload.destructiveActionsBlocked === true && status.payload.aiMode === "mock-fallback");
     const demoHome = await fetch(`${baseUrl}/`);
     assert("公开 Demo 通过权限策略禁用麦克风", demoHome.headers.get("permissions-policy")?.includes("microphone=()"));
@@ -1185,6 +1223,22 @@ async function runDemoSafetyFlow() {
         seededShareCandidates.response.ok &&
         seededShareCandidates.payload.exhibition.id === seededExhibition.id
     );
+
+    const demoTimeline = await getJson(`${baseUrl}/api/timeline?limit=20&order=asc`);
+    const demoCalibrationEntry = demoTimeline.payload.entries.find((entry) => entry.calibration?.resolutionKind === "alternatives");
+    const demoCalibrationUrl = `${baseUrl}/api/time-calibrations/events/${encodeURIComponent(demoCalibrationEntry.target.id)}`;
+    const demoCalibrationBefore = await getJson(demoCalibrationUrl);
+    const blockedCalibration = await putJson(demoCalibrationUrl, {
+      resolutionKind: "uncertain",
+      intervalStart: "",
+      intervalEnd: "",
+      selectedSourceKeys: [],
+      sourceSetSha256: demoCalibrationBefore.payload.sourceSetSha256,
+      note: "访客不应写入",
+      confirm: true
+    });
+    const demoCalibrationAfter = await getJson(demoCalibrationUrl);
+    assert("公开 Demo 展示预置多种日期记录但拒绝访客改写", demoTimeline.response.ok && demoCalibrationEntry.target.memberIds.length === 2 && demoCalibrationBefore.payload.calibration.resolutionKind === "alternatives" && blockedCalibration.response.status === 403 && demoCalibrationAfter.payload.calibration.updatedAt === demoCalibrationBefore.payload.calibration.updatedAt && demoCalibrationAfter.payload.calibration.resolutionKind === "alternatives");
 
     const demoPeople = await getJson(`${baseUrl}/api/entities?type=person&limit=20`);
     const [demoTargetPerson, demoSourcePerson] = demoPeople.payload.entities;
@@ -1463,10 +1517,17 @@ async function withServer(extraEnv, callback) {
     throw error;
   } finally {
     if (!child.killed) child.kill("SIGTERM");
-    await Promise.race([
-      new Promise((resolve) => child.once("exit", resolve)),
-      new Promise((resolve) => setTimeout(resolve, 1500))
+    const exited = await Promise.race([
+      new Promise((resolve) => child.once("exit", () => resolve(true))),
+      new Promise((resolve) => setTimeout(() => resolve(false), 1500))
     ]);
+    if (!exited && child.exitCode === null) {
+      child.kill("SIGKILL");
+      await Promise.race([
+        new Promise((resolve) => child.once("exit", resolve)),
+        new Promise((resolve) => setTimeout(resolve, 1500))
+      ]);
+    }
   }
 }
 
@@ -1747,9 +1808,9 @@ function listFiles(directory) {
 }
 
 function removeDatabase(dbPath) {
-  [dbPath, `${dbPath}-shm`, `${dbPath}-wal`].forEach((filePath) => {
+  [dbPath, `${dbPath}-journal`, `${dbPath}-shm`, `${dbPath}-wal`].forEach((filePath) => {
     try {
-      fs.rmSync(filePath, { force: true });
+      fs.rmSync(filePath, { force: true, maxRetries: 5, retryDelay: 100 });
     } catch {
       // Temporary cleanup failure does not affect the product result.
     }
@@ -1758,7 +1819,7 @@ function removeDatabase(dbPath) {
 
 function removeDirectory(directory) {
   try {
-    fs.rmSync(directory, { recursive: true, force: true });
+    fs.rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   } catch {
     // Temporary cleanup failure does not affect the product result.
   }

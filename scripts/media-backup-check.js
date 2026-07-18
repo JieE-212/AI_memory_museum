@@ -18,6 +18,10 @@ const {
 const { buildClueBackup } = require("../lib/clue-backup");
 const { REVISIT_INTENT_REDACTED_NOTE } = require("../lib/revisit-intent-database");
 const { MEDIA_ARCHIVE_LIMITS } = require("../lib/media-policy");
+const {
+  TIME_CALIBRATION_REDACTED_NOTE,
+  validateTimeCalibrationBackupPayload
+} = require("../lib/time-calibration-database");
 
 let assertions = 0;
 
@@ -361,7 +365,8 @@ async function checkFeatureSections(temporaryRoot, fixture, sourceCollection) {
       { name: "entities", path: ARCHIVE_PATHS.entities, sinceSchemaVersion: 7 },
       { name: "capsules", path: ARCHIVE_PATHS.capsules, sinceSchemaVersion: 9 },
       { name: "revisions", path: ARCHIVE_PATHS.revisions, sinceSchemaVersion: 10 },
-      { name: "revisit-intents", path: ARCHIVE_PATHS.revisitIntents, sinceSchemaVersion: 11 }
+      { name: "revisit-intents", path: ARCHIVE_PATHS.revisitIntents, sinceSchemaVersion: 11 },
+      { name: "time-calibrations", path: ARCHIVE_PATHS.timeCalibrations, sinceSchemaVersion: 12 }
     ],
     "功能 section 注册表应按 schema 顺序声明展览、回访、实体线索、时间胶囊、记忆年轮与回访意愿"
   );
@@ -928,6 +933,284 @@ async function checkFeatureSections(temporaryRoot, fixture, sourceCollection) {
     supportedSchemaVersion: 11
   });
   deepEqual(redactedIntentPrepared.revisitIntents, redactedRevisitIntents, "脱敏回访意愿摘要可安全回环");
+
+  const timeCalibrations = timeCalibrationBackupFixture();
+  const calibrationEventId = "event-calibration-source";
+  const schema12Archaeology = {
+    ...schema11Collection.archaeology,
+    events: [{
+      id: calibrationEventId,
+      members: [{ memoryId: "memory-one" }, { memoryId: "memory-two" }]
+    }]
+  };
+  const calibrationValidationCalls = [];
+  const validateTimeCalibrations = (backup, memoryIds, eventIds) => {
+    validateTimeCalibrationBackupPayload(backup, memoryIds, eventIds);
+    calibrationValidationCalls.push({ memoryIds: [...memoryIds], eventIds: [...eventIds] });
+    return true;
+  };
+  const schema12Store = {
+    ...voiceAwareStore,
+    validateTimeCalibrationBackup: validateTimeCalibrations
+  };
+  const schema12Collection = {
+    ...schema11Collection,
+    version: "8.0.0",
+    schemaVersion: 12,
+    archaeology: schema12Archaeology,
+    timeCalibrations
+  };
+
+  throwsCode(
+    "MEDIA_ARCHIVE_FEATURE_SCHEMA_INVALID",
+    () => buildMediaArchive({
+      collection: { ...schema11Collection, timeCalibrations },
+      store: schema12Store,
+      storage: fixture.storage,
+      voiceStorage: emptyVoiceStorage,
+      appVersion: "7.3.0",
+      schemaVersion: 11
+    }),
+    "schema 11 must reject a schema 12 time-calibration section"
+  );
+  throwsCode(
+    "MEDIA_ARCHIVE_REQUIRED_SECTION_MISSING",
+    () => buildMediaArchive({
+      collection: { ...schema11Collection, version: "8.0.0", schemaVersion: 12 },
+      store: schema12Store,
+      storage: fixture.storage,
+      voiceStorage: emptyVoiceStorage,
+      appVersion: "8.0.0",
+      schemaVersion: 12
+    }),
+    "schema 12 full archives must not silently omit time calibrations"
+  );
+  throwsCode(
+    "MEDIA_ARCHIVE_TIME_CALIBRATION_VALIDATOR_REQUIRED",
+    () => buildMediaArchive({
+      collection: schema12Collection,
+      store: voiceAwareStore,
+      storage: fixture.storage,
+      voiceStorage: emptyVoiceStorage,
+      appVersion: "8.0.0",
+      schemaVersion: 12
+    }),
+    "schema 12 writer must fail closed without the injected calibration validator"
+  );
+  throwsCode(
+    "MEDIA_ARCHIVE_COLLECTION_FIELDS_INVALID",
+    () => buildMediaArchive({
+      collection: {
+        ...schema12Collection,
+        timeCalibrationDrafts: [{ note: "private calibration draft canary" }]
+      },
+      store: schema12Store,
+      storage: fixture.storage,
+      voiceStorage: emptyVoiceStorage,
+      appVersion: "8.0.0",
+      schemaVersion: 12
+    }),
+    "schema 12 collection root must reject private calibration drafts"
+  );
+
+  const schema12Archive = buildMediaArchive({
+    collection: schema12Collection,
+    store: schema12Store,
+    storage: fixture.storage,
+    voiceStorage: emptyVoiceStorage,
+    appVersion: "8.0.0",
+    schemaVersion: 12
+  });
+  deepEqual(calibrationValidationCalls[0], {
+    memoryIds: ["memory-one", "memory-two"],
+    eventIds: [calibrationEventId]
+  }, "schema 12 writer validates calibrations against memory and archaeology event boundaries");
+  const schema12Entries = await readArchiveEntries(
+    schema12Archive,
+    path.join(temporaryRoot, "unpack-schema12-time-calibrations")
+  );
+  const schema12Manifest = parseJson(schema12Entries.get(ARCHIVE_PATHS.manifest));
+  deepEqual(
+    schema12Manifest.sections.find((section) => section.name === "time-calibrations"),
+    { name: "time-calibrations", path: "timeline/calibrations.json", count: 2, required: true, version: 1 },
+    "schema 12 full archive declares the required standalone calibration section"
+  );
+  deepEqual(
+    parseJson(schema12Entries.get(ARCHIVE_PATHS.timeCalibrations)),
+    timeCalibrations,
+    "standalone calibration JSON preserves the validated full contract"
+  );
+  check(
+    !Object.hasOwn(parseJson(schema12Entries.get(ARCHIVE_PATHS.collection)), "timeCalibrations"),
+    "calibrations must not be duplicated in collection.json"
+  );
+
+  const noCalibrationValidatorRoot = path.join(temporaryRoot, "reject-schema12-missing-calibration-validator");
+  await rejectsCode(
+    "MEDIA_ARCHIVE_TIME_CALIBRATION_VALIDATOR_REQUIRED",
+    () => prepareMediaArchive(schema12Archive, {
+      stagingRoot: noCalibrationValidatorRoot,
+      validateVoiceBackup: validateEmptyVoices,
+      supportedSchemaVersion: 12
+    }),
+    "prepare must fail closed before marking schema 12 calibrations as restorable without a validator"
+  );
+  equal(fs.existsSync(noCalibrationValidatorRoot), false, "missing calibration validator leaves no staging tombstone");
+
+  const schema12Prepared = await prepareMediaArchive(schema12Archive, {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-schema12-time-calibrations"),
+    validateVoiceBackup: validateEmptyVoices,
+    validateTimeCalibrationBackup: validateTimeCalibrations,
+    supportedSchemaVersion: 12
+  });
+  deepEqual(schema12Prepared.timeCalibrations, timeCalibrations, "prepare exposes the verified calibration backup");
+  deepEqual(schema12Prepared.collection.timeCalibrations, timeCalibrations, "prepare reattaches calibrations to collection only after validation");
+  deepEqual(calibrationValidationCalls.at(-1), {
+    memoryIds: ["memory-one", "memory-two"],
+    eventIds: [calibrationEventId]
+  }, "prepare validates the same frozen reference boundary as the writer");
+
+  await rejectsCode(
+    "MEDIA_ARCHIVE_SCHEMA_UNSUPPORTED",
+    () => prepareMediaArchive(schema12Archive, {
+      stagingRoot: path.join(temporaryRoot, "reject-schema12-on-schema11-reader"),
+      validateVoiceBackup: validateEmptyVoices,
+      validateTimeCalibrationBackup: validateTimeCalibrations,
+      supportedSchemaVersion: 11
+    }),
+    "schema 11 readers must reject schema 12 rather than partially importing it"
+  );
+
+  const missingTimeCalibration = cloneEntries(schema12Entries);
+  const missingCalibrationManifest = parseJson(missingTimeCalibration.get(ARCHIVE_PATHS.manifest));
+  missingCalibrationManifest.sections = missingCalibrationManifest.sections.filter((section) => section.name !== "time-calibrations");
+  missingCalibrationManifest.entries = missingCalibrationManifest.entries.filter((entry) => entry.path !== ARCHIVE_PATHS.timeCalibrations);
+  missingCalibrationManifest.entryCount = missingCalibrationManifest.entries.length;
+  missingTimeCalibration.delete(ARCHIVE_PATHS.timeCalibrations);
+  missingTimeCalibration.set(ARCHIVE_PATHS.manifest, jsonBuffer(missingCalibrationManifest));
+  await rejectsCode(
+    "MEDIA_ARCHIVE_REQUIRED_SECTION_MISSING",
+    () => prepareMediaArchive(repack(missingTimeCalibration), {
+      stagingRoot: path.join(temporaryRoot, "reject-schema12-missing-time-calibrations"),
+      validateVoiceBackup: validateEmptyVoices,
+      validateTimeCalibrationBackup: validateTimeCalibrations,
+      supportedSchemaVersion: 12
+    }),
+    "schema 12 reader must reject a missing required calibration section"
+  );
+
+  const duplicatedTimeCalibration = cloneEntries(schema12Entries);
+  const duplicatedCalibrationCollection = parseJson(duplicatedTimeCalibration.get(ARCHIVE_PATHS.collection));
+  duplicatedCalibrationCollection.timeCalibrations = timeCalibrations;
+  replaceJsonAndRefreshManifest(duplicatedTimeCalibration, ARCHIVE_PATHS.collection, duplicatedCalibrationCollection);
+  await rejectsCode(
+    "MEDIA_ARCHIVE_SECTIONS_INVALID",
+    () => prepareMediaArchive(repack(duplicatedTimeCalibration), {
+      stagingRoot: path.join(temporaryRoot, "reject-schema12-duplicated-time-calibrations"),
+      validateVoiceBackup: validateEmptyVoices,
+      validateTimeCalibrationBackup: validateTimeCalibrations,
+      supportedSchemaVersion: 12
+    }),
+    "calibrations cannot appear in collection and their standalone section"
+  );
+
+  const privateCalibrationDraft = cloneEntries(schema12Entries);
+  const privateCalibrationCollection = parseJson(privateCalibrationDraft.get(ARCHIVE_PATHS.collection));
+  privateCalibrationCollection.timeCalibrationDrafts = [{ note: "private calibration draft canary" }];
+  replaceJsonAndRefreshManifest(privateCalibrationDraft, ARCHIVE_PATHS.collection, privateCalibrationCollection);
+  await rejectsCode(
+    "MEDIA_ARCHIVE_COLLECTION_FIELDS_INVALID",
+    () => prepareMediaArchive(repack(privateCalibrationDraft), {
+      stagingRoot: path.join(temporaryRoot, "reject-schema12-private-calibration-draft"),
+      validateVoiceBackup: validateEmptyVoices,
+      validateTimeCalibrationBackup: validateTimeCalibrations,
+      supportedSchemaVersion: 12
+    }),
+    "rehashed collection JSON cannot smuggle private calibration drafts"
+  );
+
+  const tamperedTimeCalibration = cloneEntries(schema12Entries);
+  const tamperedCalibrationPayload = parseJson(tamperedTimeCalibration.get(ARCHIVE_PATHS.timeCalibrations));
+  tamperedCalibrationPayload.calibrations[1].intervalEnd = "1998-02-30";
+  replaceJsonAndRefreshManifest(tamperedTimeCalibration, ARCHIVE_PATHS.timeCalibrations, tamperedCalibrationPayload);
+  await rejectsCode(
+    "MEDIA_ARCHIVE_FEATURE_INVALID",
+    () => prepareMediaArchive(repack(tamperedTimeCalibration), {
+      stagingRoot: path.join(temporaryRoot, "reject-schema12-tampered-time-calibrations"),
+      validateVoiceBackup: validateEmptyVoices,
+      validateTimeCalibrationBackup: validateTimeCalibrations,
+      supportedSchemaVersion: 12
+    }),
+    "recomputed manifest hashes cannot bypass semantic calibration validation"
+  );
+
+  const redactedTimeCalibrations = {
+    mode: "redacted-summary",
+    calibrationCount: 2,
+    uncertainCount: 1,
+    alternativesCount: 1,
+    note: TIME_CALIBRATION_REDACTED_NOTE
+  };
+  const redactedCalibrationArchive = buildMediaArchive({
+    collection: {
+      ...sourceCollection,
+      version: "8.0.0",
+      schemaVersion: 12,
+      mode: "redacted",
+      timeCalibrations: redactedTimeCalibrations
+    },
+    appVersion: "8.0.0",
+    schemaVersion: 12
+  });
+  const redactedCalibrationEntries = await readArchiveEntries(
+    redactedCalibrationArchive,
+    path.join(temporaryRoot, "unpack-redacted-schema12-time-calibrations")
+  );
+  const redactedCalibrationText = redactedCalibrationEntries.get(ARCHIVE_PATHS.timeCalibrations).toString("utf8");
+  deepEqual(
+    Object.keys(JSON.parse(redactedCalibrationText)).sort(),
+    ["alternativesCount", "calibrationCount", "mode", "note", "uncertainCount"],
+    "redacted calibrations keep only aggregate counts, mode and the fixed privacy note"
+  );
+  for (const canary of timeCalibrationCanaries(timeCalibrations)) {
+    check(!redactedCalibrationText.includes(canary), `redacted calibration section physically excludes ${canary}`);
+  }
+  const redactedCalibrationPrepared = await prepareMediaArchive(redactedCalibrationArchive, {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-redacted-schema12-time-calibrations"),
+    supportedSchemaVersion: 12
+  });
+  deepEqual(
+    redactedCalibrationPrepared.timeCalibrations,
+    redactedTimeCalibrations,
+    "redacted calibration summary round-trips without a full-data validator"
+  );
+
+  const leakyRedactedCalibration = cloneEntries(redactedCalibrationEntries);
+  const leakyCalibrationPayload = parseJson(leakyRedactedCalibration.get(ARCHIVE_PATHS.timeCalibrations));
+  leakyCalibrationPayload.latestDate = "1998-08-31";
+  replaceJsonAndRefreshManifest(leakyRedactedCalibration, ARCHIVE_PATHS.timeCalibrations, leakyCalibrationPayload);
+  await rejectsCode(
+    "MEDIA_ARCHIVE_FEATURE_INVALID",
+    () => prepareMediaArchive(repack(leakyRedactedCalibration), {
+      stagingRoot: path.join(temporaryRoot, "reject-leaky-redacted-schema12-time-calibrations"),
+      supportedSchemaVersion: 12
+    }),
+    "redacted calibration summaries reject even rehashed date-bearing fields"
+  );
+
+  const inconsistentRedactedCalibration = cloneEntries(redactedCalibrationEntries);
+  const inconsistentCalibrationPayload = parseJson(inconsistentRedactedCalibration.get(ARCHIVE_PATHS.timeCalibrations));
+  inconsistentCalibrationPayload.uncertainCount = 2;
+  inconsistentCalibrationPayload.alternativesCount = 1;
+  replaceJsonAndRefreshManifest(inconsistentRedactedCalibration, ARCHIVE_PATHS.timeCalibrations, inconsistentCalibrationPayload);
+  await rejectsCode(
+    "MEDIA_ARCHIVE_FEATURE_INVALID",
+    () => prepareMediaArchive(repack(inconsistentRedactedCalibration), {
+      stagingRoot: path.join(temporaryRoot, "reject-inconsistent-redacted-schema12-time-calibrations"),
+      supportedSchemaVersion: 12
+    }),
+    "redacted calibration category counts cannot exceed the total"
+  );
 
   const redactedExhibitions = {
     mode: "redacted-summary",
@@ -1797,6 +2080,72 @@ function entityBackupSource(memoryId) {
       updatedAt: timestamp
     }]
   };
+}
+
+function timeCalibrationBackupFixture() {
+  const createdAt = "2026-07-18T11:00:00.000Z";
+  return {
+    mode: "full",
+    schemaVersion: 12,
+    calibrations: [{
+      id: "calibration-private-event-id",
+      memoryId: "",
+      eventId: "event-calibration-source",
+      resolutionKind: "range",
+      intervalStart: "1998-06-01",
+      intervalEnd: "1998-08-31",
+      selectedSourceKeys: [`time-source:${"c".repeat(64)}`],
+      selectedSourceSnapshots: [{
+        intervalEnd: "1998-07-15",
+        intervalStart: "1998-07-15",
+        precision: "day",
+        sourceKey: `time-source:${"c".repeat(64)}`,
+        sourceType: "raw-claim"
+      }],
+      sourceSetSha256: "d".repeat(64),
+      currentSourceSetSha256: "d".repeat(64),
+      note: "Alternative sources place the reunion within this private range.",
+      createdAt,
+      updatedAt: "2026-07-18T11:30:00.000Z"
+    }, {
+      id: "calibration-private-memory-id",
+      memoryId: "memory-one",
+      eventId: "",
+      resolutionKind: "uncertain",
+      intervalStart: "",
+      intervalEnd: "",
+      selectedSourceKeys: [`time-source:${"a".repeat(64)}`],
+      selectedSourceSnapshots: [{
+        intervalEnd: "1999-06-01",
+        intervalStart: "1999-06-01",
+        precision: "day",
+        sourceKey: `time-source:${"a".repeat(64)}`,
+        sourceType: "memory-current"
+      }],
+      sourceSetSha256: "b".repeat(64),
+      currentSourceSetSha256: "b".repeat(64),
+      note: "The exact summer date remains private and uncertain.",
+      createdAt,
+      updatedAt: "2026-07-18T11:15:00.000Z"
+    }]
+  };
+}
+
+function timeCalibrationCanaries(backup) {
+  return backup.calibrations.flatMap((calibration) => [
+    calibration.id,
+    calibration.memoryId,
+    calibration.eventId,
+    calibration.intervalStart,
+    calibration.intervalEnd,
+    ...calibration.selectedSourceKeys,
+    JSON.stringify(calibration.selectedSourceSnapshots),
+    calibration.currentSourceSetSha256,
+    calibration.sourceSetSha256,
+    calibration.note,
+    calibration.createdAt,
+    calibration.updatedAt
+  ]).filter(Boolean);
 }
 
 function capsuleBackupFixture(assetId) {

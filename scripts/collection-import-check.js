@@ -8,6 +8,7 @@ let assertionCount = 0;
 
 function run() {
   checkSchema11Export();
+  checkSchema12Export();
   checkPrimitiveBodies();
   checkHardImportLimit();
   checkSchemaEnvelope();
@@ -15,6 +16,7 @@ function run() {
   checkVoiceImportModes();
   checkCapsuleImportModes();
   checkRevisitIntentImportModes();
+  checkTimeCalibrationImportModes();
   checkDuplicateReferenceIds();
   checkFeaturePrevalidation();
   checkConflictMapping();
@@ -22,6 +24,114 @@ function run() {
   checkSkippedRestores();
   checkSuccessfulResult();
   console.log(`Collection import checks passed: ${assertionCount} assertions.`);
+}
+
+function checkSchema12Export() {
+  const calls = [];
+  const store = {
+    buildExhibitionBackup: (mode) => ({ mode, exhibitions: [] }),
+    buildRevisitBackup: (mode) => ({ mode, states: [] }),
+    buildClueBackup: (mode) => ({ mode, entities: [] }),
+    buildVoiceBackup: (mode) => ({ mode, assets: [] }),
+    buildCapsuleBackup: (mode) => ({ mode, capsules: [] }),
+    buildRevisionBackup: (mode) => ({ mode, revisions: [] }),
+    buildRevisitIntentBackup: (mode) => ({ mode, intents: [] }),
+    buildTimeCalibrationBackup(mode, memoryIds) {
+      calls.push({ mode, memoryIds });
+      return mode === "redacted"
+        ? { mode: "redacted-summary", calibrationCount: 1, uncertainCount: 0, alternativesCount: 1, note: "固定说明" }
+        : { mode: "full", schemaVersion: 12, calibrations: [] };
+    }
+  };
+  const build = createCollectionExporter({
+    store,
+    appVersion: "8.0.0",
+    schemaVersion: 12,
+    buildArchaeologyBackup: () => ({ mode: "full", events: [], claims: [], pairDecisions: [], questions: [] })
+  });
+  const memories = [memory("export-calibration")];
+  const full = build(memories, "full");
+  same(full.timeCalibrations, { mode: "full", schemaVersion: 12, calibrations: [] }, "schema 12 full JSON 显式导出 timeCalibrations");
+  same(calls[0], { mode: "full", memoryIds: ["export-calibration"] }, "完整时间校准导出严格限制在本次展品边界");
+  const redacted = build(memories, "redacted");
+  same(Object.keys(redacted.timeCalibrations).sort(), ["alternativesCount", "calibrationCount", "mode", "note", "uncertainCount"], "schema 12 脱敏 JSON 只导出固定计数摘要");
+  same(calls[1], { mode: "redacted", memoryIds: ["export-calibration"] }, "脱敏时间校准使用同一展品边界");
+
+  const missing = { ...store };
+  delete missing.buildTimeCalibrationBackup;
+  const broken = createCollectionExporter({ store: missing, appVersion: "8.0.0", schemaVersion: 12, buildArchaeologyBackup: () => ({}) });
+  assert.throws(() => broken(memories, "full"), /time calibration backup support/u, "schema 12 导出缺少时间校准处理器时 fail closed");
+  assertionCount += 1;
+}
+
+function checkTimeCalibrationImportModes() {
+  const required = {
+    entities: fullBackup(),
+    voices: { mode: "full", assetCount: 0, assets: [] },
+    capsules: { mode: "full", schemaVersion: 9, capsules: [] },
+    revisions: { mode: "full", schemaVersion: 10, revisions: [] },
+    revisitIntents: { mode: "full", schemaVersion: 11, intents: [] },
+    archaeology: { mode: "full", events: [{ id: "source-event", members: [{ memoryId: "source-calibration" }] }], claims: [], pairDecisions: [], questions: [] }
+  };
+  const fullBackupValue = {
+    mode: "full",
+    schemaVersion: 12,
+    calibrations: [{ id: "source-calibration-record", memoryId: "source-calibration" }]
+  };
+
+  const missing = createFixture({ schemaVersion: 12 });
+  const missingError = captureError(() => missing.importCollection({
+    schemaVersion: 12,
+    mode: "full",
+    memories: [memory("source-calibration")],
+    ...required
+  }));
+  ok(missingError?.statusCode === 400 && missingError.message.includes("timeCalibrations"), "schema 12 full 即使零项校准也必须显式声明 timeCalibrations");
+  ok(missing.calls.normalizes === 0 && missing.calls.transactions === 0, "缺失时间校准在规范化和事务前拒绝");
+
+  const full = createFixture({
+    schemaVersion: 12,
+    restoreHandlers: {
+      archaeology: () => ({ events: 1, claims: 0, decisions: 1, questions: 0, skipped: 0, idMap: { events: { "source-event": "restored-event" } } }),
+      timeCalibrations: ({ backup }) => ({ calibrations: backup.calibrations.length, skipped: 0, requiresTimeIsle: false, idMap: {} })
+    }
+  });
+  const fullResult = full.importCollection({
+    schemaVersion: 12,
+    mode: "full",
+    memories: [memory("source-calibration")],
+    ...required,
+    timeCalibrations: fullBackupValue
+  });
+  ok(full.calls.validations.timeCalibrations === 1 && full.calls.events.indexOf("validate-time-calibrations") < full.calls.events.indexOf("normalize"), "时间校准在展品规范化前先验真");
+  ok(full.calls.restores.timeCalibrations === 1 && fullResult.timeCalibrations.calibrations === 1, "schema 12 JSON 在修订与记忆考古后恢复时间校准");
+  same(mapObject(full.calls.restoreMaps.timeCalibrations.memoryIdMap), { "source-calibration": "source-calibration" }, "时间校准复用展品 ID 映射");
+  same(mapObject(full.calls.restoreMaps.timeCalibrations.eventIdMap), { "source-event": "restored-event" }, "时间校准复用事件 ID 映射");
+
+  const redacted = createFixture({ schemaVersion: 12 });
+  const redactedResult = redacted.importCollection({
+    schemaVersion: 12,
+    mode: "redacted",
+    memories: [memory("source-redacted")],
+    entities: { mode: "redacted-summary" },
+    voices: { mode: "redacted-summary", assetCount: 0 },
+    capsules: { mode: "redacted-summary", capsuleCount: 0 },
+    revisions: { mode: "redacted-summary", revisionCount: 0 },
+    revisitIntents: { mode: "redacted-summary", intentCount: 0, note: "固定说明" },
+    timeCalibrations: { mode: "redacted-summary", calibrationCount: 2, uncertainCount: 1, alternativesCount: 1, note: "固定说明" }
+  });
+  ok(redacted.calls.validations.timeCalibrations === 1 && redacted.calls.restores.timeCalibrations === 0, "脱敏时间校准只验真且保持零写入");
+  ok(redactedResult.timeCalibrations.summarized === true && redactedResult.timeCalibrations.calibrations === 0, "脱敏 JSON 返回明确的时间校准摘要结果");
+
+  const legacy = createFixture({ schemaVersion: 11 });
+  const legacyError = captureError(() => legacy.importCollection({
+    schemaVersion: 11,
+    mode: "full",
+    memories: [memory("source-calibration")],
+    ...required,
+    timeCalibrations: fullBackupValue
+  }));
+  ok(legacyError?.statusCode === 400 && legacyError.message.includes("schema 12"), "schema 11 不得越级声明时间校准");
 }
 
 function checkSchema11Export() {
@@ -535,7 +645,8 @@ function createFixture(options = {}) {
     archaeology: [],
     exhibitions: [...(options.existingExhibitions || [])],
     revisits: [],
-    entities: []
+    entities: [],
+    timeCalibrations: []
   };
   const calls = {
     normalizes: 0,
@@ -545,9 +656,9 @@ function createFixture(options = {}) {
     importOptions: [],
     validations: {
       archaeology: 0, exhibitions: 0, revisits: 0, entities: 0,
-      voices: 0, capsules: 0, revisions: 0, revisitIntents: 0
+      voices: 0, capsules: 0, revisions: 0, revisitIntents: 0, timeCalibrations: 0
     },
-    restores: { archaeology: 0, exhibitions: 0, revisits: 0, entities: 0, revisions: 0, revisitIntents: 0 },
+    restores: { archaeology: 0, exhibitions: 0, revisits: 0, entities: 0, revisions: 0, revisitIntents: 0, timeCalibrations: 0 },
     restoreMaps: {},
     events: []
   };
@@ -651,6 +762,21 @@ function createFixture(options = {}) {
       calls.events.push("restore-revisit-intents");
       calls.restoreMaps.revisitIntents = new Map(memoryIdMap);
       return callRestoreHandler("revisitIntents", { backup, memoryIdMap });
+    },
+    validateTimeCalibrationBackup(backup, sourceIds, sourceEventIds) {
+      calls.validations.timeCalibrations += 1;
+      calls.events.push("validate-time-calibrations");
+      if (options.validationFailure === "timeCalibrations") throw new Error("invalid time calibrations");
+      return Boolean(backup && Array.isArray(sourceIds) && Array.isArray(sourceEventIds));
+    },
+    restoreTimeCalibrationBackup(backup, restoreOptions) {
+      calls.restores.timeCalibrations += 1;
+      calls.events.push("restore-time-calibrations");
+      calls.restoreMaps.timeCalibrations = {
+        memoryIdMap: new Map(restoreOptions.memoryIdMap),
+        eventIdMap: new Map(restoreOptions.eventIdMap)
+      };
+      return callRestoreHandler("timeCalibrations", { backup, ...restoreOptions });
     }
   };
 
@@ -672,7 +798,7 @@ function createFixture(options = {}) {
   function callRestoreHandler(feature, context) {
     const handler = options.restoreHandlers?.[feature];
     if (handler) return handler({ ...context, state, calls, store });
-    if (feature === "archaeology") return { events: 0, claims: 0, decisions: 0, questions: 0, skipped: 0 };
+    if (feature === "archaeology") return { events: 0, claims: 0, decisions: 0, questions: 0, skipped: 0, idMap: { events: {} } };
     if (feature === "exhibitions") return { exhibitions: 0, skipped: 0, idMap: {} };
     if (feature === "entities") return emptyEntityResultFixture();
     if (feature === "revisions") return { memories: 0, revisions: 0, skipped: 0, idMap: { memories: {}, revisions: {} } };
@@ -681,6 +807,14 @@ function createFixture(options = {}) {
         intents: Array.isArray(context.backup?.intents) ? context.backup.intents.length : 0,
         skipped: 0,
         idMap: Object.fromEntries(context.memoryIdMap)
+      };
+    }
+    if (feature === "timeCalibrations") {
+      return {
+        calibrations: Array.isArray(context.backup?.calibrations) ? context.backup.calibrations.length : 0,
+        skipped: 0,
+        requiresTimeIsle: false,
+        idMap: {}
       };
     }
     return { states: 0, skipped: 0, idMap: {} };
@@ -755,7 +889,8 @@ function cloneState(state) {
     archaeology: clone(state.archaeology),
     exhibitions: clone(state.exhibitions),
     revisits: clone(state.revisits),
-    entities: clone(state.entities)
+    entities: clone(state.entities),
+    timeCalibrations: clone(state.timeCalibrations)
   };
 }
 
@@ -765,6 +900,7 @@ function restoreState(target, snapshot) {
   target.exhibitions = snapshot.exhibitions;
   target.revisits = snapshot.revisits;
   target.entities = snapshot.entities;
+  target.timeCalibrations = snapshot.timeCalibrations;
 }
 
 function stateSnapshot(state) {
@@ -773,7 +909,8 @@ function stateSnapshot(state) {
     archaeology: state.archaeology,
     exhibitions: state.exhibitions,
     revisits: state.revisits,
-    entities: state.entities
+    entities: state.entities,
+    timeCalibrations: state.timeCalibrations
   };
 }
 

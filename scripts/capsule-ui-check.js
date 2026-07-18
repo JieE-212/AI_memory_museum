@@ -71,12 +71,12 @@ ok(html.includes('id="sharePrivacyContent" tabindex="-1"') && html.includes('id=
 ok(html.includes("放弃本次分享并清空草稿") && privacySource.includes("下载后无法撤回"), "页面明确取消清理与下载后不可撤回边界");
 
 ok(
-  html.indexOf('/assets/capsule-crypto.js?v=7.3.0') < html.indexOf('/assets/share-privacy.js?v=7.3.0') &&
-  html.indexOf('/assets/share-privacy.js?v=7.3.0') < html.indexOf('/assets/capsules.js?v=7.3.0'),
+  html.indexOf('/assets/capsule-crypto.js?v=8.0.0') < html.indexOf('/assets/share-privacy.js?v=8.0.0') &&
+  html.indexOf('/assets/share-privacy.js?v=8.0.0') < html.indexOf('/assets/capsules.js?v=8.0.0'),
   "资源按加密模块、隐私编辑台、胶囊控制器顺序加载"
 );
-ok(html.indexOf('/assets/capsules.js?v=7.3.0') < html.indexOf('/assets/app.js'), "胶囊控制器先于主应用加载");
-equal((html.match(/\/share-privacy\.css\?v=7\.3\.0/g) || []).length, 1, "分享隐私样式只加载一次");
+ok(html.indexOf('/assets/capsules.js?v=8.0.0') < html.indexOf('/assets/app.js'), "胶囊控制器先于主应用加载");
+equal((html.match(/\/share-privacy\.css\?v=8\.0\.0/g) || []).length, 1, "分享隐私样式只加载一次");
 ok(app.includes("TimeIsleCapsules?.createController") && app.includes("capsulesController?.setDemo(demo)"), "主应用接入胶囊控制器与 Demo 状态");
 ok(app.includes("capsulesController?.refresh()"), "馆藏变化会刷新胶囊工作区");
 

@@ -19,6 +19,7 @@ const revisitsCss = read("public/revisits.css");
 const revisionsCss = read("public/revisions.css");
 const cluesCss = read("public/clues.css");
 const collectionHealthCss = read("public/collection-health.css");
+const timeCalibrationCss = read("public/time-calibrations.css");
 const app = read("public/assets/app.js");
 const pwaApp = read("public/assets/pwa.js");
 const mediaApp = read("public/assets/media.js");
@@ -36,6 +37,7 @@ const revisitsApp = read("public/assets/revisits.js");
 const revisionsApp = read("public/assets/revisions.js");
 const cluesApp = read("public/assets/clues.js");
 const collectionHealthApp = read("public/assets/collection-health.js");
+const timeCalibrationApp = read("public/assets/time-calibrations.js");
 const server = read("server.js");
 const archaeology = read("lib/archaeology.js");
 const archaeologyBackup = read("lib/archaeology-backup.js");
@@ -85,9 +87,9 @@ const compactButtonRule = ruleDeclarations(compactMobileCss, ".nav-button");
 
 const checks = [
   ["V7.1 PWA stays inside the four-view information architecture", (html.match(/class="nav-button/g) || []).length === 4 && html.includes('id="pwaInstallPanel" hidden') && html.indexOf('id="pwaInstallPanel"') > html.indexOf('data-view-panel="data"') && !html.includes('data-view="pwa"')],
-  ["PWA resources load in manifest-style-controller-app order", html.includes('/manifest.webmanifest?v=7.3.0') && html.indexOf('/styles.css?v=7.2.0') < html.indexOf('/pwa.css?v=7.3.0') && html.indexOf('/assets/pwa.js?v=7.3.0') < html.indexOf('/assets/app.js?v=7.3.0')],
+  ["PWA resources load in manifest-style-controller-app order", html.includes('/manifest.webmanifest?v=8.0.0') && html.indexOf('/styles.css?v=7.2.0') < html.indexOf('/pwa.css?v=8.0.0') && html.indexOf('/assets/pwa.js?v=8.0.0') < html.indexOf('/assets/app.js?v=8.0.0')],
   ["PWA install uses progressive disclosure without private persistence", pwaApp.includes('beforeinstallprompt') && pwaApp.includes('appinstalled') && pwaApp.includes('updateViaCache: "none"') && !/localStorage|sessionStorage|indexedDB|\bcaches\b/iu.test(pwaApp) && pwaCss.includes('.pwa-install-panel [hidden]')],
-  ["V7.2 记忆年轮保持四导航并默认按需展开", (html.match(/class="nav-button/g) || []).length === 4 && html.includes('id="revisionTimelineDetails"') && !html.includes('<details class="revision-timeline-card" id="revisionTimelineDetails" open') && !html.includes('data-view="revisions"') && html.indexOf('/assets/revisions.js?v=7.2.0') < html.indexOf('/assets/app.js?v=7.3.0') && app.includes("TimeIsleRevisions?.createController")],
+  ["V7.2 记忆年轮保持四导航并默认按需展开", (html.match(/class="nav-button/g) || []).length === 4 && html.includes('id="revisionTimelineDetails"') && !html.includes('<details class="revision-timeline-card" id="revisionTimelineDetails" open') && !html.includes('data-view="revisions"') && html.indexOf('/assets/revisions.js?v=7.2.0') < html.indexOf('/assets/app.js?v=8.0.0') && app.includes("TimeIsleRevisions?.createController")],
   ["记忆年轮提供并发保护、二次确认与不覆盖恢复", revisionsApp.includes('"If-Match"') && revisionsApp.includes("data-revision-confirm") && revisionsApp.includes("当前版本不会被删除") && revisionsApp.includes("restoredFromRevisionId") && revisionsApp.includes("error.status === 412") && !/localStorage|sessionStorage|indexedDB/iu.test(revisionsApp)],
   ["记忆年轮移动端克制且不使用渐变", revisionsCss.includes("@media (max-width: 650px)") && revisionsCss.includes("@media (max-width: 360px)") && revisionsCss.includes("min-height: 44px") && !/gradient\s*\(/iu.test(revisionsCss)],
   ["馆藏体检位于归档入口之前且保持只读渐进披露", html.includes('id="collectionHealthDetails"') && html.indexOf('id="collectionHealthDetails"') < html.indexOf('id="exportButton"') && !html.includes('<details class="collection-health-panel" id="collectionHealthDetails" open') && collectionHealthApp.includes("/api/collection-health/scans") && collectionHealthApp.includes("/api/archive/inspect") && collectionHealthApp.includes("不会自动删除或改写") && !/localStorage|sessionStorage|indexedDB/iu.test(collectionHealthApp)],
@@ -179,7 +181,7 @@ const checks = [
   ["考古结论保留人工确认边界", archaeology.includes('sameEvent: "unassessed"') && archaeology.includes("requiresConfirmation") && archaeology.includes("sourceQuote")],
   ["服务端不再加载旧运维治理模块", !server.includes("createOperationsService") && !server.includes("phase29") && !server.includes("phase30")],
   ["npm 命令保持精简", Object.keys(pkg.scripts || {}).length <= 7],
-  ["核心文件规模已收敛", lineCount(server) < 1400 && lineCount(app) < 1340 && lineCount(pwaApp) < 250 && lineCount(mediaApp) < 1150 && lineCount(voiceApp) < 900 && lineCount(capsuleApp) < 1000 && lineCount(sharePrivacyApp) < 600 && lineCount(mediaEvidenceApp) < 850 && lineCount(mediaCompareApp) < 850 && lineCount(mediaOcrApp) < 750 && lineCount(mediaLabApp) < 500 && lineCount(portabilityApp) < 250 && lineCount(exhibitionsApp) < 850 && lineCount(revisitsApp) < 550 && lineCount(revisionsApp) < 400 && lineCount(cluesApp) < 750 && lineCount(collectionHealthApp) < 350 && lineCount(css) < 1600 && lineCount(pwaCss) < 250 && lineCount(archaeologyCss) < 400 && lineCount(mediaCss) < 700 && lineCount(voiceCss) < 450 && lineCount(capsuleCss) < 650 && lineCount(sharePrivacyCss) < 200 && lineCount(mediaEvidenceCss) < 500 && lineCount(exhibitionsCss) < 800 && lineCount(revisitsCss) < 450 && lineCount(revisionsCss) < 350 && lineCount(cluesCss) < 550 && lineCount(collectionHealthCss) < 300 && lineCount(archaeology) < 900 && lineCount(archaeologyBackup) < 300]
+  ["核心文件规模已收敛", lineCount(server) < 1400 && lineCount(app) < 1400 && lineCount(pwaApp) < 250 && lineCount(mediaApp) < 1150 && lineCount(voiceApp) < 900 && lineCount(capsuleApp) < 1000 && lineCount(sharePrivacyApp) < 600 && lineCount(mediaEvidenceApp) < 850 && lineCount(mediaCompareApp) < 850 && lineCount(mediaOcrApp) < 750 && lineCount(mediaLabApp) < 500 && lineCount(portabilityApp) < 250 && lineCount(exhibitionsApp) < 850 && lineCount(revisitsApp) < 550 && lineCount(revisionsApp) < 400 && lineCount(cluesApp) < 750 && lineCount(collectionHealthApp) < 350 && lineCount(timeCalibrationApp) < 850 && lineCount(css) < 1600 && lineCount(pwaCss) < 250 && lineCount(archaeologyCss) < 400 && lineCount(mediaCss) < 700 && lineCount(voiceCss) < 450 && lineCount(capsuleCss) < 650 && lineCount(sharePrivacyCss) < 200 && lineCount(mediaEvidenceCss) < 500 && lineCount(exhibitionsCss) < 800 && lineCount(revisitsCss) < 450 && lineCount(revisionsCss) < 350 && lineCount(cluesCss) < 550 && lineCount(collectionHealthCss) < 300 && lineCount(timeCalibrationCss) < 500 && lineCount(archaeology) < 900 && lineCount(archaeologyBackup) < 300]
 ];
 
 let failed = 0;

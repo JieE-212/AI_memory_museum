@@ -36,6 +36,7 @@ const { createRequestSecurity, platformHostsFromEnv } = require("./lib/request-s
 const { createRuntimeMetadata } = require("./lib/runtime-metadata");
 const { createCollectionHealthApi } = require("./lib/collection-health-api");
 const { createArchiveInspectionApi } = require("./lib/archive-inspection-api");
+const { createTimeCalibrationApi } = require("./lib/time-calibration-api");
 
 const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
@@ -52,8 +53,8 @@ const MEDIA_ROOT = process.env.MEDIA_ROOT || (INTERVIEW_DEMO
   ? path.join(os.tmpdir(), "ai-memory-museum-interview-demo-media")
   : path.join(path.dirname(DB_PATH), "media"));
 const VOICE_ROOT = INTERVIEW_DEMO ? path.join(MEDIA_ROOT, "voice") : (process.env.VOICE_ROOT || path.join(MEDIA_ROOT, "voice"));
-const APP_VERSION = "7.3.0";
-const SCHEMA_VERSION = 11;
+const APP_VERSION = "8.0.0";
+const SCHEMA_VERSION = 12;
 const MAX_RAW_LENGTH = 4000;
 const MAX_BODY_LENGTH = 2 * 1024 * 1024;
 const MAX_IMPORT_BODY_LENGTH = 64 * 1024 * 1024;
@@ -87,8 +88,17 @@ const clueApi = createClueApi({ database: store, store, interviewDemo: INTERVIEW
 const capsuleApi = createCapsuleApi({ database: store, store, buildSafeSnapshot, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
 const offlineExhibitApi = createOfflineExhibitApi({ database: store, store, buildSafeSnapshot, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
 const revisionApi = createRevisionApi({ store, sendJson, readJsonBody, httpError, decorateMemory: withMemoryMedia, normalizeNote: (value) => limitText(value, 500) });
+const timeCalibrationApi = createTimeCalibrationApi({ store, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
 const collectionHealthApi = createCollectionHealthApi({ store, mediaStorage, voiceStorage, mediaApi, voiceApi, sendJson, readJsonBody, httpError });
-const archiveInspectionApi = createArchiveInspectionApi({ mediaRoot: MEDIA_ROOT, prepareMediaArchive, validateVoiceBackup: store.validateVoiceBackup, supportedSchemaVersion: SCHEMA_VERSION, sendJson, httpError });
+const archiveInspectionApi = createArchiveInspectionApi({
+  mediaRoot: MEDIA_ROOT,
+  prepareMediaArchive,
+  validateVoiceBackup: store.validateVoiceBackup,
+  validateTimeCalibrationBackup: store.validateTimeCalibrationBackup,
+  supportedSchemaVersion: SCHEMA_VERSION,
+  sendJson,
+  httpError
+});
 const buildCollectionExport = createCollectionExporter({ store, appVersion: APP_VERSION, schemaVersion: SCHEMA_VERSION, buildArchaeologyBackup });
 const importCollection = createCollectionImporter({
   store,
@@ -107,10 +117,11 @@ const buildPrivacySummary = createPrivacySummary({
     { name: "记忆年轮与并发保护", location: "正文历史以可校验快照保存在本机 SQLite；每次恢复都会生成新的 head，不覆盖旧版本" },
     { name: "时光胶囊与加密离线展览", location: "胶囊外壳与安全快照分表保存在本机 SQLite；分享口令只在浏览器内用于加密，不发送给服务端，也不写入导出文件" },
     { name: "回访状态与明确意愿", location: "查看/略过状态、欢迎出现、指定日期以后或暂停主动出现均只保存在本机 SQLite；later 会保存用户选择的本地日期与 IANA 时区，不生成心理判断" },
+    { name: "不确定时间线与来源校准", location: "用户确认的时间范围、所选来源摘要与待复核状态只保存在本机 SQLite；不会回写展品日期或把冲突裁决成历史事实" },
     { name: "实体线索、别名与检索索引", location: "仅保存于本机 SQLite；同名默认只是线索，只有明确确认后才会新增别名或合并档案" },
     { name: "声音片段与人工文字稿", location: "声音文件仅保存在本机内容寻址目录；只有人工确认的文字稿会进入本地检索，不发送给外部模型" }
   ],
-  featureControls: ["编辑与历史恢复必须匹配当前展品版本，冲突时不会覆盖较新的内容", "回访意愿只接受用户明确确认；恢复自然回访会删除对应长期意愿记录", "实体别名与合并必须先预览，再由用户明确确认", "声音文字稿只有人工确认后才会公开展示并进入检索"]
+  featureControls: ["编辑与历史恢复必须匹配当前展品版本，冲突时不会覆盖较新的内容", "时间校准只接受用户明确确认；来源集合变化后旧判断转为待复核且不改写原日期", "回访意愿只接受用户明确确认；恢复自然回访会删除对应长期意愿记录", "实体别名与合并必须先预览，再由用户明确确认", "声音文字稿只有人工确认后才会公开展示并进入检索"]
 });
 seedInterviewDemoData({
   enabled: INTERVIEW_DEMO,
@@ -211,6 +222,8 @@ async function handleRequest(request, response) {
     if (offlineExhibitHandled !== false) return offlineExhibitHandled;
     const revisionHandled = await revisionApi.handle(request, response, url);
     if (revisionHandled !== false) return revisionHandled;
+    const timeCalibrationHandled = await timeCalibrationApi.handle(request, response, url);
+    if (timeCalibrationHandled !== false) return timeCalibrationHandled;
     const collectionHealthHandled = await collectionHealthApi.handle(request, response, url);
     if (collectionHealthHandled !== false) return collectionHealthHandled;
     const archiveInspectionHandled = await archiveInspectionApi.handle(request, response, url);
@@ -234,7 +247,13 @@ async function handleRequest(request, response) {
         const restoreParent = path.join(MEDIA_ROOT, ".restore");
         const stagingRoot = path.join(restoreParent, `restore-${randomUUID()}`);
         try {
-          const prepared = await prepareMediaArchive(request, { stagingRoot, validateVoiceBackup: store.validateVoiceBackup, supportedSchemaVersion: SCHEMA_VERSION, signal });
+          const prepared = await prepareMediaArchive(request, {
+            stagingRoot,
+            validateVoiceBackup: store.validateVoiceBackup,
+            validateTimeCalibrationBackup: store.validateTimeCalibrationBackup,
+            supportedSchemaVersion: SCHEMA_VERSION,
+            signal
+          });
           signal.throwIfAborted();
           const restored = await mediaApi.withMediaOperation(() => voiceApi.withVoiceOperation(() => {
             signal.throwIfAborted();
@@ -248,7 +267,10 @@ async function handleRequest(request, response) {
               validateEntityBackup: store.validateClueBackup, restoreEntityBackup: store.restoreClueBackup,
               validateVoiceBackup: store.validateVoiceBackup, restoreVoiceBackup: store.restoreVoiceBackup,
               validateCapsuleBackup: store.validateCapsuleBackup, restoreCapsuleBackup: store.restoreCapsuleBackup,
-              validateRevisionBackup: store.validateRevisionBackup, restoreRevisionBackup: store.restoreRevisionBackup, createId
+              validateRevisionBackup: store.validateRevisionBackup, restoreRevisionBackup: store.restoreRevisionBackup,
+              validateTimeCalibrationBackup: store.validateTimeCalibrationBackup,
+              restoreTimeCalibrationBackup: store.restoreTimeCalibrationBackup,
+              createId
             });
           }));
           return sendJson(response, 200, { ok: true, ...restored });

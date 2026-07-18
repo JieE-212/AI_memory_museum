@@ -3,6 +3,7 @@
 const assert = require("node:assert/strict");
 const { DatabaseSync } = require("node:sqlite");
 const { createDatabaseHealthReader } = require("../lib/database-health");
+const { TIME_CALIBRATION_MIGRATION } = require("../lib/time-calibration-database");
 
 let assertions = 0;
 const db = new DatabaseSync(":memory:");
@@ -71,9 +72,90 @@ try {
   const schemaMismatch = reader.snapshot();
   check(schemaMismatch.checks.find((item) => item.code === "DATABASE_SCHEMA").ok === false, "运行 schema 与账本不一致会被发现");
   check(schemaMismatch.ok === false, "任一结构检查失败会收敛为非健康状态");
+  checkTimeCalibrationHealth();
   console.log(`Database health checks passed: ${assertions} assertions.`);
 } finally {
   db.close();
+}
+
+function checkTimeCalibrationHealth() {
+  const calibrationDb = new DatabaseSync(":memory:");
+  try {
+    calibrationDb.exec(`
+      PRAGMA foreign_keys = ON;
+      PRAGMA user_version = 12;
+      CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY);
+      INSERT INTO schema_migrations VALUES (12);
+      CREATE TABLE memories (id TEXT PRIMARY KEY);
+      CREATE TABLE memory_events (id TEXT PRIMARY KEY);
+      CREATE TABLE memory_search_documents (id INTEGER PRIMARY KEY, memory_id TEXT UNIQUE);
+      CREATE TABLE memory_search_fts_docsize (id INTEGER PRIMARY KEY);
+      INSERT INTO memories VALUES ('memory-calibration');
+      INSERT INTO memory_search_documents VALUES (1, 'memory-calibration');
+      INSERT INTO memory_search_fts_docsize VALUES (1);
+    `);
+    TIME_CALIBRATION_MIGRATION.up(calibrationDb);
+    calibrationDb.prepare(`
+      INSERT INTO time_calibrations (
+        id, memory_id, event_id, resolution_kind, interval_start, interval_end,
+        selected_source_keys_json, source_set_sha256, note, created_at, updated_at
+      ) VALUES (?, ?, NULL, 'uncertain', '', '', '[]', ?, '', ?, ?)
+    `).run(
+      "calibration-health",
+      "memory-calibration",
+      "a".repeat(64),
+      "2026-07-18T10:00:00.000Z",
+      "2026-07-18T10:00:00.000Z"
+    );
+
+    const structuralOnly = createDatabaseHealthReader({ db: calibrationDb, schemaVersion: 12 }).snapshot();
+    check(structuralOnly.checks.find((item) => item.code === "DATABASE_TIME_CALIBRATION_STRUCTURE")?.ok === true, "schema 12 时间校准目标、枚举、JSON 与摘要结构通过统一合同验真");
+    check(structuralOnly.counts.timeCalibrations === 1, "数据库健康快照包含时间校准计数");
+    check(!structuralOnly.issueCounts.some((item) => item.code === "TIME_CALIBRATION_NEEDS_REVIEW"), "未注入动态来源核验时不会用 SQL 猜测待复核状态");
+
+    const dynamic = createDatabaseHealthReader({
+      db: calibrationDb,
+      schemaVersion: 12,
+      getTimeCalibrationHealthSnapshot: () => ({ calibrations: 1, needsReview: 1 })
+    }).snapshot();
+    const review = dynamic.issues.find((item) => item.code === "TIME_CALIBRATION_NEEDS_REVIEW");
+    check(review?.area === "curation" && review?.severity === "attention", "动态来源摘要变化只形成策展待复核而不冒充数据库损坏");
+    check(dynamic.issueCounts.find((item) => item.code === "TIME_CALIBRATION_NEEDS_REVIEW")?.count === 1, "动态待复核总数独立准确汇总");
+
+    calibrationDb.exec("UPDATE time_calibrations SET selected_source_keys_json = '{}';");
+    check(calibrationStructureOk(calibrationDb) === false, "时间校准来源键 JSON 不是规范数组时结构检查失败");
+    let dynamicCalls = 0;
+    const corruptSnapshot = createDatabaseHealthReader({
+      db: calibrationDb,
+      schemaVersion: 12,
+      getTimeCalibrationHealthSnapshot: () => { dynamicCalls += 1; throw new Error("must not run"); }
+    }).snapshot();
+    check(dynamicCalls === 0 && corruptSnapshot.ok === false, "结构损坏时跳过动态来源重建并保留可读诊断结果");
+    calibrationDb.exec("UPDATE time_calibrations SET selected_source_keys_json = '[]';");
+
+    calibrationDb.exec("PRAGMA ignore_check_constraints = ON; UPDATE time_calibrations SET selected_source_snapshots_json = '{}';");
+    check(calibrationStructureOk(calibrationDb) === false, "时间校准保存时来源快照不是规范数组时结构检查失败");
+    calibrationDb.exec("UPDATE time_calibrations SET selected_source_snapshots_json = '[]'; PRAGMA ignore_check_constraints = OFF;");
+
+    calibrationDb.exec("PRAGMA ignore_check_constraints = ON; UPDATE time_calibrations SET source_set_sha256 = 'bad';");
+    check(calibrationStructureOk(calibrationDb) === false, "时间校准来源摘要不是 SHA-256 时结构检查失败");
+    calibrationDb.exec(`UPDATE time_calibrations SET source_set_sha256 = '${"a".repeat(64)}';`);
+
+    calibrationDb.exec("UPDATE time_calibrations SET resolution_kind = 'guessed';");
+    check(calibrationStructureOk(calibrationDb) === false, "未知时间分辨率枚举不会被健康检查接受");
+    calibrationDb.exec("UPDATE time_calibrations SET resolution_kind = 'uncertain';");
+
+    calibrationDb.exec("UPDATE time_calibrations SET memory_id = NULL, event_id = NULL;");
+    check(calibrationStructureOk(calibrationDb) === false, "时间校准缺少唯一 memory/event 目标时结构检查失败");
+    calibrationDb.exec("UPDATE time_calibrations SET memory_id = 'memory-calibration'; PRAGMA ignore_check_constraints = OFF;");
+  } finally {
+    calibrationDb.close();
+  }
+}
+
+function calibrationStructureOk(db) {
+  const snapshot = createDatabaseHealthReader({ db, schemaVersion: 12 }).snapshot();
+  return snapshot.checks.find((item) => item.code === "DATABASE_TIME_CALIBRATION_STRUCTURE")?.ok === true;
 }
 
 function check(condition, message) {
