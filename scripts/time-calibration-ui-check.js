@@ -167,9 +167,9 @@ function checkHostIntegration() {
   }
   ok(html.includes('id="timeCalibrationStatus" role="status" aria-live="polite" aria-atomic="true"'), "宿主状态区静态声明原子 polite live region");
   ok(html.includes('id="timeCalibrationNote" maxlength="500"'), "宿主备注长度与后端 500 字合同一致");
-  equal((html.match(/\/time-calibrations\.css\?v=9\.0\.0/gu) || []).length, 1, "独立时间校准样式只加载一次");
-  equal((html.match(/\/assets\/time-calibrations\.js\?v=9\.0\.0/gu) || []).length, 1, "独立时间校准脚本只加载一次");
-  const moduleScript = html.indexOf('/assets/time-calibrations.js?v=9.0.0');
+  equal((html.match(/\/time-calibrations\.css(?:\?[^"']*)?/gu) || []).length, 1, "独立时间校准样式只加载一次");
+  equal((html.match(/\/assets\/time-calibrations\.js(?:\?[^"']*)?/gu) || []).length, 1, "独立时间校准脚本只加载一次");
+  const moduleScript = html.indexOf('/assets/time-calibrations.js');
   const appScript = html.indexOf('/assets/app.js');
   ok(moduleScript > 0 && moduleScript < appScript, "时间校准 UMD 在主应用之前加载");
   equal((html.match(/class="nav-button/gu) || []).length, 4, "V8 入口留在时光拼图内，不增加主导航或 Tab");

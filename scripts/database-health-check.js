@@ -6,6 +6,12 @@ const { createDatabaseHealthReader } = require("../lib/database-health");
 const { TIME_CALIBRATION_MIGRATION } = require("../lib/time-calibration-database");
 const { ORAL_HISTORY_MIGRATION } = require("../lib/oral-history-database");
 const { buildQuestionKey } = require("../lib/oral-history-service");
+const { CURATOR_AGENT_MIGRATION } = require("../lib/curator-agent-database");
+const {
+  CURATOR_AGENT_SCHEMA_VERSION,
+  FIXED_BUDGETS,
+  buildCuratorRequestSha256
+} = require("../lib/curator-agent-backup");
 
 let assertions = 0;
 const db = new DatabaseSync(":memory:");
@@ -76,9 +82,154 @@ try {
   check(schemaMismatch.ok === false, "任一结构检查失败会收敛为非健康状态");
   checkTimeCalibrationHealth();
   checkOralHistoryHealth();
+  checkCuratorAgentHealth();
   console.log(`Database health checks passed: ${assertions} assertions.`);
 } finally {
   db.close();
+}
+
+function checkCuratorAgentHealth() {
+  const curatorDb = new DatabaseSync(":memory:");
+  try {
+    curatorDb.exec(`
+      PRAGMA foreign_keys = ON;
+      PRAGMA user_version = 14;
+      CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY);
+      INSERT INTO schema_migrations VALUES (14);
+      CREATE TABLE memory_search_documents (id INTEGER PRIMARY KEY, memory_id TEXT UNIQUE);
+      CREATE TABLE memory_search_fts_docsize (id INTEGER PRIMARY KEY);
+    `);
+    CURATOR_AGENT_MIGRATION.up(curatorDb);
+    const timestamp = "2026-07-18T10:00:00.000Z";
+    const request = {
+      intent: "draft_exhibition",
+      query: "private objective must never enter health output",
+      memoryIds: [],
+      title: "",
+      theme: ""
+    };
+    const requestSha256 = buildCuratorRequestSha256(request);
+    curatorDb.prepare(`
+      INSERT INTO curator_agent_runs (
+        id, idempotency_key, request_sha256, request_json, status, version,
+        historical, needs_review, allow_decisions, created_at, started_at,
+        updated_at, interrupted_at
+      ) VALUES (?, ?, ?, ?, 'interrupted', 1, 0, 1, 0, ?, ?, ?, ?)
+    `).run(
+      "curator-run-health",
+      "health-key-0001",
+      requestSha256,
+      JSON.stringify(request),
+      timestamp,
+      timestamp,
+      timestamp,
+      timestamp
+    );
+    const backup = {
+      mode: "full",
+      schemaVersion: CURATOR_AGENT_SCHEMA_VERSION,
+      runs: [{
+        run: {
+          id: "curator-run-health",
+          schemaVersion: CURATOR_AGENT_SCHEMA_VERSION,
+          idempotencyKey: "health-key-0001",
+          requestSha256,
+          request,
+          status: "interrupted",
+          version: 1,
+          budgets: { ...FIXED_BUDGETS },
+          usage: { steps: 0, toolCalls: 0, resultBytes: 0, durationMs: 0 },
+          historical: false,
+          needsReview: true,
+          allowDecisions: false,
+          createdAt: timestamp,
+          startedAt: timestamp,
+          updatedAt: timestamp,
+          completedAt: "",
+          cancelledAt: "",
+          interruptedAt: timestamp,
+          failedAt: "",
+          failureCode: "",
+          failureMessage: ""
+        },
+        steps: [],
+        proposal: null,
+        decisions: []
+      }]
+    };
+    const reader = createDatabaseHealthReader({
+      db: curatorDb,
+      schemaVersion: 14,
+      getCuratorAgentBackup: () => backup,
+      getCuratorAgentHealthSnapshot: () => ({
+        runs: 1,
+        steps: 0,
+        proposals: 0,
+        decisions: 0,
+        completed: 0,
+        interrupted: 1,
+        needsReview: 1,
+        objective: request.query,
+        toolName: "read_memory_evidence",
+        proposalSha256: "f".repeat(64)
+      })
+    });
+    const healthy = reader.snapshot();
+    check(healthy.checks.find((item) => item.code === "DATABASE_CURATOR_AGENT_STRUCTURE")?.ok === true,
+      "schema 14 curator-agent tables and canonical full backup pass one frozen validator");
+    check(JSON.stringify(Object.keys(healthy.counts).filter((key) => key.startsWith("curatorAgent")).sort()) === JSON.stringify([
+      "curatorAgentCompleted", "curatorAgentDecisions", "curatorAgentInterrupted",
+      "curatorAgentNeedsReview", "curatorAgentProposals", "curatorAgentRuns", "curatorAgentSteps"
+    ]), "curator-agent health exposes only the seven safe counters");
+    check(healthy.counts.curatorAgentRuns === 1 && healthy.counts.curatorAgentInterrupted === 1 &&
+      healthy.counts.curatorAgentNeedsReview === 1, "interrupted and needs-review counts are projected without content");
+    const curatorIssues = healthy.issues.filter((issue) => issue.code.startsWith("CURATOR_AGENT_"));
+    check(curatorIssues.length === 2 && curatorIssues.every((issue) => (
+      JSON.stringify(Object.keys(issue).sort()) === JSON.stringify(["area", "code", "recordId", "severity"])
+    )), "curator-agent attention issues contain only code, severity, area, and a safe record id");
+    const serialized = JSON.stringify(healthy);
+    check(!serialized.includes(request.query) && !serialized.includes("read_memory_evidence") &&
+      !serialized.includes("f".repeat(64)), "health output never exposes objective, tool, proposal, or hash content");
+
+    const invalidBackup = JSON.parse(JSON.stringify(backup));
+    invalidBackup.runs[0].run.budgets.maxSteps = 7;
+    const invalid = createDatabaseHealthReader({
+      db: curatorDb,
+      schemaVersion: 14,
+      getCuratorAgentBackup: () => invalidBackup
+    }).snapshot();
+    check(invalid.checks.find((item) => item.code === "DATABASE_CURATOR_AGENT_STRUCTURE")?.ok === false,
+      "a full backup rejected by the canonical budget contract marks curator-agent structure invalid");
+    check(!invalid.issues.some((issue) => issue.code.startsWith("CURATOR_AGENT_RUN_")),
+      "corrupt curator-agent structure does not emit potentially misleading row attention items");
+
+    curatorDb.exec("PRAGMA ignore_check_constraints = ON; UPDATE curator_agent_runs SET request_json = '[]';");
+    const corruptJson = createDatabaseHealthReader({
+      db: curatorDb,
+      schemaVersion: 14,
+      getCuratorAgentBackup: () => {
+        const state = JSON.parse(JSON.stringify(backup));
+        state.runs[0].run.request = JSON.parse(curatorDb.prepare(
+          "SELECT request_json FROM curator_agent_runs WHERE id = 'curator-run-health'"
+        ).get().request_json);
+        return state;
+      }
+    }).snapshot();
+    check(corruptJson.checks.find((item) => item.code === "DATABASE_CURATOR_AGENT_STRUCTURE")?.ok === false,
+      "invalid curator-agent JSON is caught even without an injected backup reader");
+    curatorDb.exec(`UPDATE curator_agent_runs SET request_json = '${JSON.stringify(request).replace(/'/gu, "''")}'; PRAGMA ignore_check_constraints = OFF;`);
+
+    curatorDb.exec("DROP TABLE curator_agent_decisions;");
+    const missingTable = createDatabaseHealthReader({
+      db: curatorDb,
+      schemaVersion: 14,
+      getCuratorAgentBackup: () => backup
+    }).snapshot();
+    check(missingTable.checks.find((item) => item.code === "DATABASE_CURATOR_AGENT_STRUCTURE")?.ok === false,
+      "all four curator-agent tables are required by schema 14 health");
+  } finally {
+    curatorDb.close();
+  }
 }
 
 function checkOralHistoryHealth() {

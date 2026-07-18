@@ -11,6 +11,7 @@ const { initializeRevisionDatabase } = require("./lib/revision-database");
 const { initializeRevisitIntentDatabase } = require("./lib/revisit-intent-database");
 const { initializeTimeCalibrationDatabase } = require("./lib/time-calibration-database");
 const { initializeOralHistoryDatabase } = require("./lib/oral-history-database");
+const { initializeCuratorAgentDatabase } = require("./lib/curator-agent-database");
 const { createDatabaseHealthReader } = require("./lib/database-health");
 
 function createMemoryStore({ dbPath, halls, schemaVersion }) {
@@ -224,6 +225,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
   ensureColumn("memories", "agent_run_id", "TEXT NOT NULL DEFAULT ''");
 
   let oralHistoryDatabase = null;
+  let curatorAgentDatabase = null;
   const mediaDatabase = initializeMediaDatabase({
     db,
     withTransaction,
@@ -303,10 +305,85 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
         getEventCalibrationWorkspace: (eventId) => timeCalibrationDatabase.getEventCalibrationWorkspace(eventId)
       })
     : null;
+  curatorAgentDatabase = Number(schemaVersion) >= 14
+    ? initializeCuratorAgentDatabase({
+        db,
+        withTransaction,
+        schemaVersion,
+        now: () => new Date().toISOString(),
+        createId,
+        searchMemorySummaries: ({ query, memoryIds = [], limit = 6 }) => {
+          const selected = memoryIds.length
+            ? memoryIds.map((id) => getMemory(id)).filter(Boolean)
+            : searchMemories(query, { limit });
+          return {
+            memories: selected.slice(0, limit).map((memory) => ({
+              ...memory,
+              summary: String(memory.exhibitText || memory.rawContent || "").slice(0, 320)
+            }))
+          };
+        },
+        readMemoryEvidence: ({ memoryIds = [] }) => ({
+          memories: memoryIds.map((id) => getMemory(id)).filter(Boolean)
+        }),
+        readConfirmedRelationships: ({ memoryIds = [] }) => {
+          const relationships = [];
+          for (let left = 0; left < memoryIds.length; left += 1) {
+            for (let right = left + 1; right < memoryIds.length; right += 1) {
+              const decision = getPairDecision(memoryIds[left], memoryIds[right]);
+              if (!decision || !["confirmed", "same_event", "related"].includes(String(decision.decision || ""))) continue;
+              relationships.push({
+                memoryAId: decision.memoryAId,
+                memoryBId: decision.memoryBId,
+                relationType: decision.decision,
+                confirmedAt: decision.updatedAt || decision.createdAt || ""
+              });
+            }
+          }
+          return { relationships };
+        },
+        readExhibitionSummaries: ({ memoryIds = [] }) => ({
+          exhibitions: exhibitionDatabase.listExhibitions().map((summary) => {
+            const exhibition = exhibitionDatabase.getExhibition(summary.id);
+            const sourceIds = exhibition?.sections?.flatMap((section) => (
+              section.items?.map((item) => item.memoryId) || []
+            )) || [];
+            return { ...summary, memoryIds: sourceIds };
+          }).filter((item) => item.memoryIds.some((id) => memoryIds.includes(id)))
+        }),
+        saveExhibitionDraft: (preview) => exhibitionDatabase.createExhibition({
+          ...preview,
+          status: "draft",
+          confirm: true,
+          confirmed: true
+        }),
+        confirmRelationship: (relation) => savePairDecision({
+          memoryAId: relation.memoryAId,
+          memoryBId: relation.memoryBId,
+          decision: "related",
+          rationale: relation.rationale,
+          evidence: relation.basis ? [relation.basis] : [],
+          metadata: {
+            source: "curator-agent",
+            runId: relation.runId,
+            proposalSha256: relation.proposalSha256,
+            relationType: relation.relationType
+          }
+        }),
+        publishExhibition: (exhibitionId) => exhibitionDatabase.updateExhibition(exhibitionId, {
+          status: "published",
+          confirm: true,
+          confirmed: true
+        }),
+        getMemory
+      })
+    : null;
   const databaseHealth = createDatabaseHealthReader({
     db,
     schemaVersion,
-    getTimeCalibrationHealthSnapshot: timeCalibrationDatabase?.getTimeCalibrationStats
+    getTimeCalibrationHealthSnapshot: timeCalibrationDatabase?.getTimeCalibrationStats,
+    getCuratorAgentHealthSnapshot: curatorAgentDatabase?.getCuratorAgentStats,
+    getCuratorAgentBackup: curatorAgentDatabase?.buildCuratorAgentBackup
   });
 
   const upsertHall = db.prepare(`
@@ -665,6 +742,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     const memory = getMemory(id);
     if (!memory) return false;
     return withTransaction(() => {
+      curatorAgentDatabase?.purgeCuratorAgentRunsForMemory?.(id);
       clueDatabase.removeMemoryClues(id);
       const result = statements.deleteMemory.run(id);
       if (memory.agentRunId) statements.deleteAgentRun.run(memory.agentRunId);
@@ -677,11 +755,22 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     });
   }
 
+  function deleteExhibition(id) {
+    return withTransaction(() => {
+      const removed = exhibitionDatabase.deleteExhibition(id);
+      if (removed) curatorAgentDatabase?.purgeCuratorAgentRunsForExhibition?.(id);
+      return removed;
+    });
+  }
+
   function purgeAll() {
     const memoriesDeleted = Number(statements.countMemories.get()?.count) || 0;
     const agentRunsDeleted = Number(statements.countAgentRuns.get()?.count) || 0;
     const memoryEventsDeleted = Number(statements.countMemoryEvents.get()?.count) || 0;
     return withTransaction(() => {
+      const curatorAgentCleanup = curatorAgentDatabase?.clearCuratorAgentRuns() || {
+        runsDeleted: 0
+      };
       const capsuleCleanup = capsuleDatabase.clearCapsules();
       const oralHistoryCleanup = oralHistoryDatabase?.clearOralHistories() || {
         oralHistoryQuestionsDeleted: 0,
@@ -711,7 +800,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
         DELETE FROM agent_runs;
         DELETE FROM memories;
       `);
-      return { memoriesDeleted, agentRunsDeleted, memoryEventsDeleted, exhibitionsDeleted, revisitStatesDeleted, revisitIntentsDeleted, timeCalibrationsDeleted, ...capsuleCleanup, ...oralHistoryCleanup, ...clueCleanup, ...voiceCleanup };
+      return { memoriesDeleted, agentRunsDeleted, memoryEventsDeleted, exhibitionsDeleted, revisitStatesDeleted, revisitIntentsDeleted, timeCalibrationsDeleted, ...curatorAgentCleanup, ...capsuleCleanup, ...oralHistoryCleanup, ...clueCleanup, ...voiceCleanup };
     });
   }
 
@@ -1148,6 +1237,16 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     const capsuleStats = capsuleDatabase.getCapsuleStats();
     const timeCalibrationStats = timeCalibrationDatabase?.getTimeCalibrationStats?.() || { calibrations: 0, needsReview: 0 };
     const oralHistoryStats = oralHistoryDatabase?.getOralHistoryStats?.() || { questions: 0, answers: 0, confirmed: 0 };
+    const curatorAgentStats = curatorAgentDatabase?.getCuratorAgentStats?.() || {
+      runs: 0,
+      completed: 0,
+      interrupted: 0,
+      needsReview: 0,
+      historical: 0,
+      steps: 0,
+      proposals: 0,
+      decisions: 0
+    };
     return {
       memories: memories.length,
       halls: new Set(memories.map((memory) => memory.hall)).size,
@@ -1171,6 +1270,11 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
       oralHistoryQuestions: oralHistoryStats.questions,
       oralHistoryAnswers: oralHistoryStats.answers,
       confirmedOralHistoryAnswers: oralHistoryStats.confirmed,
+      curatorAgentRuns: curatorAgentStats.runs,
+      curatorAgentCompletedRuns: curatorAgentStats.completed,
+      curatorAgentInterruptedRuns: curatorAgentStats.interrupted,
+      curatorAgentProposals: curatorAgentStats.proposals,
+      curatorAgentDecisions: curatorAgentStats.decisions,
       capsules: capsuleStats.capsules,
       capsuleMediaLinks: capsuleStats.mediaLinks
     };
@@ -1665,6 +1769,8 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     ...(revisitIntentDatabase || {}),
     ...(timeCalibrationDatabase || {}),
     ...(oralHistoryDatabase || {}),
+    ...(curatorAgentDatabase || {}),
+    deleteExhibition,
     listRecentMemoryRevisions,
     searchClues,
     searchMemories,

@@ -19,12 +19,52 @@ async function main() {
   try {
     await checkSchema12ForwardingAndCleanup(root);
     await checkSchema13OralHistoryForwarding(root);
+    await checkSchema14CuratorAgentForwarding(root);
     checkDependencyBoundary(root);
     checkSafeCounts();
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
   console.log(`Archive inspection checks passed: ${assertions} assertions.`);
+}
+
+async function checkSchema14CuratorAgentForwarding(root) {
+  const curatorValidator = () => true;
+  let forwarded = null;
+  const api = createArchiveInspectionApi({
+    mediaRoot: root,
+    supportedSchemaVersion: 14,
+    validateVoiceBackup: () => true,
+    validateTimeCalibrationBackup: () => true,
+    validateOralHistoryBackup: () => true,
+    validateCuratorAgentBackup: curatorValidator,
+    prepareMediaArchive: async (_source, options) => {
+      forwarded = options;
+      return preparedFixture({
+        schemaVersion: 14,
+        curatorRunCount: 2,
+        curatorProposalCount: 1,
+        curatorDecisionCount: 3
+      });
+    },
+    sendJson(_response, status, payload) { return { status, payload }; },
+    httpError(statusCode, message) { return Object.assign(new Error(message), { statusCode }); }
+  });
+  const result = await api.handle(requestFixture(), responseFixture(), { pathname: "/api/archive/inspect" });
+  equal(result.status, 200, "schema 14 curator-agent archive is inspected read-only");
+  equal(forwarded.validateCuratorAgentBackup, curatorValidator, "curator-agent validator is forwarded to the canonical prepare chain");
+  equal(forwarded.supportedSchemaVersion, 14, "schema 14 inspection keeps the future-schema ceiling");
+  equal(result.payload.inspection.counts.curatorAgentRuns, 2, "inspection exposes only the curator run count");
+  equal(result.payload.inspection.counts.curatorAgentProposals, 1, "inspection exposes only the curator proposal count");
+  equal(result.payload.inspection.counts.curatorAgentDecisions, 3, "inspection exposes only the curator decision count");
+  const serialized = JSON.stringify(result.payload.inspection);
+  equal(
+    /(?:tool-args-private|tool-result-private|proposal-body-private|decision-body-private|read_memory_evidence)/u.test(serialized),
+    false,
+    "inspection JSON physically excludes curator tool payloads, proposal bodies and decision bodies"
+  );
+  equal(/"(?:args|result|preview|outcome|steps|decisions)"\s*:/u.test(serialized), false, "inspection JSON contains no curator private field names");
+  equal(fs.existsSync(path.join(root, ".inspect")), false, "schema 14 inspection cleans its private staging directory");
 }
 
 async function checkSchema13OralHistoryForwarding(root) {
@@ -128,6 +168,25 @@ function checkDependencyBoundary(root) {
     TypeError,
     "schema 13 验真缺少口述史 validator 时构造即失败"
   );
+  throws(
+    () => createArchiveInspectionApi({
+      ...base,
+      supportedSchemaVersion: 14,
+      validateTimeCalibrationBackup: () => true,
+      validateOralHistoryBackup: () => true
+    }),
+    TypeError,
+    "schema 14 inspection fails at construction when the curator-agent validator is missing"
+  );
+  ok(
+    createArchiveInspectionApi({
+      ...base,
+      supportedSchemaVersion: 13,
+      validateTimeCalibrationBackup: () => true,
+      validateOralHistoryBackup: () => true
+    }),
+    "schema 13 compatibility does not fabricate a schema 14 curator-agent dependency"
+  );
   ok(
     createArchiveInspectionApi({ ...base, supportedSchemaVersion: 11 }),
     "schema 11 兼容验真不虚构 schema 12 依赖"
@@ -142,6 +201,32 @@ function checkSafeCounts() {
   const serialized = JSON.stringify(redacted);
   equal(serialized.includes("sourceSetSha256"), false, "验真摘要不暴露校准来源摘要");
   equal(serialized.includes("selectedSourceKeys"), false, "验真摘要不暴露所选来源键");
+  const fullCurator = summarize(preparedFixture({
+    mode: "full",
+    schemaVersion: 14,
+    curatorRunCount: 4,
+    curatorProposalCount: 2,
+    curatorDecisionCount: 5
+  }));
+  equal(fullCurator.counts.curatorAgentRuns, 4, "full inspection exposes only the curator run count");
+  equal(fullCurator.counts.curatorAgentProposals, 2, "full inspection exposes only the curator proposal count");
+  equal(fullCurator.counts.curatorAgentDecisions, 5, "full inspection exposes only the curator decision count");
+  const redactedCurator = summarize(preparedFixture({
+    mode: "redacted",
+    schemaVersion: 14,
+    curatorRunCount: 6,
+    curatorProposalCount: 3,
+    curatorDecisionCount: 7
+  }));
+  equal(redactedCurator.counts.curatorAgentRuns, 6, "redacted inspection reads the safe curator run count");
+  equal(redactedCurator.counts.curatorAgentProposals, 3, "redacted inspection reads the safe curator proposal count");
+  equal(redactedCurator.counts.curatorAgentDecisions, 7, "redacted inspection reads the safe curator decision count");
+  const serializedCurator = JSON.stringify({ fullCurator, redactedCurator });
+  equal(
+    /(?:tool-args-private|tool-result-private|proposal-body-private|decision-body-private|read_memory_evidence)/u.test(serializedCurator),
+    false,
+    "full and redacted inspection summaries never expose curator private content"
+  );
 }
 
 function preparedFixture(options = {}) {
@@ -151,6 +236,40 @@ function preparedFixture(options = {}) {
   const timeCalibrations = mode === "redacted"
     ? { mode: "redacted-summary", calibrationCount: count, uncertainCount: count, alternativesCount: 0, note: "fixed" }
     : { mode: "full", schemaVersion: 12, calibrations: Array.from({ length: count }, (_, index) => ({ id: `calibration-${index + 1}` })) };
+  const curatorRunCount = options.curatorRunCount || 0;
+  const curatorProposalCount = options.curatorProposalCount || 0;
+  const curatorDecisionCount = options.curatorDecisionCount || 0;
+  const curatorAgent = mode === "redacted"
+    ? {
+        mode: "redacted-summary",
+        runCount: curatorRunCount,
+        completedRunCount: Math.min(curatorRunCount, curatorProposalCount),
+        cancelledRunCount: 0,
+        proposalCount: curatorProposalCount,
+        decisionCount: curatorDecisionCount,
+        approvedCount: curatorDecisionCount,
+        rejectedCount: 0,
+        note: "fixed"
+      }
+    : {
+        mode: "full",
+        schemaVersion: 14,
+        runs: Array.from({ length: curatorRunCount }, (_, index) => ({
+          run: {
+            id: `curator-run-${index + 1}`,
+            request: { query: "tool-args-private" }
+          },
+          steps: [{
+            toolName: "read_memory_evidence",
+            args: { secret: "tool-args-private" },
+            result: { secret: "tool-result-private" }
+          }],
+          proposal: index < curatorProposalCount ? { preview: { body: "proposal-body-private" } } : null,
+          decisions: index === 0
+            ? Array.from({ length: curatorDecisionCount }, () => ({ outcome: { body: "decision-body-private" } }))
+            : []
+        }))
+      };
   return {
     verified: true,
     manifest: {
@@ -181,7 +300,8 @@ function preparedFixture(options = {}) {
                 status: index < (options.confirmedOralAnswerCount || 0) ? "confirmed" : "draft"
               }))
             }
-      } : {})
+      } : {}),
+      ...(schemaVersion >= 14 ? { curatorAgent } : {})
     },
     assets: []
   };

@@ -5,11 +5,18 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { assertSafeDemoStorage, resetDemoStorage, createDemoCapacityGuard, DEMO_LIMITS } = require("../lib/demo-safety");
+const { createCuratorAgentApi } = require("../lib/curator-agent-api");
 
 let assertions = 0;
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ai-memory-museum-demo-safety-"));
 
-try {
+main().catch((error) => {
+  console.error(error.stack || error.message);
+  process.exitCode = 1;
+});
+
+async function main() {
+  try {
   const safe = assertSafeDemoStorage({
     dbPath: path.join(tempRoot, "ai-memory-museum-demo.sqlite"),
     mediaRoot: path.join(tempRoot, "ai-memory-museum-demo-media"),
@@ -62,9 +69,60 @@ try {
   assertions += 1;
   check(transactions === 2 && mutations === 1, "达到上限后的事务不得执行写入回调");
 
+  check(DEMO_LIMITS.curatorAgentRuns === 64, "V10 curator-agent runs have an explicit bounded Demo capacity");
+  assert.throws(() => capacity.write("curatorAgentRuns", () => DEMO_LIMITS.curatorAgentRuns, () => {
+    mutations += 1;
+  }), (error) => error?.statusCode === 429);
+  assertions += 1;
+  check(mutations === 1, "a full curator-agent Demo capacity never reaches the mutation callback");
+
+  await checkCuratorAgentDemoApi();
   console.log(`Demo safety checks passed: ${assertions} assertions.`);
-} finally {
-  fs.rmSync(tempRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+}
+
+async function checkCuratorAgentDemoApi() {
+  let persistenceReads = 0;
+  let persistenceWrites = 0;
+  let bodyReads = 0;
+  let sent = null;
+  const store = new Proxy({}, {
+    get() {
+      persistenceReads += 1;
+      return () => { persistenceWrites += 1; throw new Error("Demo must not touch persistence."); };
+    }
+  });
+  const api = createCuratorAgentApi({
+    store,
+    interviewDemo: true,
+    sendJson: (_response, statusCode, payload) => {
+      sent = { statusCode, payload };
+      return true;
+    },
+    readJsonBody: async () => { bodyReads += 1; return { confirm: true }; },
+    httpError: (statusCode, message) => Object.assign(new Error(message), { statusCode })
+  });
+
+  await api.handle({ method: "GET", headers: {} }, {}, new URL("http://demo.local/api/curator-agent/sample"));
+  check(sent?.statusCode === 200 && sent?.payload?.demo === true && sent?.payload?.synthetic === true,
+    "curator-agent sample GET is synthesized explicitly in Demo mode");
+  check(persistenceReads === 0 && persistenceWrites === 0 && bodyReads === 0,
+    "curator-agent sample GET performs zero persistence and zero body reads");
+
+  await assert.rejects(
+    () => api.handle({ method: "POST", headers: {} }, {}, new URL("http://demo.local/api/curator-agent/runs")),
+    (error) => error?.statusCode === 403 && error?.code === "CURATOR_AGENT_DEMO_READ_ONLY"
+  );
+  assertions += 1;
+  await assert.rejects(
+    () => api.handle({ method: "DELETE", headers: {} }, {}, new URL("http://demo.local/api/curator-agent/runs/curator-run-demo")),
+    (error) => error?.statusCode === 403 && error?.code === "CURATOR_AGENT_DEMO_READ_ONLY"
+  );
+  assertions += 1;
+  check(persistenceReads === 0 && persistenceWrites === 0 && bodyReads === 0,
+    "Demo POST and DELETE are rejected before persistence, ETag, idempotency, or body processing");
 }
 
 function check(value, message) {

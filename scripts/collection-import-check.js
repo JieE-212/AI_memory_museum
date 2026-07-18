@@ -4,6 +4,10 @@ const assert = require("node:assert/strict");
 const { createCollectionImporter } = require("../lib/collection-import");
 const { createCollectionExporter } = require("../lib/collection-export");
 const { ORAL_HISTORY_REDACTED_NOTE } = require("../lib/oral-history-backup");
+const {
+  CURATOR_AGENT_REDACTED_NOTE,
+  buildCuratorRequestSha256
+} = require("../lib/curator-agent-backup");
 
 let assertionCount = 0;
 
@@ -11,6 +15,7 @@ function run() {
   checkSchema11Export();
   checkSchema12Export();
   checkSchema13Export();
+  checkSchema14Export();
   checkPrimitiveBodies();
   checkHardImportLimit();
   checkSchemaEnvelope();
@@ -20,6 +25,7 @@ function run() {
   checkRevisitIntentImportModes();
   checkTimeCalibrationImportModes();
   checkOralHistoryImportModes();
+  checkCuratorAgentImportModes();
   checkDuplicateReferenceIds();
   checkFeaturePrevalidation();
   checkConflictMapping();
@@ -78,6 +84,61 @@ function checkSchema13Export() {
   delete missing.buildOralHistoryBackup;
   const broken = createCollectionExporter({ store: missing, appVersion: "9.0.0", schemaVersion: 13, buildArchaeologyBackup: () => ({}) });
   assert.throws(() => broken(memories, "full"), /oral-history backup support/u, "schema 13 导出缺少口述史处理器时 fail closed");
+  assertionCount += 1;
+}
+
+function checkSchema14Export() {
+  const calls = [];
+  const store = {
+    buildExhibitionBackup: (mode) => ({ mode: mode === "redacted" ? "redacted-summary" : "full", schemaVersion: 5, exhibitions: [] }),
+    buildRevisitBackup: (mode) => ({ mode: mode === "redacted" ? "redacted-summary" : "full", states: [] }),
+    buildClueBackup: (mode) => ({ mode: mode === "redacted" ? "redacted-summary" : "full", entities: [] }),
+    buildVoiceBackup: (mode) => mode === "redacted"
+      ? { mode: "redacted-summary", assetCount: 0 }
+      : { mode: "full", schemaVersion: 8, assets: [], memoryLinks: [], transcripts: [] },
+    buildCapsuleBackup: (mode) => mode === "redacted"
+      ? { mode: "redacted-summary", capsuleCount: 0 }
+      : { mode: "full", schemaVersion: 9, capsules: [] },
+    buildRevisionBackup: (mode) => mode === "redacted"
+      ? { mode: "redacted-summary", revisionCount: 0 }
+      : { mode: "full", schemaVersion: 10, revisions: [] },
+    buildRevisitIntentBackup: (mode) => mode === "redacted"
+      ? { mode: "redacted-summary", intentCount: 0 }
+      : { mode: "full", schemaVersion: 11, intents: [] },
+    buildTimeCalibrationBackup: (mode) => mode === "redacted"
+      ? { mode: "redacted-summary", calibrationCount: 0 }
+      : { mode: "full", schemaVersion: 12, calibrations: [] },
+    buildOralHistoryBackup: (mode) => mode === "redacted"
+      ? { mode: "redacted-summary", questionCount: 0, answerCount: 0, confirmedAnswerCount: 0, note: ORAL_HISTORY_REDACTED_NOTE }
+      : { mode: "full", schemaVersion: 13, questions: [], answers: [] },
+    buildCuratorAgentBackup(mode) {
+      calls.push(mode);
+      return mode === "redacted"
+        ? curatorRedacted()
+        : { mode: "full", schemaVersion: 14, runs: [] };
+    }
+  };
+  const build = createCollectionExporter({
+    store,
+    appVersion: "10.0.0",
+    schemaVersion: 14,
+    buildArchaeologyBackup: (_store, _memories, mode) => mode === "redacted"
+      ? { mode: "redacted-summary" }
+      : { mode: "full", events: [], claims: [], pairDecisions: [], questions: [] }
+  });
+  const full = build([memory("schema14-export")], "full");
+  same(Object.keys(full.curatorAgent).sort(), ["mode", "runs", "schemaVersion"], "schema 14 full JSON 显式携带 curatorAgent 根合同");
+  const redacted = build([memory("schema14-export")], "redacted");
+  same(Object.keys(redacted.curatorAgent).sort(), [
+    "approvedCount", "cancelledRunCount", "completedRunCount", "decisionCount",
+    "mode", "note", "proposalCount", "rejectedCount", "runCount"
+  ], "schema 14 脱敏 JSON 只携带九键安全计数摘要");
+  same(calls, ["full", "redacted"], "curatorAgent exporter 接收与馆藏一致的隐私模式");
+
+  const missing = { ...store };
+  delete missing.buildCuratorAgentBackup;
+  const broken = createCollectionExporter({ store: missing, appVersion: "10.0.0", schemaVersion: 14, buildArchaeologyBackup: () => ({ mode: "full", events: [] }) });
+  assert.throws(() => broken([], "full"), /curator-agent backup support/u, "schema 14 导出缺少受限策展处理器时 fail closed");
   assertionCount += 1;
 }
 
@@ -171,6 +232,91 @@ function checkOralHistoryImportModes() {
     oralHistories: { ...oral, leakedTranscript: "秘密" }
   }));
   ok(unknownError?.statusCode === 400 && unknown.calls.normalizes === 0, "口述史 exact 根出现未知字段时零写入拒绝");
+}
+
+function checkCuratorAgentImportModes() {
+  const memories = [memory("source-curator-a"), memory("source-curator-b")];
+  const curatorAgent = curatorFull("curator-json-run", memories.map((item) => item.id));
+  const required = schema14Required();
+
+  const missing = createFixture({ schemaVersion: 14 });
+  const missingError = captureError(() => missing.importCollection({
+    schemaVersion: 14,
+    mode: "full",
+    memories,
+    ...required
+  }));
+  ok(missingError?.statusCode === 400 && missingError.message.includes("curatorAgent"), "schema 14 full JSON 缺少 curatorAgent 时在任何写入前拒绝");
+  ok(missing.calls.normalizes === 0 && missing.calls.transactions === 0, "缺失 curatorAgent 保持规范化和事务零调用");
+
+  const full = createFixture({ schemaVersion: 14 });
+  const result = full.importCollection({
+    schemaVersion: 14,
+    mode: "full",
+    memories,
+    ...required,
+    curatorAgent
+  });
+  ok(full.calls.validations.curatorAgent === 1 && full.calls.restores.curatorAgent === 1, "curatorAgent 在写入前验真并于同一事务恢复");
+  ok(full.calls.events.indexOf("restore-exhibitions") < full.calls.events.indexOf("restore-curator-agent"), "JSON 恢复固定在 exhibitions 完成后恢复 curatorAgent");
+  same(mapObject(full.calls.restoreMaps.curatorAgent.memoryIdMap), {
+    "source-curator-a": "source-curator-a",
+    "source-curator-b": "source-curator-b"
+  }, "curatorAgent 复用完整 memory ID map");
+  same(mapObject(full.calls.restoreMaps.curatorAgent.eventIdMap), {}, "curatorAgent 收到 archaeology event ID map");
+  same(mapObject(full.calls.restoreMaps.curatorAgent.exhibitionIdMap), {}, "curatorAgent 收到 exhibition ID map");
+  ok(result.curatorAgent.runs === 1 && result.curatorAgent.historical === true && result.curatorAgent.allowDecisions === false, "JSON 恢复结果明确为只读历史审计且不继承授权");
+  ok(Object.keys(result.curatorAgent.idMap.runs).length === 1, "JSON 恢复返回 curator run ID 映射");
+
+  const redacted = createFixture({ schemaVersion: 14 });
+  const redactedResult = redacted.importCollection({
+    schemaVersion: 14,
+    mode: "redacted",
+    memories: [memory("source-curator-redacted")],
+    ...schema14RedactedRequired(),
+    curatorAgent: curatorRedacted()
+  });
+  ok(redactedResult.curatorAgent.summarized === true && redactedResult.curatorAgent.runs === 0 && redacted.calls.restores.curatorAgent === 0, "脱敏 curatorAgent 九键摘要只验真且零恢复");
+
+  const legacy = createFixture({ schemaVersion: 13 });
+  const legacyError = captureError(() => legacy.importCollection({
+    schemaVersion: 13,
+    mode: "full",
+    memories: [],
+    curatorAgent: { mode: "full", schemaVersion: 14, runs: [] }
+  }));
+  ok(legacyError?.statusCode === 400 && legacyError.message.includes("curatorAgent"), "schema 13 越级声明 curatorAgent 被版本 gate 拒绝");
+
+  const oralPreflight = createFixture({ schemaVersion: 14 });
+  const preflight = oralPreflight.importCollection({
+    schemaVersion: 14,
+    mode: "full",
+    memories,
+    ...required,
+    oralHistories: { mode: "full", schemaVersion: 13, questions: [{}], answers: [] },
+    curatorAgent
+  });
+  ok(preflight.imported === 0 && preflight.curatorAgent.skipped === 1 && preflight.curatorAgent.requiresTimeIsle === true, "非空口述史 JSON 仅验真 curatorAgent 并整包转交 .time-isle");
+  ok(oralPreflight.calls.transactions === 0 && oralPreflight.calls.restores.curatorAgent === 0, "口述史 preflight 不会半恢复 curatorAgent");
+
+  const failed = createFixture({
+    schemaVersion: 14,
+    restoreHandlers: {
+      curatorAgent({ state }) {
+        state.curatorAgent.push("partial-curator-run");
+        throw new Error("forced curator restore failure");
+      }
+    }
+  });
+  const failure = captureError(() => failed.importCollection({
+    schemaVersion: 14,
+    mode: "full",
+    memories,
+    ...required,
+    curatorAgent
+  }));
+  ok(failure?.statusCode === 400 && failure.message.includes("未保留不完整数据"), "curatorAgent 恢复失败取消整次 JSON 导入");
+  ok(failed.state.memories.size === 0 && failed.state.curatorAgent.length === 0, "curatorAgent 失败与馆藏写入在同一事务回滚");
 }
 
 function checkSchema12Export() {
@@ -793,7 +939,8 @@ function createFixture(options = {}) {
     exhibitions: [...(options.existingExhibitions || [])],
     revisits: [],
     entities: [],
-    timeCalibrations: []
+    timeCalibrations: [],
+    curatorAgent: []
   };
   const calls = {
     normalizes: 0,
@@ -804,9 +951,9 @@ function createFixture(options = {}) {
     validations: {
       archaeology: 0, exhibitions: 0, revisits: 0, entities: 0,
       voices: 0, capsules: 0, revisions: 0, revisitIntents: 0,
-      timeCalibrations: 0, oralHistories: 0
+      timeCalibrations: 0, oralHistories: 0, curatorAgent: 0
     },
-    restores: { archaeology: 0, exhibitions: 0, revisits: 0, entities: 0, revisions: 0, revisitIntents: 0, timeCalibrations: 0 },
+    restores: { archaeology: 0, exhibitions: 0, revisits: 0, entities: 0, revisions: 0, revisitIntents: 0, timeCalibrations: 0, curatorAgent: 0 },
     restoreMaps: {},
     oralBoundaries: null,
     events: []
@@ -937,6 +1084,22 @@ function createFixture(options = {}) {
       };
       if (options.validationFailure === "oralHistories") throw new Error("invalid oral histories");
       return Boolean(backup);
+    },
+    validateCuratorAgentBackup(backup) {
+      calls.validations.curatorAgent += 1;
+      calls.events.push("validate-curator-agent");
+      if (options.validationFailure === "curatorAgent") throw new Error("invalid curator agent");
+      return Boolean(backup);
+    },
+    restoreCuratorAgentBackup(backup, restoreOptions = {}) {
+      calls.restores.curatorAgent += 1;
+      calls.events.push("restore-curator-agent");
+      calls.restoreMaps.curatorAgent = {
+        memoryIdMap: new Map(restoreOptions.memoryIdMap || []),
+        eventIdMap: new Map(restoreOptions.eventIdMap || []),
+        exhibitionIdMap: new Map(restoreOptions.exhibitionIdMap || [])
+      };
+      return callRestoreHandler("curatorAgent", { backup, ...restoreOptions });
     }
   };
 
@@ -975,6 +1138,15 @@ function createFixture(options = {}) {
         skipped: 0,
         requiresTimeIsle: false,
         idMap: {}
+      };
+    }
+    if (feature === "curatorAgent") {
+      const runIds = Object.fromEntries((context.backup?.runs || []).map((entry, index) => [entry.run.id, `curator-run-restored-${index + 1}`]));
+      state.curatorAgent.push(...Object.values(runIds));
+      return {
+        restoredRuns: Object.keys(runIds).length,
+        runIdMap: runIds,
+        idMap: { runs: runIds, steps: {}, proposals: {}, decisions: {} }
       };
     }
     return { states: 0, skipped: 0, idMap: {} };
@@ -1019,6 +1191,90 @@ function fullBackup() {
   return { mode: "full" };
 }
 
+function curatorFull(runId, memoryIds) {
+  const request = {
+    intent: "draft_exhibition",
+    query: "",
+    memoryIds: [...memoryIds],
+    title: "",
+    theme: ""
+  };
+  const timestamp = "2026-07-18T06:00:00.000Z";
+  return {
+    mode: "full",
+    schemaVersion: 14,
+    runs: [{
+      run: {
+        id: runId,
+        schemaVersion: 14,
+        idempotencyKey: `${runId}-request`,
+        requestSha256: buildCuratorRequestSha256(request),
+        request,
+        status: "created",
+        version: 1,
+        budgets: { maxSteps: 6, maxToolCalls: 4, maxDurationMs: 2000, maxResultBytes: 262144, maxMemories: 6 },
+        usage: { steps: 0, toolCalls: 0, resultBytes: 0, durationMs: 0 },
+        historical: false,
+        needsReview: false,
+        allowDecisions: false,
+        createdAt: timestamp,
+        startedAt: "",
+        updatedAt: timestamp,
+        completedAt: "",
+        cancelledAt: "",
+        interruptedAt: "",
+        failedAt: "",
+        failureCode: "",
+        failureMessage: ""
+      },
+      steps: [],
+      proposal: null,
+      decisions: []
+    }]
+  };
+}
+
+function curatorRedacted() {
+  return {
+    mode: "redacted-summary",
+    note: CURATOR_AGENT_REDACTED_NOTE,
+    runCount: 1,
+    completedRunCount: 0,
+    cancelledRunCount: 0,
+    proposalCount: 0,
+    decisionCount: 0,
+    approvedCount: 0,
+    rejectedCount: 0
+  };
+}
+
+function schema14Required() {
+  return {
+    archaeology: { mode: "full", events: [], claims: [], pairDecisions: [], questions: [] },
+    exhibitions: { mode: "full", schemaVersion: 5, exhibitions: [] },
+    revisits: { mode: "full", states: [] },
+    entities: { mode: "full", entities: [] },
+    voices: { mode: "full", schemaVersion: 8, assets: [], memoryLinks: [], transcripts: [] },
+    capsules: { mode: "full", schemaVersion: 9, capsules: [] },
+    revisions: { mode: "full", schemaVersion: 10, revisions: [] },
+    revisitIntents: { mode: "full", schemaVersion: 11, intents: [] },
+    timeCalibrations: { mode: "full", schemaVersion: 12, calibrations: [] },
+    oralHistories: { mode: "full", schemaVersion: 13, questions: [], answers: [] }
+  };
+}
+
+function schema14RedactedRequired() {
+  return {
+    entities: { mode: "redacted-summary" },
+    voices: { mode: "redacted-summary", assetCount: 0 },
+    capsules: { mode: "redacted-summary", capsuleCount: 0 },
+    revisions: { mode: "redacted-summary", revisionCount: 0 },
+    revisitIntents: { mode: "redacted-summary", intentCount: 0, note: "fixed" },
+    timeCalibrations: { mode: "redacted-summary", calibrationCount: 0, uncertainCount: 0, alternativesCount: 0, note: "fixed" },
+    oralHistories: { mode: "redacted-summary", questionCount: 0, answerCount: 0, confirmedAnswerCount: 0, note: ORAL_HISTORY_REDACTED_NOTE }
+  };
+}
+
 function sanitizeId(value) {
   const id = String(value || "").trim();
   return /^[a-zA-Z0-9_-]{1,120}$/.test(id) ? id : "";
@@ -1050,7 +1306,8 @@ function cloneState(state) {
     exhibitions: clone(state.exhibitions),
     revisits: clone(state.revisits),
     entities: clone(state.entities),
-    timeCalibrations: clone(state.timeCalibrations)
+    timeCalibrations: clone(state.timeCalibrations),
+    curatorAgent: clone(state.curatorAgent)
   };
 }
 
@@ -1061,6 +1318,7 @@ function restoreState(target, snapshot) {
   target.revisits = snapshot.revisits;
   target.entities = snapshot.entities;
   target.timeCalibrations = snapshot.timeCalibrations;
+  target.curatorAgent = snapshot.curatorAgent;
 }
 
 function stateSnapshot(state) {
@@ -1070,7 +1328,8 @@ function stateSnapshot(state) {
     exhibitions: state.exhibitions,
     revisits: state.revisits,
     entities: state.entities,
-    timeCalibrations: state.timeCalibrations
+    timeCalibrations: state.timeCalibrations,
+    curatorAgent: state.curatorAgent
   };
 }
 

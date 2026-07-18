@@ -16,6 +16,7 @@ const { buildExhibitionPreview } = require("../lib/exhibition-curator");
 const { buildClueBackup, remapClueBackup, validateClueBackup } = require("../lib/clue-backup");
 const { memorySnapshotSha256 } = require("../lib/revision-backup");
 const { buildSourceSetSha256, buildTimeCandidates } = require("../lib/time-calibration-service");
+const { buildCuratorRequestSha256 } = require("../lib/curator-agent-backup");
 
 let assertions = 0;
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "time-isle-restore-"));
@@ -1115,10 +1116,49 @@ function checkOralHistoryRestoreOrdering(directory) {
     questions: [{ id: "oral-question-source", eventId: "event-oral-source" }],
     answers: [{ id: "oral-answer-source", assetId: sourceVoiceId }]
   };
+  const curatorRequest = {
+    intent: "draft_exhibition",
+    query: "restored memory",
+    memoryIds: [],
+    title: "",
+    theme: ""
+  };
+  const curatorAgent = {
+    mode: "full",
+    schemaVersion: 14,
+    runs: [{
+      run: {
+        id: "curator-run-source",
+        schemaVersion: 14,
+        version: 1,
+        idempotencyKey: "curator-order-key",
+        request: curatorRequest,
+        requestSha256: buildCuratorRequestSha256(curatorRequest),
+        budgets: { maxSteps: 6, maxToolCalls: 4, maxDurationMs: 2_000, maxResultBytes: 262_144, maxMemories: 6 },
+        usage: { steps: 0, toolCalls: 0, resultBytes: 0, durationMs: 0 },
+        historical: false,
+        needsReview: false,
+        allowDecisions: false,
+        status: "cancelled",
+        createdAt: "2026-07-18T10:00:00.000Z",
+        startedAt: "",
+        updatedAt: "2026-07-18T10:01:00.000Z",
+        completedAt: "",
+        cancelledAt: "2026-07-18T10:01:00.000Z",
+        interruptedAt: "",
+        failedAt: "",
+        failureCode: "",
+        failureMessage: ""
+      },
+      steps: [],
+      proposal: null,
+      decisions: []
+    }]
+  };
   const prepared = {
     verified: true,
     stagingRoot,
-    manifest: { mode: "full", schemaVersion: 13, entries: [] },
+    manifest: { mode: "full", schemaVersion: 14, entries: [] },
     collection: {
       memories: [sourceMemory],
       revisions: { mode: "full", schemaVersion: 10, revisions: [] },
@@ -1131,8 +1171,9 @@ function checkOralHistoryRestoreOrdering(directory) {
       },
       voices: { mode: "full", schemaVersion: 8, assets: [sourceAsset], memoryLinks: [], transcripts: [] },
       oralHistories,
+      curatorAgent,
       timeCalibrations: { mode: "full", schemaVersion: 12, calibrations: [] },
-      exhibitions: { mode: "full", schemaVersion: 5, exhibitions: [] },
+      exhibitions: { mode: "full", schemaVersion: 5, exhibitions: [{ id: "exhibition-curator-source" }] },
       revisits: { mode: "full", schemaVersion: 6, states: [] },
       revisitIntents: { mode: "full", schemaVersion: 11, intents: [] },
       entities: { mode: "full", schemaVersion: 7, entities: [] }
@@ -1239,7 +1280,30 @@ function checkOralHistoryRestoreOrdering(directory) {
       return { calibrations: 0, skipped: 0, idMap: { calibrations: {} } };
     },
     validateExhibitionBackup: () => true,
-    restoreExhibitionBackup() { order.push("exhibitions"); return { exhibitions: 0, skipped: 0, idMap: {} }; },
+    restoreExhibitionBackup() {
+      order.push("exhibitions");
+      return { exhibitions: 1, skipped: 0, idMap: { "exhibition-curator-source": "exhibition-curator-remapped" } };
+    },
+    validateCuratorAgentBackup: () => true,
+    restoreCuratorAgentBackup(_backup, options) {
+      order.push("curator-agent");
+      captured.curatorOptions = options;
+      return {
+        restoredRuns: 1,
+        runs: 1,
+        steps: 0,
+        proposals: 0,
+        decisions: 0,
+        historical: true,
+        allowDecisions: false,
+        idMap: {
+          runs: { "curator-run-source": "curator-run-remapped" },
+          steps: {},
+          proposals: {},
+          decisions: {}
+        }
+      };
+    },
     validateRevisitBackup: () => true,
     restoreRevisitBackup() { order.push("revisits"); return { states: 0, skipped: 0, idMap: {} }; },
     validateRevisitIntentBackup: () => true,
@@ -1251,7 +1315,7 @@ function checkOralHistoryRestoreOrdering(directory) {
   const restored = restorePreparedArchive(base);
   deepEqual(order, [
     "memories", "revisions", "archaeology", "voices", "oral-history",
-    "time-calibrations", "exhibitions", "revisits", "revisit-intents", "entities"
+    "time-calibrations", "exhibitions", "curator-agent", "revisits", "revisit-intents", "entities"
   ], "完整恢复冻结顺序为 memories/revisions/media → archaeology → voices → oral → time → 其余模块");
   deepEqual(Object.fromEntries(captured.oralOptions.memoryIdMap), { "memory-oral-source": "memory-oral-remapped" }, "口述恢复收到完整 memoryIdMap 以重写来源身份");
   deepEqual(Object.fromEntries(captured.oralOptions.eventIdMap), { "event-oral-source": "event-oral-remapped" }, "口述恢复收到考古 eventIdMap 以重算 questionKey");
@@ -1263,6 +1327,29 @@ function checkOralHistoryRestoreOrdering(directory) {
   equal(restored.idMap.oralHistoryQuestions["oral-question-source"], "oral-question-remapped", "恢复结果公开完整问题 ID 映射");
   equal(restored.idMap.oralHistoryAnswers["oral-answer-source"], "oral-answer-remapped", "恢复结果公开完整回答 ID 映射");
 
+  deepEqual(
+    Object.fromEntries(captured.curatorOptions.memoryIdMap),
+    { "memory-oral-source": "memory-oral-remapped" },
+    "curator-agent restore receives the complete memory ID map"
+  );
+  deepEqual(
+    Object.fromEntries(captured.curatorOptions.eventIdMap),
+    { "event-oral-source": "event-oral-remapped" },
+    "curator-agent restore receives the archaeology event ID map"
+  );
+  deepEqual(
+    Object.fromEntries(captured.curatorOptions.exhibitionIdMap),
+    { "exhibition-curator-source": "exhibition-curator-remapped" },
+    "curator-agent restore runs after exhibitions and receives their ID map"
+  );
+  equal(typeof captured.curatorOptions.createId, "function", "curator-agent restore receives the shared ID generator");
+  equal(restored.curatorAgent.historical, true, "restored curator-agent runs are explicitly historical");
+  equal(restored.curatorAgent.allowDecisions, false, "restored curator-agent history cannot inherit live decision authority");
+  equal(restored.idMap.curatorAgentRuns["curator-run-source"], "curator-run-remapped", "top-level result exposes curator run ID mappings");
+  deepEqual(restored.idMap.curatorAgentSteps, {}, "top-level result exposes the complete empty curator step map");
+  deepEqual(restored.idMap.curatorAgentProposals, {}, "top-level result exposes the complete empty curator proposal map");
+  deepEqual(restored.idMap.curatorAgentDecisions, {}, "top-level result exposes the complete empty curator decision map");
+
   const blockedRoot = path.join(directory, "blocked-voice");
   const blockedVoiceStorage = createVoiceStorage({ root: blockedRoot });
   assert.throws(() => restorePreparedArchive({
@@ -1272,6 +1359,16 @@ function checkOralHistoryRestoreOrdering(directory) {
   }), (error) => error?.code === "MEDIA_RESTORE_ORAL_HISTORY_HANDLER_REQUIRED");
   assertions += 1;
   equal(listRegularFiles(blockedRoot).length, 0, "缺口述恢复 handler 时在声音物化前整包拒绝");
+
+  const blockedCuratorRoot = path.join(directory, "blocked-curator-voice");
+  const blockedCuratorVoiceStorage = createVoiceStorage({ root: blockedCuratorRoot });
+  assert.throws(() => restorePreparedArchive({
+    ...base,
+    voiceStorage: blockedCuratorVoiceStorage,
+    restoreCuratorAgentBackup: undefined
+  }), (error) => error?.code === "MEDIA_RESTORE_CURATOR_AGENT_HANDLER_REQUIRED");
+  assertions += 1;
+  equal(listRegularFiles(blockedCuratorRoot).length, 0, "missing curator-agent handler rejects the archive before voice materialization");
 
   const rollbackRoot = path.join(directory, "rollback-voice");
   const rollbackVoiceStorage = createVoiceStorage({ root: rollbackRoot });
@@ -1285,6 +1382,40 @@ function checkOralHistoryRestoreOrdering(directory) {
   }), /forced oral restore failure/);
   assertions += 1;
   equal(listRegularFiles(rollbackRoot).length, 0, "口述 DB 恢复失败时删除本轮新物化声音文件");
+  const curatorRollbackRoot = path.join(directory, "rollback-curator-voice");
+  const curatorRollbackVoiceStorage = createVoiceStorage({ root: curatorRollbackRoot });
+  const transactionMemories = [];
+  const transactionStore = {
+    ...store,
+    listMemories: () => transactionMemories.map((memory) => ({ ...memory })),
+    withTransaction(operation) {
+      const snapshot = transactionMemories.map((memory) => ({ ...memory }));
+      try {
+        return operation();
+      } catch (error) {
+        transactionMemories.splice(0, transactionMemories.length, ...snapshot);
+        throw error;
+      }
+    },
+    importMemories(memories) {
+      transactionMemories.push(...memories.map((memory) => ({ ...memory })));
+      return { imported: memories.length, memories };
+    },
+    getMemory(id) {
+      return transactionMemories.find((memory) => memory.id === id) || null;
+    }
+  };
+  assert.throws(() => restorePreparedArchive({
+    ...base,
+    store: transactionStore,
+    voiceStorage: curatorRollbackVoiceStorage,
+    restoreCuratorAgentBackup() {
+      throw new Error("forced curator restore failure");
+    }
+  }), /forced curator restore failure/);
+  assertions += 1;
+  equal(transactionMemories.length, 0, "curator-agent restore failure rolls back imported memories in the parent transaction");
+  equal(listRegularFiles(curatorRollbackRoot).length, 0, "curator-agent restore failure removes newly materialized voice bytes");
 }
 
 function listRegularFiles(directory) {

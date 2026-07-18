@@ -122,7 +122,7 @@ let searchTimer = null;
 let toastTimer = null;
 let mediaController = null, voiceController = null;
 let mediaEvidenceController = null, portabilityController = null, mediaCompareControllers = [], mediaLabController = null;
-let exhibitionsController = null, capsulesController = null, revisitsController = null, cluesController = null, revisionsController = null, collectionHealthController = null, timeCalibrationController = null, oralHistoriesController = null;
+let exhibitionsController = null, capsulesController = null, curatorAgentController = null, revisitsController = null, cluesController = null, revisionsController = null, collectionHealthController = null, timeCalibrationController = null, oralHistoriesController = null;
 bindEvents();
 initialize();
 
@@ -154,6 +154,11 @@ async function initialize() {
     mediaLabController = window.TimeIsleMediaLab?.createController({ demo: demo.interviewDemo }) || null;
     exhibitionsController = window.TimeIsleExhibitions?.createController({ demo: demo.interviewDemo, onOpenMemory: openMemory }) || null;
     capsulesController = window.TimeIsleCapsules?.createController({ demo: demo.interviewDemo }) || null;
+    curatorAgentController = window.TimeIsleCuratorAgent?.createController({
+      demo: demo.interviewDemo,
+      onOpenMemory: openMemory,
+      onOpenShare: (exhibitionId, trigger) => capsulesController?.openForExhibition(exhibitionId, trigger)
+    }) || null;
     revisitsController = window.TimeIsleRevisits?.createController({ demo: demo.interviewDemo, onOpenMemory: openMemory }) || null;
     cluesController = window.TimeIsleClues?.createEntityDialogController({ demo: demo.interviewDemo, onOpenMemory: openMemory, onDataChanged: reloadMemories }) || null;
     revisionsController = window.TimeIsleRevisions?.createController({ demo: demo.interviewDemo, onOpenMemory: openMemory, onRestored: async (memory) => { await reloadMemories(); await openMemory(memory.id); } }) || null;
@@ -161,7 +166,7 @@ async function initialize() {
     initializeTimeCalibrationController(options.voicePolicy, demo.interviewDemo);
     populateOptions();
     renderApp();
-    elements.footerVersion.textContent = `v${version.version || "9.0.0"}`;
+    elements.footerVersion.textContent = `v${version.version || "10.0.0"}`;
     setRuntimeStatus(demo.interviewDemo ? "Demo 已连接" : "本地馆藏已连接", "ready");
     const initialView = normalizeView(location.hash.replace("#", ""));
     switchView(initialView, { updateHash: false });
@@ -321,6 +326,7 @@ function renderDemoStatus() {
   mediaLabController?.setDemo(demo);
   exhibitionsController?.setDemo(demo);
   capsulesController?.setDemo(demo);
+  curatorAgentController?.setDemo(demo);
   revisitsController?.setDemo(demo);
   cluesController?.setDemo(demo);
   revisionsController?.setDemo(demo); collectionHealthController?.setDemo(demo);

@@ -14,12 +14,83 @@ async function main() {
   await checkHealthyScan();
   await checkTimeCalibrationReviewClassification();
   await checkOralHistoryReviewClassification();
+  await checkCuratorAgentClassification();
   await checkIssueSanitizationAndTruncation();
   await checkSingleTaskAndCancellation();
   await checkFailurePrivacy();
   await checkRetentionAndIsolation();
   checkDependencyAndInputBoundaries();
   console.log(`Collection health checks passed: ${assertions} assertions.`);
+}
+
+async function checkCuratorAgentClassification() {
+  const safeCounts = {
+    curatorAgentRuns: 3,
+    curatorAgentSteps: 8,
+    curatorAgentProposals: 2,
+    curatorAgentDecisions: 1,
+    curatorAgentCompleted: 2,
+    curatorAgentInterrupted: 1,
+    curatorAgentNeedsReview: 2,
+    curatorAgentObjectiveCount: 99,
+    toolCalls: 8
+  };
+  const attentionService = createCollectionHealthService({
+    getDatabaseHealthSnapshot: async () => ({
+      ok: true,
+      checks: [{ code: "DATABASE_CURATOR_AGENT_STRUCTURE", ok: true }],
+      counts: safeCounts,
+      issues: [
+        { code: "CURATOR_AGENT_RUN_INTERRUPTED", area: "curation", severity: "attention", recordId: "curator-run-interrupted" },
+        { code: "CURATOR_AGENT_RUN_NEEDS_REVIEW", area: "curation", severity: "attention", recordId: "curator-run-review" }
+      ],
+      issueCounts: [
+        { code: "CURATOR_AGENT_RUN_INTERRUPTED", area: "curation", severity: "attention", count: 1 },
+        { code: "CURATOR_AGENT_RUN_NEEDS_REVIEW", area: "curation", severity: "attention", count: 2 }
+      ],
+      objective: "private curator objective",
+      proposalSha256: "f".repeat(64)
+    }),
+    media: { listAssets: async () => [], verifyVariant: async () => true },
+    voice: { listAssets: async () => [], verifyAsset: async () => true },
+    createId: () => "health-curator-agent-attention"
+  });
+  const attention = await attentionService.wait(attentionService.start().id);
+  equal(attention.summary.status, "attention", "interrupted and needs-review curator runs remain gentle attention items");
+  equal(attention.summary.database.status, "pass", "curator review state is not misclassified as database corruption");
+  equal(attention.summary.curation.status, "attention", "curator run follow-up remains in the curation area");
+  equal(attention.summary.curation.needsReview, 3, "curator attention totals preserve unsampled issue counts");
+  deepEqual(attention.summary.database.records, {
+    curatorAgentRuns: 3,
+    curatorAgentSteps: 8,
+    curatorAgentProposals: 2,
+    curatorAgentDecisions: 1,
+    curatorAgentCompleted: 2,
+    curatorAgentInterrupted: 1,
+    curatorAgentNeedsReview: 2
+  }, "collection health exposes only the curator-agent safe counter projection");
+  const attentionJson = JSON.stringify(attention);
+  equal(attentionJson.includes("private curator objective"), false, "curator objective is excluded from collection health");
+  equal(attentionJson.includes("f".repeat(64)), false, "curator hashes are excluded from collection health");
+  attentionService.destroy();
+
+  const blockerService = createCollectionHealthService({
+    getDatabaseHealthSnapshot: async () => ({
+      ok: false,
+      checks: [{ code: "DATABASE_CURATOR_AGENT_STRUCTURE", ok: false }],
+      counts: safeCounts,
+      issues: []
+    }),
+    media: { listAssets: async () => [], verifyVariant: async () => true },
+    voice: { listAssets: async () => [], verifyAsset: async () => true },
+    createId: () => "health-curator-agent-blocker"
+  });
+  const blocker = await blockerService.wait(blockerService.start().id);
+  equal(blocker.summary.status, "blocker", "curator-agent structural failure blocks a healthy conclusion");
+  equal(blocker.summary.database.status, "blocker", "curator-agent structural failure is a database blocker");
+  equal(blocker.issues[0]?.code, "DATABASE_CURATOR_AGENT_STRUCTURE", "the blocker keeps a fixed non-sensitive code");
+  equal(blocker.issues[0]?.message, "策展助手的运行、步骤、提案或人工决定结构需要核对。", "the blocker uses fixed safe copy");
+  blockerService.destroy();
 }
 
 async function checkOralHistoryReviewClassification() {

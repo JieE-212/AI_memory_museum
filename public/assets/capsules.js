@@ -52,6 +52,7 @@
     let preparedMaterial = null;
     let readerReturnTarget = null;
     let materialRead = null;
+    let requestedExhibitionId = "";
     const downloadUrls = new Set();
     const requests = new Map();
     const listeners = [];
@@ -103,6 +104,14 @@
       await loadWorkspace();
     }
 
+    async function openForExhibition(exhibitionId, trigger) {
+      const normalizedId = safeId(exhibitionId);
+      if (!normalizedId || destroyed || busy) return false;
+      requestedExhibitionId = normalizedId;
+      await open(trigger || elements.studioButton);
+      return elements.dialog.open && elements.exhibitionSelect.value === normalizedId;
+    }
+
     async function loadWorkspace() {
       const run = startSession();
       setBusy(true);
@@ -117,7 +126,8 @@
         exhibitions = normalizeExhibitions(exhibitionPayload?.exhibitions || exhibitionPayload);
         renderShelf();
         renderExhibitionOptions();
-        setStatus(workspaceStatus());
+        if (requestedExhibitionId) await applyRequestedExhibition(run);
+        else setStatus(workspaceStatus());
       } catch (error) {
         if (!isExpectedCancellation(error)) setStatus(`读取失败：${message(error)}`, true);
       } finally {
@@ -125,9 +135,26 @@
       }
     }
 
+    async function applyRequestedExhibition(run) {
+      const exhibitionId = requestedExhibitionId;
+      requestedExhibitionId = "";
+      if (!exhibitions.some((item) => item.id === exhibitionId)) {
+        setStatus("已发布展览暂未出现在隐私编辑台，请关闭后重试。", true);
+        return;
+      }
+      elements.exhibitionSelect.value = exhibitionId;
+      elements.createPanel.hidden = false;
+      elements.createPanel.open = true;
+      await handleExhibitionChange();
+      if (!isCurrent(run)) return;
+      setStatus("已预选刚发布的展览；安全素材仍默认全不选，请逐项核对。", false, true);
+      global.requestAnimationFrame?.(() => elements.exhibitionSelect.focus({ preventScroll: true }));
+    }
+
     async function handleExhibitionChange() {
       clearPreparedExport();
       candidates = { media: [], transcripts: [] };
+      requestedExhibitionId = "";
       renderCandidates();
       const exhibitionId = safeId(elements.exhibitionSelect.value);
       if (!exhibitionId) {
@@ -648,6 +675,7 @@
 
     function handleDialogClose() {
       startSession();
+      requestedExhibitionId = "";
       clearReader();
       clearPreparedExport();
       candidates = { media: [], transcripts: [] };
@@ -741,7 +769,7 @@
       return error === staleRequest || error?.name === "AbortError";
     }
 
-    return Object.freeze({ open, refresh, setDemo, destroy });
+    return Object.freeze({ open, openForExhibition, refresh, setDemo, destroy });
   }
 
   const staleRequest = Object.freeze({ name: "StaleCapsuleRequest" });

@@ -27,6 +27,10 @@ const {
   validateOralHistoryBackupPayload
 } = require("../lib/oral-history-database");
 const { buildQuestionKey } = require("../lib/oral-history-service");
+const {
+  CURATOR_AGENT_REDACTED_NOTE,
+  validateCuratorAgentArchiveState
+} = require("../lib/curator-agent-backup");
 
 let assertions = 0;
 
@@ -372,7 +376,8 @@ async function checkFeatureSections(temporaryRoot, fixture, sourceCollection) {
       { name: "revisions", path: ARCHIVE_PATHS.revisions, sinceSchemaVersion: 10 },
       { name: "revisit-intents", path: ARCHIVE_PATHS.revisitIntents, sinceSchemaVersion: 11 },
       { name: "time-calibrations", path: ARCHIVE_PATHS.timeCalibrations, sinceSchemaVersion: 12 },
-      { name: "oral-history", path: ARCHIVE_PATHS.oralHistories, sinceSchemaVersion: 13 }
+      { name: "oral-history", path: ARCHIVE_PATHS.oralHistories, sinceSchemaVersion: 13 },
+      { name: "curator-agent", path: ARCHIVE_PATHS.curatorAgent, sinceSchemaVersion: 14 }
     ],
     "功能 section 注册表应按 schema 顺序声明至 schema 13 口述史"
   );
@@ -1314,6 +1319,253 @@ async function checkFeatureSections(temporaryRoot, fixture, sourceCollection) {
     supportedSchemaVersion: 13
   });
   deepEqual(redactedOralPrepared.collection.oralHistories, redactedOralHistories, "脱敏口述史安全摘要无需私人 validator 即可回环");
+
+  const curatorAgent = {
+    mode: "full",
+    schemaVersion: 14,
+    runs: []
+  };
+  const curatorValidationCalls = [];
+  const validateCuratorAgent = (backup) => {
+    validateCuratorAgentArchiveState(backup, {
+      mode: "full",
+      memoryIds: ["memory-one", "memory-two"],
+      eventIds: [calibrationEventId],
+      exhibitionIds: []
+    });
+    curatorValidationCalls.push(backup);
+    return true;
+  };
+  const schema14Store = {
+    ...schema13Store,
+    validateCuratorAgentBackup: validateCuratorAgent
+  };
+  const schema14Collection = {
+    ...schema13Collection,
+    version: "10.0.0",
+    schemaVersion: 14,
+    curatorAgent
+  };
+
+  throwsCode(
+    "MEDIA_ARCHIVE_FEATURE_SCHEMA_INVALID",
+    () => buildMediaArchive({
+      collection: { ...schema13Collection, curatorAgent },
+      store: schema14Store,
+      storage: fixture.storage,
+      voiceStorage: emptyVoiceStorage,
+      appVersion: "9.0.0",
+      schemaVersion: 13
+    }),
+    "schema 13 must reject a schema 14 curator-agent section"
+  );
+  throwsCode(
+    "MEDIA_ARCHIVE_REQUIRED_SECTION_MISSING",
+    () => buildMediaArchive({
+      collection: { ...schema13Collection, version: "10.0.0", schemaVersion: 14 },
+      store: schema14Store,
+      storage: fixture.storage,
+      voiceStorage: emptyVoiceStorage,
+      appVersion: "10.0.0",
+      schemaVersion: 14
+    }),
+    "schema 14 full archives must explicitly carry the curator-agent section"
+  );
+  throwsCode(
+    "MEDIA_ARCHIVE_CURATOR_AGENT_VALIDATOR_REQUIRED",
+    () => buildMediaArchive({
+      collection: schema14Collection,
+      store: schema13Store,
+      storage: fixture.storage,
+      voiceStorage: emptyVoiceStorage,
+      appVersion: "10.0.0",
+      schemaVersion: 14
+    }),
+    "schema 14 writer fails closed without the curator-agent business validator"
+  );
+
+  const schema14Archive = buildMediaArchive({
+    collection: schema14Collection,
+    store: schema14Store,
+    storage: fixture.storage,
+    voiceStorage: emptyVoiceStorage,
+    appVersion: "10.0.0",
+    schemaVersion: 14
+  });
+  equal(curatorValidationCalls.length, 1, "schema 14 writer invokes the curator-agent business validator once");
+  const schema14Entries = await readArchiveEntries(
+    schema14Archive,
+    path.join(temporaryRoot, "unpack-schema14-curator-agent")
+  );
+  const schema14Manifest = parseJson(schema14Entries.get(ARCHIVE_PATHS.manifest));
+  deepEqual(
+    schema14Manifest.sections.find((section) => section.name === "curator-agent"),
+    { name: "curator-agent", path: "curator-agent/state.json", count: 0, required: true, version: 1 },
+    "schema 14 full archive declares a standalone required curator-agent section"
+  );
+  deepEqual(
+    parseJson(schema14Entries.get(ARCHIVE_PATHS.curatorAgent)),
+    curatorAgent,
+    "curator-agent state is written losslessly to its standalone section"
+  );
+  check(
+    !Object.hasOwn(parseJson(schema14Entries.get(ARCHIVE_PATHS.collection)), "curatorAgent"),
+    "curator-agent state is not duplicated inside collection.json"
+  );
+
+  const missingCuratorValidatorRoot = path.join(temporaryRoot, "reject-schema14-missing-curator-validator");
+  await rejectsCode(
+    "MEDIA_ARCHIVE_CURATOR_AGENT_VALIDATOR_REQUIRED",
+    () => prepareMediaArchive(schema14Archive, {
+      stagingRoot: missingCuratorValidatorRoot,
+      validateVoiceBackup: validateEmptyVoices,
+      validateTimeCalibrationBackup: validateTimeCalibrations,
+      validateOralHistoryBackup: validateOralHistories,
+      supportedSchemaVersion: 14
+    }),
+    "schema 14 prepare fails closed without the curator-agent business validator"
+  );
+  equal(fs.existsSync(missingCuratorValidatorRoot), false, "missing curator-agent validator leaves no staging tombstone");
+
+  const schema14Prepared = await prepareMediaArchive(schema14Archive, {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-schema14-curator-agent"),
+    validateVoiceBackup: validateEmptyVoices,
+    validateTimeCalibrationBackup: validateTimeCalibrations,
+    validateOralHistoryBackup: validateOralHistories,
+    validateCuratorAgentBackup: validateCuratorAgent,
+    supportedSchemaVersion: 14
+  });
+  deepEqual(schema14Prepared.curatorAgent, curatorAgent, "prepare exposes the verified curator-agent state");
+  deepEqual(schema14Prepared.collection.curatorAgent, curatorAgent, "prepare reattaches curator-agent state only after validation");
+  equal(curatorValidationCalls.length, 2, "writer and reader each invoke the curator-agent business validator once");
+
+  const tamperedCuratorHash = cloneEntries(schema14Entries);
+  const tamperedCuratorBytes = Buffer.from(tamperedCuratorHash.get(ARCHIVE_PATHS.curatorAgent));
+  tamperedCuratorBytes[tamperedCuratorBytes.length - 2] ^= 0x01;
+  tamperedCuratorHash.set(ARCHIVE_PATHS.curatorAgent, tamperedCuratorBytes);
+  await rejectsCode(
+    "MEDIA_ARCHIVE_HASH_MISMATCH",
+    () => prepareMediaArchive(repack(tamperedCuratorHash), {
+      stagingRoot: path.join(temporaryRoot, "reject-schema14-curator-agent-hash"),
+      validateVoiceBackup: validateEmptyVoices,
+      validateTimeCalibrationBackup: validateTimeCalibrations,
+      validateOralHistoryBackup: validateOralHistories,
+      validateCuratorAgentBackup: validateCuratorAgent,
+      supportedSchemaVersion: 14
+    }),
+    "curator-agent bytes cannot be changed without invalidating the manifest hash"
+  );
+
+  const missingCurator = cloneEntries(schema14Entries);
+  const missingCuratorManifest = parseJson(missingCurator.get(ARCHIVE_PATHS.manifest));
+  missingCuratorManifest.sections = missingCuratorManifest.sections.filter((section) => section.name !== "curator-agent");
+  missingCuratorManifest.entries = missingCuratorManifest.entries.filter((entry) => entry.path !== ARCHIVE_PATHS.curatorAgent);
+  missingCuratorManifest.entryCount = missingCuratorManifest.entries.length;
+  missingCurator.delete(ARCHIVE_PATHS.curatorAgent);
+  missingCurator.set(ARCHIVE_PATHS.manifest, jsonBuffer(missingCuratorManifest));
+  await rejectsCode(
+    "MEDIA_ARCHIVE_REQUIRED_SECTION_MISSING",
+    () => prepareMediaArchive(repack(missingCurator), {
+      stagingRoot: path.join(temporaryRoot, "reject-schema14-missing-curator-agent"),
+      validateVoiceBackup: validateEmptyVoices,
+      validateTimeCalibrationBackup: validateTimeCalibrations,
+      validateOralHistoryBackup: validateOralHistories,
+      validateCuratorAgentBackup: validateCuratorAgent,
+      supportedSchemaVersion: 14
+    }),
+    "schema 14 full reader rejects a missing required curator-agent section"
+  );
+
+  const futureSchema14 = cloneEntries(schema14Entries);
+  const futureSchema14Manifest = parseJson(futureSchema14.get(ARCHIVE_PATHS.manifest));
+  futureSchema14Manifest.schemaVersion = 15;
+  futureSchema14.set(ARCHIVE_PATHS.manifest, jsonBuffer(futureSchema14Manifest));
+  await rejectsCode(
+    "MEDIA_ARCHIVE_SCHEMA_UNSUPPORTED",
+    () => prepareMediaArchive(repack(futureSchema14), {
+      stagingRoot: path.join(temporaryRoot, "reject-schema15-curator-agent"),
+      supportedSchemaVersion: 14
+    }),
+    "schema 14 reader rejects future schemas before reading feature data"
+  );
+
+  const unknownCuratorPath = cloneEntries(schema14Entries);
+  const unknownCuratorDataPath = "curator-agent/future.json";
+  const unknownCuratorData = jsonBuffer({ future: true });
+  unknownCuratorPath.set(unknownCuratorDataPath, unknownCuratorData);
+  const unknownCuratorManifest = parseJson(unknownCuratorPath.get(ARCHIVE_PATHS.manifest));
+  unknownCuratorManifest.sections.push({
+    name: "future-curator",
+    path: unknownCuratorDataPath,
+    count: 1,
+    required: false,
+    version: 1
+  });
+  unknownCuratorManifest.entries.push({
+    path: unknownCuratorDataPath,
+    sha256: sha256(unknownCuratorData),
+    bytes: unknownCuratorData.length,
+    mime: "application/json"
+  });
+  unknownCuratorManifest.entries.sort((left, right) => left.path.localeCompare(right.path, "en"));
+  unknownCuratorManifest.entryCount = unknownCuratorManifest.entries.length;
+  unknownCuratorPath.set(ARCHIVE_PATHS.manifest, jsonBuffer(unknownCuratorManifest));
+  await rejectsCode(
+    "MEDIA_ARCHIVE_SECTIONS_INVALID",
+    () => prepareMediaArchive(repack(unknownCuratorPath), {
+      stagingRoot: path.join(temporaryRoot, "reject-unknown-curator-reserved-prefix"),
+      supportedSchemaVersion: 14
+    }),
+    "unknown optional sections cannot occupy the reserved curator-agent prefix"
+  );
+
+  const redactedCuratorAgent = {
+    mode: "redacted-summary",
+    runCount: 3,
+    completedRunCount: 2,
+    cancelledRunCount: 1,
+    proposalCount: 2,
+    decisionCount: 3,
+    approvedCount: 2,
+    rejectedCount: 1,
+    note: CURATOR_AGENT_REDACTED_NOTE
+  };
+  const redactedCuratorArchive = buildMediaArchive({
+    collection: {
+      ...sourceCollection,
+      version: "10.0.0",
+      schemaVersion: 14,
+      mode: "redacted",
+      curatorAgent: redactedCuratorAgent
+    },
+    appVersion: "10.0.0",
+    schemaVersion: 14
+  });
+  const redactedCuratorEntries = await readArchiveEntries(
+    redactedCuratorArchive,
+    path.join(temporaryRoot, "unpack-redacted-schema14-curator-agent")
+  );
+  const redactedCuratorManifest = parseJson(redactedCuratorEntries.get(ARCHIVE_PATHS.manifest));
+  deepEqual(
+    redactedCuratorManifest.sections.find((section) => section.name === "curator-agent"),
+    { name: "curator-agent", path: "curator-agent/state.json", count: 3, required: false, version: 1 },
+    "schema 14 redacted archive declares an optional curator-agent summary section"
+  );
+  const redactedCuratorText = redactedCuratorEntries.get(ARCHIVE_PATHS.curatorAgent).toString("utf8");
+  deepEqual(
+    Object.keys(JSON.parse(redactedCuratorText)).sort(),
+    ["approvedCount", "cancelledRunCount", "completedRunCount", "decisionCount", "mode", "note", "proposalCount", "rejectedCount", "runCount"],
+    "redacted curator-agent section contains only the frozen nine-key summary"
+  );
+  for (const canary of ["search_memory_summaries", "memory-one", "requestSha256", "proposalSha256", "2026-07-18T10:00:00.000Z", "save_exhibition"]) {
+    check(!redactedCuratorText.includes(canary), `redacted curator-agent section physically excludes ${canary}`);
+  }
+  const redactedCuratorPrepared = await prepareMediaArchive(redactedCuratorArchive, {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-redacted-schema14-curator-agent"),
+    supportedSchemaVersion: 14
+  });
+  deepEqual(redactedCuratorPrepared.curatorAgent, redactedCuratorAgent, "redacted curator-agent summary safely round-trips without a private validator");
+  deepEqual(redactedCuratorPrepared.collection.curatorAgent, redactedCuratorAgent, "redacted curator-agent summary is safely reattached to collection");
 
   const redactedTimeCalibrations = {
     mode: "redacted-summary",

@@ -16,6 +16,7 @@ const mediaCompareCss = read("public/media-compare.css");
 const mediaOcrCss = read("public/media-ocr.css");
 const mediaLabCss = read("public/media-lab.css");
 const exhibitionsCss = read("public/exhibitions.css");
+const curatorAgentCss = read("public/curator-agent.css");
 const revisitsCss = read("public/revisits.css");
 const revisionsCss = read("public/revisions.css");
 const cluesCss = read("public/clues.css");
@@ -36,6 +37,7 @@ const mediaOcrApp = read("public/assets/media-ocr.js");
 const mediaLabApp = read("public/assets/media-lab.js");
 const portabilityApp = read("public/assets/portability.js");
 const exhibitionsApp = read("public/assets/exhibitions.js");
+const curatorAgentApp = read("public/assets/curator-agent.js");
 const revisitsApp = read("public/assets/revisits.js");
 const revisionsApp = read("public/assets/revisions.js");
 const cluesApp = read("public/assets/clues.js");
@@ -58,11 +60,12 @@ const voiceDetailMarkup = globalThis.TimeIsleVoice.renderDetailVoices({ voices: 
   { assetId: "voice-confirmed", position: 0, label: "窗边的雨", asset: { id: "voice-confirmed", durationMs: 3100, contentUrl: "/api/voice/assets/voice-confirmed/content" }, transcript: { status: "confirmed", text: "这是人工确认的文字。" } },
   { assetId: "voice-draft", position: 1, asset: { id: "voice-draft", contentUrl: "/api/voice/assets/voice-draft/content" }, transcript: { status: "draft", text: "普通详情不能出现的草稿。" } }
 ] });
-const queriedIds = [app, pwaApp, mediaApp, voiceApp, capsuleApp, sharePrivacyApp, mediaEvidenceApp, portabilityApp, exhibitionsApp, revisitsApp, cluesApp].flatMap((source) => [
+const queriedIds = [app, pwaApp, mediaApp, voiceApp, capsuleApp, sharePrivacyApp, mediaEvidenceApp, portabilityApp, exhibitionsApp, curatorAgentApp, revisitsApp, cluesApp].flatMap((source) => [
   ...source.matchAll(/(?:querySelector\("#|getElementById\(")([a-zA-Z0-9_-]+)"\)/g)
 ].map((match) => match[1])).concat(
   [...sharePrivacyApp.matchAll(/^\s+\w+: "(share[a-zA-Z0-9_-]+)",?$/gm)].map((match) => match[1]),
-  [...oralHistoryApp.matchAll(/^\s+\w+: "(oralHistory[a-zA-Z0-9_-]+)",?$/gm)].map((match) => match[1])
+  [...oralHistoryApp.matchAll(/^\s+\w+: "(oralHistory[a-zA-Z0-9_-]+)",?$/gm)].map((match) => match[1]),
+  [...curatorAgentApp.matchAll(/^\s+\w+: "(curatorAgent[a-zA-Z0-9_-]+)",?$/gm)].map((match) => match[1])
 );
 const htmlIds = [...html.matchAll(/\sid="([a-zA-Z0-9_-]+)"/g)].map((match) => match[1]);
 const tabletCssStart = css.indexOf("@media (max-width: 980px)");
@@ -91,9 +94,9 @@ const compactButtonRule = ruleDeclarations(compactMobileCss, ".nav-button");
 
 const checks = [
   ["V7.1 PWA stays inside the four-view information architecture", (html.match(/class="nav-button/g) || []).length === 4 && html.includes('id="pwaInstallPanel" hidden') && html.indexOf('id="pwaInstallPanel"') > html.indexOf('data-view-panel="data"') && !html.includes('data-view="pwa"')],
-  ["PWA resources load in manifest-style-controller-app order", html.includes('/manifest.webmanifest?v=9.0.0') && html.indexOf('/styles.css?v=7.2.0') < html.indexOf('/pwa.css?v=9.0.0') && html.indexOf('/assets/pwa.js?v=9.0.0') < html.indexOf('/assets/app.js?v=9.0.0')],
+  ["PWA resources load in manifest-style-controller-app order", html.includes('/manifest.webmanifest?v=10.0.0') && html.indexOf('/styles.css?v=7.2.0') < html.indexOf('/pwa.css?v=10.0.0') && html.indexOf('/assets/pwa.js?v=10.0.0') < html.indexOf('/assets/app.js?v=10.0.0')],
   ["PWA install uses progressive disclosure without private persistence", pwaApp.includes('beforeinstallprompt') && pwaApp.includes('appinstalled') && pwaApp.includes('updateViaCache: "none"') && !/localStorage|sessionStorage|indexedDB|\bcaches\b/iu.test(pwaApp) && pwaCss.includes('.pwa-install-panel [hidden]')],
-  ["V7.2 记忆年轮保持四导航并默认按需展开", (html.match(/class="nav-button/g) || []).length === 4 && html.includes('id="revisionTimelineDetails"') && !html.includes('<details class="revision-timeline-card" id="revisionTimelineDetails" open') && !html.includes('data-view="revisions"') && html.indexOf('/assets/revisions.js?v=7.2.0') < html.indexOf('/assets/app.js?v=9.0.0') && app.includes("TimeIsleRevisions?.createController")],
+  ["V7.2 记忆年轮保持四导航并默认按需展开", (html.match(/class="nav-button/g) || []).length === 4 && html.includes('id="revisionTimelineDetails"') && !html.includes('<details class="revision-timeline-card" id="revisionTimelineDetails" open') && !html.includes('data-view="revisions"') && html.indexOf('/assets/revisions.js?v=7.2.0') < html.indexOf('/assets/app.js?v=10.0.0') && app.includes("TimeIsleRevisions?.createController")],
   ["记忆年轮提供并发保护、二次确认与不覆盖恢复", revisionsApp.includes('"If-Match"') && revisionsApp.includes("data-revision-confirm") && revisionsApp.includes("当前版本不会被删除") && revisionsApp.includes("restoredFromRevisionId") && revisionsApp.includes("error.status === 412") && !/localStorage|sessionStorage|indexedDB/iu.test(revisionsApp)],
   ["记忆年轮移动端克制且不使用渐变", revisionsCss.includes("@media (max-width: 650px)") && revisionsCss.includes("@media (max-width: 360px)") && revisionsCss.includes("min-height: 44px") && !/gradient\s*\(/iu.test(revisionsCss)],
   ["馆藏体检位于归档入口之前且保持只读渐进披露", html.includes('id="collectionHealthDetails"') && html.indexOf('id="collectionHealthDetails"') < html.indexOf('id="exportButton"') && !html.includes('<details class="collection-health-panel" id="collectionHealthDetails" open') && collectionHealthApp.includes("/api/collection-health/scans") && collectionHealthApp.includes("/api/archive/inspect") && collectionHealthApp.includes("不会自动删除或改写") && !/localStorage|sessionStorage|indexedDB/iu.test(collectionHealthApp)],
@@ -139,6 +142,11 @@ const checks = [
   ["回顾视图包含时间线、主题和摘要", ["timelinePanel", "themesPanel", "reportPanel"].every((id) => html.includes(`id="${id}"`))],
   ["主题展览资源按独立模块和依赖顺序接入", (html.match(/\/exhibitions\.css/g) || []).length === 1 && (html.match(/\/assets\/exhibitions\.js/g) || []).length === 1 && html.indexOf("/styles.css") < html.indexOf("/exhibitions.css") && html.indexOf("/assets/media-lab.js") < html.indexOf("/assets/exhibitions.js") && html.indexOf("/assets/exhibitions.js") < html.indexOf("/assets/app.js") && app.includes("TimeIsleExhibitions?.createController")],
   ["主题展览只从回顾页提供唯一渐进入口", (html.match(/id="exhibitionStudioButton"/g) || []).length === 1 && html.indexOf('data-view-panel="reflect"') < html.indexOf('id="exhibitionStudioButton"') && html.indexOf('id="exhibitionStudioButton"') < html.indexOf('data-view-panel="data"') && !html.includes('data-view="exhibition"')],
+  ["V10 策展助手保持四导航并先于手工策展进入", (html.match(/class="nav-button/g) || []).length === 4 && (html.match(/id="curatorAgentButton"/g) || []).length === 1 && html.indexOf('id="curatorAgentButton"') < html.indexOf('id="exhibitionStudioButton"') && !html.includes('data-view="curator-agent"')],
+  ["V10 策展助手资源独立且在主应用前载入", (html.match(/\/curator-agent\.css/g) || []).length === 1 && (html.match(/\/assets\/curator-agent\.js/g) || []).length === 1 && html.indexOf("/exhibitions.css") < html.indexOf("/curator-agent.css") && html.indexOf("/assets/exhibitions.js") < html.indexOf("/assets/curator-agent.js") && html.indexOf("/assets/curator-agent.js") < html.indexOf("/assets/app.js") && app.includes("TimeIsleCuratorAgent?.createController")],
+  ["V10 策展助手只生成提案并逐项等待人工决定", html.includes("尚未保存") && curatorAgentApp.includes("保存为草稿") && curatorAgentApp.includes("确认关系") && curatorAgentApp.includes("不采用") && curatorAgentApp.includes("发布到本馆") && html.includes('<details class="curator-agent-decisions"') && curatorAgentApp.includes("save_exhibition") && curatorAgentApp.includes("confirm_relationship") && curatorAgentApp.includes("publish_exhibition")],
+  ["V10 策展助手具备受限运行、Demo 零写与来源过期边界", html.includes("最多 6 步 · 4 次只读查阅 · 2 秒执行 · 6 件来源") && curatorAgentApp.includes("/api/curator-agent/sample") && curatorAgentApp.includes('if (destroyed || busy || demo) return;') && curatorAgentApp.includes('"If-Match"') && curatorAgentApp.includes('"Idempotency-Key"') && curatorAgentApp.includes("CURATOR_AGENT_SOURCE_STALE") && !/localStorage|sessionStorage|indexedDB/iu.test(curatorAgentApp)],
+  ["V10 策展助手移动端全屏、单列且无渐变", curatorAgentCss.includes("max-width: 1040px") && curatorAgentCss.includes("height: 100dvh") && curatorAgentCss.includes("max-height: 100dvh") && curatorAgentCss.includes("min-height: 44px") && curatorAgentCss.includes("@media (max-width: 650px)") && curatorAgentCss.includes("@media (max-width: 390px)") && curatorAgentCss.includes("@media (max-width: 320px)") && curatorAgentCss.includes("safe-area-inset-bottom") && curatorAgentCss.includes("grid-template-columns: minmax(0, 1fr)") && !/gradient\s*\(/iu.test(curatorAgentCss)],
   ["主题展览保存要求核对预览且 Demo 只预览", exhibitionsApp.includes("if (destroyed || demo || busyMutation || busyPreview) return;") && exhibitionsApp.includes("previewSignature !== currentSignature()") && exhibitionsApp.includes("elements.saveButton.disabled = busy || demo || Boolean(readingId) || !preview") && exhibitionsApp.includes("confirm: true") && exhibitionsApp.includes('demo ? "Demo 仅预览"') && exhibitionsCss.includes("#exhibitionSaveActions[hidden]") && html.indexOf('id="exhibitionPreview"') < html.indexOf('id="exhibitionSaveButton"') && html.includes('type="button" class="icon-button" value="close" data-exhibition-close')],
   ["主题展览移动工作室覆盖视口安全区与触控边界", exhibitionsCss.includes("height: 100dvh;") && exhibitionsCss.includes("max-height: 100dvh;") && ["safe-area-inset-top", "safe-area-inset-right", "safe-area-inset-bottom", "safe-area-inset-left"].every((token) => exhibitionsCss.includes(token)) && exhibitionsCss.includes('#exhibitionDialog button,\n#exhibitionDialog summary,\n#exhibitionDialog input[type="text"] {\n  min-height: 44px;') && exhibitionsCss.includes("#exhibitionDialog .icon-button {\n  min-width: 44px;")],
   ["主题展览保存沿用用户实际看过的完整预览", ["title", "opening", "mode", "sections"].every((field) => exhibitionsApp.includes(`${field}: preview.${field}`)) && exhibitionsApp.indexOf('requestJson("preview", "/api/exhibitions/preview"') < exhibitionsApp.indexOf("sections: preview.sections")],
@@ -155,7 +163,7 @@ const checks = [
   ["记忆考古使用局部航线和独立拼图", html.includes('id="routesPanel"') && html.includes('id="puzzleDialog"') && html.includes('id="dialogRouteButton"')],
   ["补一块拼图允许回答或保留不确定", ["puzzleSaveAnswerButton", "puzzleUnknownButton", "puzzleSkipButton"].every((id) => html.includes(`id="${id}"`))],
   ["口述史保持在时光拼图内且不增加导航", (html.match(/class="nav-button/g) || []).length === 4 && html.includes('id="oralHistorySourceRegion"') && html.includes('<details class="oral-history-panel" id="oralHistoryDetails" hidden>') && html.indexOf('id="timeCalibrationDetails"') < html.indexOf('id="oralHistoryDetails"') && !html.includes('data-view="oral-history"')],
-  ["口述史资源以单段采集、口述控制器、主应用顺序载入", html.indexOf('/assets/voice-capture.js?v=9.0.0') < html.indexOf('/assets/oral-histories.js?v=9.0.0') && html.indexOf('/assets/oral-histories.js?v=9.0.0') < html.indexOf('/assets/app.js?v=9.0.0') && html.indexOf('/voice.css') < html.indexOf('/oral-histories.css?v=9.0.0')],
+  ["口述史资源以单段采集、口述控制器、主应用顺序载入", html.indexOf('/assets/voice-capture.js?v=10.0.0') < html.indexOf('/assets/oral-histories.js?v=10.0.0') && html.indexOf('/assets/oral-histories.js?v=10.0.0') < html.indexOf('/assets/app.js?v=10.0.0') && html.indexOf('/voice.css') < html.indexOf('/oral-histories.css?v=10.0.0')],
   ["单段声音采集不绑定展品并覆盖权限与孤儿清理", voiceCaptureApp.includes('/api/voice/uploads?filename=') && voiceCaptureApp.includes('/api/voice/assets/${encodeURIComponent(assetId)}') && !voiceCaptureApp.includes('/api/memories/') && voiceCaptureApp.includes('cancelPermissionRequest(true)') && voiceCaptureApp.includes('stopTracks(stream)') && voiceCaptureApp.includes('if (demo) throw new Error')],
   ["口述史四步要求手工选段、文字和时间含义", ["oralHistoryQuestionStep", "oralHistoryAudioStep", "oralHistorySegmentStep", "oralHistoryTranscriptStep", "oralHistoryAcknowledge"].every((id) => html.includes(`id="${id}"`)) && (html.match(/name="oralHistoryResolutionChoice"/g) || []).length === 5 && html.includes('这里不会自动转写') && oralHistoryApp.includes('MIN_SEGMENT_MS = 500')],
   ["口述史保存具备版本、幂等与人工确认边界", oralHistoryApp.includes('"If-Match": state.etag') && oralHistoryApp.includes('questionSetSha256: state.questionSetSha256') && oralHistoryApp.includes('confirmTranscript: true') && oralHistoryApp.includes('submissionId: state.submissionId') && oralHistoryApp.includes('selectedQuestionKey') && oralHistoryApp.includes('questionKey || id') && oralHistoryApp.includes('"superseded", "withdrawn"')],

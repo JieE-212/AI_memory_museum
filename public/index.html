@@ -10,24 +10,25 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="时屿" />
     <title>时屿｜AI 私人记忆策展工具</title>
-    <link rel="manifest" href="/manifest.webmanifest?v=9.0.0" />
+    <link rel="manifest" href="/manifest.webmanifest?v=10.0.0" />
     <link rel="icon" href="/assets/time-isle-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/assets/time-isle-apple-touch.png" />
     <link rel="stylesheet" href="/styles.css?v=7.2.0-touch5" />
-    <link rel="stylesheet" href="/pwa.css?v=9.0.0" />
+    <link rel="stylesheet" href="/pwa.css?v=10.0.0" />
     <link rel="stylesheet" href="/archaeology.css" />
     <link rel="stylesheet" href="/exhibitions.css?v=7.2.0" />
-    <link rel="stylesheet" href="/capsules.css?v=9.0.0" />
-    <link rel="stylesheet" href="/share-privacy.css?v=9.0.0" />
-    <link rel="stylesheet" href="/revisits.css?v=9.0.0" />
-    <link rel="stylesheet" href="/revisit-intents.css?v=9.0.0" />
-    <link rel="stylesheet" href="/time-calibrations.css?v=9.0.0" />
+    <link rel="stylesheet" href="/curator-agent.css?v=10.0.0" />
+    <link rel="stylesheet" href="/capsules.css?v=10.0.0" />
+    <link rel="stylesheet" href="/share-privacy.css?v=10.0.0" />
+    <link rel="stylesheet" href="/revisits.css?v=10.0.0" />
+    <link rel="stylesheet" href="/revisit-intents.css?v=10.0.0" />
+    <link rel="stylesheet" href="/time-calibrations.css?v=10.0.0" />
     <link rel="stylesheet" href="/revisions.css?v=7.2.0-a11y2" />
     <link rel="stylesheet" href="/clues.css?v=7.2.0" />
     <link rel="stylesheet" href="/collection-health.css?v=7.2.0-a11y2" />
     <link rel="stylesheet" href="/media.css" />
     <link rel="stylesheet" href="/voice.css?v=7.2.0-align1" />
-    <link rel="stylesheet" href="/oral-histories.css?v=9.0.0" />
+    <link rel="stylesheet" href="/oral-histories.css?v=10.0.0" />
     <link rel="stylesheet" href="/media-evidence.css" />
     <link rel="stylesheet" href="/media-compare.css" />
     <link rel="stylesheet" href="/media-ocr.css" />
@@ -360,7 +361,8 @@
                 <span>先用原文依据策展；确认后还可封存到未来，或生成口令加密的离线单文件。</span>
               </div>
               <div class="exhibition-studio-actions">
-                <button type="button" class="button secondary compact" id="exhibitionStudioButton">策划主题展览</button>
+                <button type="button" class="button primary compact" id="curatorAgentButton">请策展助手提案</button>
+                <button type="button" class="button secondary compact" id="exhibitionStudioButton">自己挑选展品</button>
                 <button type="button" class="button secondary compact" id="capsuleStudioButton">胶囊与分享</button>
               </div>
             </div>
@@ -712,6 +714,97 @@
       </div>
     </dialog>
 
+    <dialog class="memory-dialog curator-agent-dialog" id="curatorAgentDialog" aria-labelledby="curatorAgentDialogTitle">
+      <div class="dialog-header curator-agent-dialog-header">
+        <div>
+          <p class="eyebrow">Human-guided curation</p>
+          <h2 id="curatorAgentDialogTitle" tabindex="-1">策展助手</h2>
+        </div>
+        <button type="button" class="icon-button" id="curatorAgentCloseButton" aria-label="关闭策展助手">×</button>
+      </div>
+      <div class="dialog-body curator-agent-dialog-body">
+        <p class="curator-agent-status" id="curatorAgentStatus" role="status" aria-live="polite" aria-atomic="true"></p>
+
+        <section class="curator-agent-brief" id="curatorAgentBrief" aria-labelledby="curatorAgentBriefTitle">
+          <div class="curator-agent-section-heading">
+            <div><p class="eyebrow">Brief</p><h3 id="curatorAgentBriefTitle">给助手一份任务简报</h3></div>
+            <span class="curator-agent-readonly-badge" id="curatorAgentDemoBadge" hidden>只读示例</span>
+          </div>
+          <form id="curatorAgentForm">
+            <label for="curatorAgentTheme">这场展览想讲什么？
+              <input id="curatorAgentTheme" type="text" maxlength="60" required placeholder="例如：那些没有说出口的告别" />
+            </label>
+            <details class="curator-agent-source-picker" id="curatorAgentSourcePicker">
+              <summary><span><strong>限定查阅范围（可选）</strong><small>不选择时，由助手在馆藏中只读查找</small></span><span aria-hidden="true">＋</span></summary>
+              <div class="curator-agent-source-body">
+                <p id="curatorAgentSourceStatus">展开后选择 2–6 件来源；助手不会改写它们。</p>
+                <div class="curator-agent-source-list" id="curatorAgentSourceList"></div>
+              </div>
+            </details>
+            <aside class="curator-agent-scope" aria-label="本次助手范围">
+              <strong>一次克制的只读策展</strong>
+              <span>最多 6 步 · 4 次只读查阅 · 2 秒执行 · 6 件来源</span>
+            </aside>
+            <div class="curator-agent-primary-actions">
+              <button type="submit" class="button primary" id="curatorAgentStartButton">生成一份策展提案</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="curator-agent-workspace" id="curatorAgentWorkspace" hidden aria-labelledby="curatorAgentProgressTitle">
+          <div class="curator-agent-section-heading">
+            <div><p class="eyebrow">Guided run</p><h3 id="curatorAgentProgressTitle">这次策展进行到哪里</h3></div>
+            <button type="button" class="button secondary compact" id="curatorAgentNewButton">提出新主题</button>
+          </div>
+          <ol class="curator-agent-progress" id="curatorAgentProgress" aria-label="策展进度">
+            <li data-curator-stage="brief"><span>1</span><div><strong>理解主题</strong><small>确认你给出的范围</small></div></li>
+            <li data-curator-stage="read"><span>2</span><div><strong>查阅馆藏</strong><small>只读寻找有依据的来源</small></div></li>
+            <li data-curator-stage="propose"><span>3</span><div><strong>整理提案</strong><small>组合章节与引用</small></div></li>
+            <li data-curator-stage="decide"><span>4</span><div><strong>等你决定</strong><small>不替你保存或发布</small></div></li>
+          </ol>
+
+          <section class="curator-agent-proposal" id="curatorAgentProposal" aria-labelledby="curatorAgentProposalTitle" hidden>
+            <header class="curator-agent-proposal-heading">
+              <div><p class="eyebrow">Immutable proposal</p><h3 id="curatorAgentProposalTitle">策展提案</h3></div>
+              <span class="curator-agent-unsaved" id="curatorAgentProposalState">尚未保存</span>
+            </header>
+            <div id="curatorAgentProposalPreview"></div>
+            <details class="curator-agent-citations" id="curatorAgentCitations">
+              <summary><span><strong>查看来源与引用</strong><small>每条策展判断都应能回到馆藏原文</small></span><span aria-hidden="true">＋</span></summary>
+              <div id="curatorAgentCitationList"></div>
+            </details>
+          </section>
+
+          <details class="curator-agent-decisions" id="curatorAgentDecisions" hidden>
+            <summary><span><strong>逐项决定这份提案</strong><small>默认不保存、不确认关系，也不发布</small></span><span aria-hidden="true">＋</span></summary>
+            <div class="curator-agent-decision-list" id="curatorAgentDecisionList"></div>
+          </details>
+
+          <section class="curator-agent-share" id="curatorAgentShare" hidden aria-labelledby="curatorAgentShareTitle">
+            <div><strong id="curatorAgentShareTitle">展览已发布到本馆</strong><span>分享不属于助手决定；仍需你在隐私编辑台逐层选择。</span></div>
+            <button type="button" class="button secondary" id="curatorAgentShareButton">打开隐私编辑台</button>
+          </section>
+        </section>
+
+        <details class="curator-agent-technical" id="curatorAgentTechnical">
+          <summary><span><strong>技术详情与最近记录</strong><small>查看执行边界、离线校验或删除本机运行记录</small></span><span aria-hidden="true">＋</span></summary>
+          <div class="curator-agent-technical-body">
+            <dl class="curator-agent-budget" id="curatorAgentBudget"></dl>
+            <section aria-labelledby="curatorAgentTraceTitle">
+              <h4 id="curatorAgentTraceTitle">只读查阅轨迹</h4>
+              <ol class="curator-agent-trace" id="curatorAgentTrace"></ol>
+            </section>
+            <div class="curator-agent-technical-actions">
+              <button type="button" class="button secondary compact" id="curatorAgentEvaluationButton" disabled>校验这次提案</button>
+              <button type="button" class="button text-button compact" id="curatorAgentRecentButton">读取最近记录</button>
+            </div>
+            <div class="curator-agent-evaluation" id="curatorAgentEvaluation" role="status" aria-live="polite"></div>
+            <div class="curator-agent-recent" id="curatorAgentRecent" aria-label="最近策展记录"></div>
+          </div>
+        </details>
+      </div>
+    </dialog>
+
     <dialog class="memory-dialog capsule-dialog" id="capsuleDialog" aria-labelledby="capsuleDialogTitle">
       <div class="dialog-header capsule-dialog-header">
         <div>
@@ -863,30 +956,31 @@
 
     <footer class="site-footer">
       <span>时屿 · 让记忆可整理，也让 AI 的依据可回看。</span>
-      <span id="footerVersion">v9.0.0</span>
+      <span id="footerVersion">v10.0.0</span>
     </footer>
 
     <script src="/assets/portability.js"></script>
     <script src="/assets/media-intelligence.js"></script>
     <script src="/assets/media.js"></script>
-    <script src="/assets/voice-capture.js?v=9.0.0"></script>
+    <script src="/assets/voice-capture.js?v=10.0.0"></script>
     <script src="/assets/voice.js?v=7.2.0"></script>
     <script src="/assets/media-evidence.js"></script>
     <script src="/assets/media-compare.js"></script>
     <script src="/assets/media-ocr.js"></script>
     <script src="/assets/media-lab.js"></script>
     <script src="/assets/exhibitions.js?v=7.2.0"></script>
-    <script src="/assets/capsule-crypto.js?v=9.0.0"></script>
-    <script src="/assets/share-privacy.js?v=9.0.0"></script>
-    <script src="/assets/capsules.js?v=9.0.0"></script>
-    <script src="/assets/revisit-intents.js?v=9.0.0"></script>
-    <script src="/assets/revisits.js?v=9.0.0"></script>
-    <script src="/assets/time-calibrations.js?v=9.0.0"></script>
-    <script src="/assets/oral-histories.js?v=9.0.0"></script>
+    <script src="/assets/curator-agent.js?v=10.0.0"></script>
+    <script src="/assets/capsule-crypto.js?v=10.0.0"></script>
+    <script src="/assets/share-privacy.js?v=10.0.0"></script>
+    <script src="/assets/capsules.js?v=10.0.0"></script>
+    <script src="/assets/revisit-intents.js?v=10.0.0"></script>
+    <script src="/assets/revisits.js?v=10.0.0"></script>
+    <script src="/assets/time-calibrations.js?v=10.0.0"></script>
+    <script src="/assets/oral-histories.js?v=10.0.0"></script>
     <script src="/assets/revisions.js?v=7.2.0-a11y2"></script>
     <script src="/assets/clues.js?v=7.2.0"></script>
     <script src="/assets/collection-health.js?v=7.2.0-a11y2"></script>
-    <script src="/assets/pwa.js?v=9.0.0"></script>
-    <script src="/assets/app.js?v=9.0.0"></script>
+    <script src="/assets/pwa.js?v=10.0.0"></script>
+    <script src="/assets/app.js?v=10.0.0"></script>
   </body>
 </html>

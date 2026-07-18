@@ -200,7 +200,7 @@ async function runArchiveMediaFlow() {
         body: archive
       });
       const inspection = await inspectionResponse.json();
-      assert("备份验真只读返回可恢复边界并清理暂存", inspectionResponse.ok && inspection.inspection.restorable === true && inspection.inspection.schemaVersion === 13 && inspection.inspection.counts.memories === 2 && inspection.inspection.counts.mediaAssets === 2 && inspection.inspection.counts.voices === 1 && inspection.inspection.counts.revisions === 2 && inspection.inspection.counts.revisitIntents === 1 && inspection.inspection.counts.timeCalibrations === 0 && inspection.inspection.counts.oralHistoryQuestions === 0 && inspection.inspection.counts.oralHistoryAnswers === 0 && (await getJson(`${baseUrl}/api/memories`)).payload.memories.length === 2 && !fs.existsSync(path.join(mediaRoot, ".inspect")));
+      assert("备份验真只读返回可恢复边界并清理暂存", inspectionResponse.ok && inspection.inspection.restorable === true && inspection.inspection.schemaVersion === 14 && inspection.inspection.counts.memories === 2 && inspection.inspection.counts.mediaAssets === 2 && inspection.inspection.counts.voices === 1 && inspection.inspection.counts.revisions === 2 && inspection.inspection.counts.revisitIntents === 1 && inspection.inspection.counts.timeCalibrations === 0 && inspection.inspection.counts.oralHistoryQuestions === 0 && inspection.inspection.counts.oralHistoryAnswers === 0 && inspection.inspection.counts.curatorAgentRuns === 0 && inspection.inspection.counts.curatorAgentProposals === 0 && inspection.inspection.counts.curatorAgentDecisions === 0 && (await getJson(`${baseUrl}/api/memories`)).payload.memories.length === 2 && !fs.existsSync(path.join(mediaRoot, ".inspect")));
       const archiveCollection = await getJson(`${baseUrl}/api/memories/export`);
       const archivedEntityCount = archiveCollection.payload.entities.entities.length;
       const archivedEntityId = archiveCollection.payload.entities.entities[0].id;
@@ -218,7 +218,7 @@ async function runArchiveMediaFlow() {
         body: archive
       });
       const restored = await restoreResponse.json();
-      assert("完整归档以单次事务恢复展品、图片、声音、口述史、胶囊、展览、回访、意愿、年轮、时间校准与实体图", restoreResponse.ok && restored.imported === 2 && restored.media.assetsCreated === 2 && restored.media.links === 2 && restored.media.observations === 3 && restored.voices.assets === 1 && restored.voices.memoryLinks === 1 && restored.voices.transcripts === 1 && restored.oralHistories.questions === 0 && restored.oralHistories.answers === 0 && restored.capsules.capsules === 2 && restored.capsules.mediaLinks === 2 && restored.exhibitions.exhibitions === 1 && restored.revisits.states === 2 && restored.revisitIntents.intents === 1 && restored.revisions.revisions === 2 && restored.timeCalibrations.calibrations === 0 && restored.entities.entities === archivedEntityCount && restored.idMap.entities[archivedEntityId] && restored.idMap.revisitIntents[rightId] === restored.idMap.memories[rightId]);
+      assert("完整归档以单次事务恢复展品、图片、声音、口述史、策展审计、胶囊、展览、回访、意愿、年轮、时间校准与实体图", restoreResponse.ok && restored.imported === 2 && restored.media.assetsCreated === 2 && restored.media.links === 2 && restored.media.observations === 3 && restored.voices.assets === 1 && restored.voices.memoryLinks === 1 && restored.voices.transcripts === 1 && restored.oralHistories.questions === 0 && restored.oralHistories.answers === 0 && restored.curatorAgent.restoredRuns === 0 && Object.keys(restored.idMap.curatorAgentRuns).length === 0 && restored.capsules.capsules === 2 && restored.capsules.mediaLinks === 2 && restored.exhibitions.exhibitions === 1 && restored.revisits.states === 2 && restored.revisitIntents.intents === 1 && restored.revisions.revisions === 2 && restored.timeCalibrations.calibrations === 0 && restored.entities.entities === archivedEntityCount && restored.idMap.entities[archivedEntityId] && restored.idMap.revisitIntents[rightId] === restored.idMap.memories[rightId]);
       const restoredLeftId = restored.idMap.memories[leftId];
       const restoredLeftAsset = restored.idMap.assets[leftAsset.id];
       const restoredVoiceId = restored.idMap.voices[sourceVoiceId];
@@ -296,7 +296,7 @@ async function runLocalFlow() {
     assert("离线页明确不缓存或展示私人馆藏", offlineResponse.ok && offlineText.includes("不会展示馆藏、照片、声音或导出内容") && !offlineText.includes("<script"));
 
     const health = await getJson(`${baseUrl}/api/health`);
-    assert("健康检查返回时屿 V9 与 schema 13", health.response.ok && health.response.headers.get("cache-control") === "no-store" && health.payload.ok && health.payload.version === "9.0.0" && health.payload.schemaVersion === 13 && health.payload.name === "时屿" && health.payload.englishName === "TIME ISLE" && health.payload.tagline === "AI 私人记忆策展工具" && health.payload.stats.capsules === 0 && health.payload.stats.timeCalibrations === 0 && health.payload.stats.oralHistoryQuestions === 0 && health.payload.stats.oralHistoryAnswers === 0);
+    assert("健康检查返回时屿 V10 与 schema 14", health.response.ok && health.response.headers.get("cache-control") === "no-store" && health.payload.ok && health.payload.version === "10.0.0" && health.payload.schemaVersion === 14 && health.payload.name === "时屿" && health.payload.englishName === "TIME ISLE" && health.payload.tagline === "AI 私人记忆策展工具" && health.payload.stats.capsules === 0 && health.payload.stats.timeCalibrations === 0 && health.payload.stats.oralHistoryQuestions === 0 && health.payload.stats.oralHistoryAnswers === 0 && health.payload.stats.curatorAgentRuns === 0 && health.payload.stats.curatorAgentCompletedRuns === 0 && health.payload.stats.curatorAgentInterruptedRuns === 0 && health.payload.stats.curatorAgentProposals === 0 && health.payload.stats.curatorAgentDecisions === 0);
     assert("本地模式使用 SQLite", health.payload.mode === "local" && health.payload.storage === "local-sqlite");
     assert("健康检查声明本地语义线索检索与短词回退", health.payload.search?.engine === "fts5-trigram" && health.payload.search?.shortQueryFallback === "parameterized-like" && health.payload.search?.externalModelRequired === false);
 
@@ -321,7 +321,7 @@ async function runLocalFlow() {
     assert("写请求以 403 拒绝恶意 Origin", maliciousOrigin === 403);
 
     const version = await getJson(`${baseUrl}/api/version`);
-    assert("版本接口描述 V9 核心产品流程与人工边界", version.response.ok && version.payload.version === "9.0.0" && version.payload.productFlow.join(",") === "记录,AI 整理,照片与声音归档,语义线索检索与讲解,主题策展,记忆回访,时光胶囊与加密分享,记忆考古,口述史回答与时间来源,历史恢复,安全导出" && version.payload.v7.offlineSharing.includes("AES-256-GCM") && version.payload.v7.pwa.includes("不缓存私人馆藏") && version.payload.v72.concurrency.includes("If-Match") && version.payload.v73.sharePrivacy.includes("浏览器内") && version.payload.v73.revisitIntent.includes("明确选择") && version.payload.v8.uncertainTimeline.includes("不会回写展品日期") && version.payload.v8.provenanceReview.includes("待复核") && version.payload.v9.oralHistory.includes("一个问题") && version.payload.v9.humanBoundary.includes("不自动转写") && version.payload.v9.provenance.includes("草稿"));
+    assert("版本接口描述 V10 核心产品流程与人工边界", version.response.ok && version.payload.version === "10.0.0" && version.payload.productFlow.join(",") === "记录,AI 整理,照片与声音归档,语义线索检索与讲解,主题策展,受限策展提案与逐项决定,记忆回访,时光胶囊与加密分享,记忆考古,口述史回答与时间来源,历史恢复,安全导出" && version.payload.v7.offlineSharing.includes("AES-256-GCM") && version.payload.v7.pwa.includes("不缓存私人馆藏") && version.payload.v72.concurrency.includes("If-Match") && version.payload.v73.sharePrivacy.includes("浏览器内") && version.payload.v73.revisitIntent.includes("明确选择") && version.payload.v8.uncertainTimeline.includes("不会回写展品日期") && version.payload.v8.provenanceReview.includes("待复核") && version.payload.v9.oralHistory.includes("一个问题") && version.payload.v9.humanBoundary.includes("不自动转写") && version.payload.v9.provenance.includes("草稿") && version.payload.v10.boundedAgent.includes("固定四项") && version.payload.v10.humanDecisions.includes("分别需要") && version.payload.v10.replayableEvaluation.includes("不重新读取") && version.payload.v10.restoreBoundary.includes("待复核只读历史"));
 
     const demo = await getJson(`${baseUrl}/api/demo/status`);
     assert("本地模式未伪装成公开 Demo", demo.response.ok && demo.payload.interviewDemo === false);
@@ -330,6 +330,8 @@ async function runLocalFlow() {
     assert("选项接口包含七个中文展厅", options.response.ok && options.payload.halls.length === 7 && options.payload.halls.every((hall) => hall.name.endsWith("展厅")));
     assert("JSON 兼容导入拥有独立的 64 MiB 往返预算", options.payload.limits.importBody === 64 * 1024 * 1024 && options.payload.limits.importBody > options.payload.limits.body);
     assert("本地声音策略锁定三段、三分钟与 12 MiB", options.payload.voicePolicy.maxVoicesPerMemory === 3 && options.payload.voicePolicy.maxDurationMs === 180000 && options.payload.voicePolicy.maxBytes === 12 * 1024 * 1024);
+
+    await runLocalCuratorAgentFlow(baseUrl);
 
     const rawContent = "2025年5月20日，我和朋友在学校操场散步。那段时间很迷茫，但他一直陪我把话说完。";
     const analysis = await postJson(`${baseUrl}/api/analyze`, { rawContent });
@@ -649,7 +651,7 @@ async function runLocalFlow() {
     assert("馆藏备份包含已确认主题展览", fullExport.payload.exhibitions.exhibitions.some((item) => item.id === exhibitionId));
     assert("馆藏备份包含回访与当日隐藏状态", fullExport.payload.revisits.mode === "full" && fullExport.payload.revisits.states.length === 2 && fullExport.payload.revisits.states.some((state) => state.memoryId === memoryId && state.viewCount === 1) && fullExport.payload.revisits.states.some((state) => state.memoryId === relatedId && state.dismissedLocalDate === "2026-05-20"));
     assert("馆藏完整备份包含非空 later 回访意愿", fullExport.payload.revisitIntents.mode === "full" && fullExport.payload.revisitIntents.schemaVersion === 11 && fullExport.payload.revisitIntents.intents.length === 1 && fullExport.payload.revisitIntents.intents[0].memoryId === relatedId && fullExport.payload.revisitIntents.intents[0].intent === "later" && fullExport.payload.revisitIntents.intents[0].notBeforeLocalDate === "2027-05-20" && fullExport.payload.revisitIntents.intents[0].notBeforeTimezone === "Asia/Shanghai");
-    assert("schema 13 馆藏备份包含实体、声音、胶囊、修订、回访意愿、时间校准与口述史边界", fullExport.payload.schemaVersion === 13 && fullExport.payload.entities.mode === "full" && fullExport.payload.entities.entities.some((entity) => entity.aliases.some((alias) => alias.alias === "老友")) && fullExport.payload.voices.mode === "full" && fullExport.payload.capsules.mode === "full" && fullExport.payload.revisions.mode === "full" && fullExport.payload.revisitIntents.mode === "full" && fullExport.payload.timeCalibrations.mode === "full" && fullExport.payload.timeCalibrations.calibrations.length === 1 && fullExport.payload.oralHistories.mode === "full" && fullExport.payload.oralHistories.questions.length === 0 && fullExport.payload.oralHistories.answers.length === 0);
+    assert("schema 14 馆藏备份包含实体、声音、胶囊、修订、回访意愿、时间校准、口述史与受限策展边界", fullExport.payload.schemaVersion === 14 && fullExport.payload.entities.mode === "full" && fullExport.payload.entities.entities.some((entity) => entity.aliases.some((alias) => alias.alias === "老友")) && fullExport.payload.voices.mode === "full" && fullExport.payload.capsules.mode === "full" && fullExport.payload.revisions.mode === "full" && fullExport.payload.revisitIntents.mode === "full" && fullExport.payload.timeCalibrations.mode === "full" && fullExport.payload.timeCalibrations.calibrations.length === 1 && fullExport.payload.oralHistories.mode === "full" && fullExport.payload.oralHistories.questions.length === 0 && fullExport.payload.oralHistories.answers.length === 0 && fullExport.payload.curatorAgent.mode === "full" && fullExport.payload.curatorAgent.schemaVersion === 14 && fullExport.payload.curatorAgent.runs.length === 0);
 
     await putJson(`${baseUrl}/api/memories/${memoryId}`, { rawContent: "这段原文已被重新整理，不再包含此前的日期、人物或地点线索。", expectedUpdatedAt: updated.payload.memory.updatedAt });
     const revalidatedExport = await getJson(`${baseUrl}/api/memories/export`);
@@ -785,7 +787,7 @@ async function runLocalFlow() {
 
     const beforeRejectedImport = await getJson(`${baseUrl}/api/memories`);
     const futureSchema = await postJson(`${baseUrl}/api/memories/import`, {
-      schemaVersion: 14,
+      schemaVersion: 15,
       mode: "full",
       memories: [{ ...created.payload.memory, id: "future-schema-memory" }],
       entities: { mode: "full", schemaVersion: 7, entities: [] }
@@ -824,7 +826,9 @@ async function runLocalFlow() {
     const missingTimeCalibrations = await postJson(`${baseUrl}/api/memories/import`, missingTimeCalibrationBody);
     const { oralHistories: omittedOralHistories, ...missingOralHistoryBody } = revalidatedExport.payload;
     const missingOralHistories = await postJson(`${baseUrl}/api/memories/import`, missingOralHistoryBody);
-    assert("JSON 导入拒绝未来 schema、缺失必需 section、null 回访意愿、缺失时间校准与缺失口述史", futureSchema.response.status === 400 && missingEntities.response.status === 400 && missingVoices.response.status === 400 && missingCapsules.response.status === 400 && missingRevisions.response.status === 400 && nullRevisitIntents.response.status === 400 && missingTimeCalibrations.response.status === 400 && omittedTimeCalibrations.mode === "full" && missingOralHistories.response.status === 400 && omittedOralHistories.mode === "full");
+    const { curatorAgent: omittedCuratorAgent, ...missingCuratorAgentBody } = revalidatedExport.payload;
+    const missingCuratorAgent = await postJson(`${baseUrl}/api/memories/import`, missingCuratorAgentBody);
+    assert("JSON 导入拒绝未来 schema、缺失必需 section、null 回访意愿、缺失时间校准、口述史与策展审计", futureSchema.response.status === 400 && missingEntities.response.status === 400 && missingVoices.response.status === 400 && missingCapsules.response.status === 400 && missingRevisions.response.status === 400 && nullRevisitIntents.response.status === 400 && missingTimeCalibrations.response.status === 400 && omittedTimeCalibrations.mode === "full" && missingOralHistories.response.status === 400 && omittedOralHistories.mode === "full" && missingCuratorAgent.response.status === 400 && omittedCuratorAgent.mode === "full");
     const rejectedArchive = await postJson(`${baseUrl}/api/memories/import`, {
       memories: [{ ...created.payload.memory, id: "corrupt-archive-memory" }],
       archaeology: { mode: "full", events: [null], claims: [], pairDecisions: [], questions: [] }
@@ -837,6 +841,398 @@ async function runLocalFlow() {
     removeDatabase(dbPath);
     removeDirectory(mediaRoot);
   }
+}
+
+async function runLocalCuratorAgentFlow(baseUrl) {
+  const suffix = Date.now().toString(36);
+  const leftId = `v10-http-left-${suffix}`;
+  const rightId = `v10-http-right-${suffix}`;
+  const leftRaw = "我把一张虚构的蓝色车票夹进纸质手账，只用于受限策展 HTTP 回归。";
+  const rightRaw = "另一页虚构手账也提到那张蓝色车票，只用于验证人工确认边界。";
+  const baselineHealth = await getJson(`${baseUrl}/api/health`);
+  const baselineStats = baselineHealth.payload.stats;
+  const fixtures = [
+    {
+      id: leftId,
+      title: "虚构车票的第一页",
+      hall: "daily",
+      sourceType: "手账",
+      rawContent: leftRaw,
+      exhibitText: "一张虚构车票留下的第一段纸面线索。",
+      location: "虚构候车室",
+      tags: ["V10虚构车票"]
+    },
+    {
+      id: rightId,
+      title: "虚构车票的第二页",
+      hall: "daily",
+      sourceType: "手账",
+      rawContent: rightRaw,
+      exhibitText: "同一张虚构车票留下的另一段纸面线索。",
+      location: "虚构候车室",
+      tags: ["V10虚构车票"]
+    }
+  ];
+  const createdMemories = [];
+  for (const fixture of fixtures) createdMemories.push(await postJson(`${baseUrl}/api/memories`, fixture));
+  assert("V10 HTTP 场景以两件可清理的虚构展品建立证据边界", createdMemories.every((item) => item.response.status === 201));
+
+  const leftBefore = await getJson(`${baseUrl}/api/memories/${leftId}`);
+  const rightBefore = await getJson(`${baseUrl}/api/memories/${rightId}`);
+  const runRequest = {
+    intent: "draft_exhibition",
+    query: "两页虚构手账里的蓝色车票线索",
+    memoryIds: [leftId, rightId],
+    title: "虚构蓝色车票",
+    theme: "纸面线索"
+  };
+  const createKey = `v10-create-${suffix}`;
+  const runsUrl = `${baseUrl}/api/curator-agent/runs`;
+  const createdRun = await postJson(runsUrl, runRequest, { "Idempotency-Key": createKey });
+  const createEtag = createdRun.response.headers.get("etag");
+  const runId = createdRun.payload.run.id;
+  const runUrl = `${runsUrl}/${runId}`;
+  const creationReplay = await postJson(runsUrl, runRequest, { "Idempotency-Key": createKey });
+  assert(
+    "受限策展运行经真实 HTTP 创建且相同幂等键精确重放",
+    createdRun.response.status === 201 &&
+      createdRun.payload.idempotent === false &&
+      createdRun.payload.run.status === "created" &&
+      createdRun.payload.steps.length === 0 &&
+      createdRun.payload.proposal === null &&
+      createEtag === `"curator-agent-${runId}-v1"` &&
+      creationReplay.response.status === 200 &&
+      creationReplay.payload.idempotent === true &&
+      creationReplay.payload.run.id === runId &&
+      creationReplay.response.headers.get("etag") === createEtag
+  );
+
+  const domainBeforeExecution = await collectionDomainSha256(baseUrl);
+  const missingExecutePrecondition = await postJson(`${runUrl}/execute`, { confirm: true }, {
+    "Idempotency-Key": `v10-execute-missing-${suffix}`
+  });
+  const afterMissingPrecondition = await getJson(runUrl);
+  assert(
+    "受限策展 mutation 缺少 If-Match 返回 428 且不启动工具",
+    missingExecutePrecondition.response.status === 428 &&
+      missingExecutePrecondition.payload.code === "CURATOR_AGENT_PRECONDITION_REQUIRED" &&
+      afterMissingPrecondition.payload.run.status === "created" &&
+      afterMissingPrecondition.payload.steps.length === 0 &&
+      afterMissingPrecondition.response.headers.get("etag") === createEtag
+  );
+
+  const executeKey = `v10-execute-${suffix}`;
+  const executed = await postJson(`${runUrl}/execute`, { confirm: true }, {
+    "If-Match": createEtag,
+    "Idempotency-Key": executeKey
+  });
+  const executeEtag = executed.response.headers.get("etag");
+  const expectedTools = [
+    "search_memory_summaries",
+    "read_memory_evidence",
+    "read_confirmed_relationships",
+    "read_exhibition_summaries"
+  ];
+  const proposalAtExecution = JSON.stringify(executed.payload.proposal);
+  assert(
+    "正确 ETag 只执行四个白名单只读步骤并产出单一有界提案",
+    executed.response.ok &&
+      executed.payload.executed === true &&
+      executed.payload.run.status === "completed" &&
+      executed.payload.run.version === 3 &&
+      executeEtag === `"curator-agent-${runId}-v3"` &&
+      executed.payload.steps.map((step) => step.toolName).join(",") === expectedTools.join(",") &&
+      executed.payload.steps.every((step, index) => step.position === index && /^[a-f0-9]{64}$/u.test(step.resultSha256)) &&
+      executed.payload.run.usage.steps === 4 &&
+      executed.payload.run.usage.toolCalls === 4 &&
+      executed.payload.run.usage.resultBytes <= 262_144 &&
+      executed.payload.run.usage.durationMs <= 2_000 &&
+      executed.payload.run.budgets.maxSteps === 6 &&
+      executed.payload.run.budgets.maxToolCalls === 4 &&
+      executed.payload.run.budgets.maxDurationMs === 2_000 &&
+      executed.payload.run.budgets.maxResultBytes === 262_144 &&
+      executed.payload.run.budgets.maxMemories === 6 &&
+      executed.payload.proposal?.schemaVersion === 14 &&
+      executed.payload.proposal?.kind === "curator-agent-proposal" &&
+      executed.payload.proposal?.sourceRefs.length === 2 &&
+      executed.payload.proposal?.actions.length === 3 &&
+      !executed.payload.proposal.actions.some((action) => action.action.includes("share")) &&
+      executed.payload.decisions.length === 0
+  );
+  const domainAfterExecution = await collectionDomainSha256(baseUrl);
+  assert("策展执行只新增冻结回执与提案，业务馆藏在执行前后零自动写入", domainAfterExecution === domainBeforeExecution);
+
+  const evaluationStatsBefore = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+  const evaluationDomainBefore = await collectionDomainSha256(baseUrl);
+  const evaluation = await getJson(`${runUrl}/evaluation`);
+  const workspaceAfterEvaluation = await getJson(runUrl);
+  const evaluationStatsAfter = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+  const evaluationDomainAfter = await collectionDomainSha256(baseUrl);
+  assert(
+    "确定性评测只重放冻结回执且不增加工具或业务记录",
+    evaluation.response.ok &&
+      evaluation.payload.evaluation.passed === true &&
+      /^[a-f0-9]{64}$/u.test(evaluation.payload.evaluation.traceSha256) &&
+      evaluation.response.headers.get("etag") === executeEtag &&
+      JSON.stringify(workspaceAfterEvaluation.payload.steps) === JSON.stringify(executed.payload.steps) &&
+      JSON.stringify(workspaceAfterEvaluation.payload.proposal) === proposalAtExecution &&
+      JSON.stringify(evaluationStatsAfter) === JSON.stringify(evaluationStatsBefore) &&
+      evaluationDomainAfter === evaluationDomainBefore
+  );
+
+  const decisionsUrl = `${runUrl}/decisions`;
+  const rejectedBatch = await postJson(decisionsUrl, {
+    confirm: true,
+    decisions: [{ action: "save_exhibition", decision: "approve" }]
+  }, {
+    "If-Match": executeEtag,
+    "Idempotency-Key": `v10-batch-${suffix}`
+  });
+  const afterRejectedBatch = await getJson(runUrl);
+  assert("策展决定接口拒绝批量授权且保持零决定", rejectedBatch.response.status === 400 && rejectedBatch.payload.code === "CURATOR_AGENT_FIELD_SET_INVALID" && afterRejectedBatch.payload.decisions.length === 0 && afterRejectedBatch.response.headers.get("etag") === executeEtag);
+
+  const saveKey = `v10-save-${suffix}`;
+  const saved = await postJson(decisionsUrl, {
+    action: "save_exhibition",
+    decision: "approve",
+    confirm: true
+  }, {
+    "If-Match": executeEtag,
+    "Idempotency-Key": saveKey
+  });
+  const saveEtag = saved.response.headers.get("etag");
+  const saveDecision = saved.payload.decisions.find((decision) => decision.action === "save_exhibition");
+  const exhibitionId = saveDecision.outcome.exhibitionId;
+  const savedDraft = await getJson(`${baseUrl}/api/exhibitions/${exhibitionId}`);
+  const exhibitionsAfterSave = await getJson(`${baseUrl}/api/exhibitions`);
+  assert(
+    "单独批准保存只创建一份草稿展览",
+    saved.response.status === 201 &&
+      saved.payload.decided === true &&
+      saved.payload.run.version === 4 &&
+      saveEtag === `"curator-agent-${runId}-v4"` &&
+      saved.payload.decisions.length === 1 &&
+      saveDecision.decision === "approve" &&
+      saveDecision.outcome.exhibitionStatus === "draft" &&
+      savedDraft.response.ok &&
+      savedDraft.payload.exhibition.status === "draft" &&
+      exhibitionsAfterSave.payload.exhibitions.length === baselineStats.exhibitions + 1
+  );
+  const saveReplay = await postJson(decisionsUrl, {
+    action: "save_exhibition",
+    decision: "approve",
+    confirm: true
+  }, {
+    "If-Match": executeEtag,
+    "Idempotency-Key": saveKey
+  });
+  const exhibitionsAfterSaveReplay = await getJson(`${baseUrl}/api/exhibitions`);
+  assert(
+    "相同保存决定键优先于旧 ETag 精确重放且不复制草稿",
+    saveReplay.response.status === 200 &&
+      saveReplay.payload.idempotent === true &&
+      saveReplay.payload.decisions.length === 1 &&
+      saveReplay.payload.decisions[0].outcome.exhibitionId === exhibitionId &&
+      exhibitionsAfterSaveReplay.payload.exhibitions.length === exhibitionsAfterSave.payload.exhibitions.length
+  );
+
+  const related = await postJson(decisionsUrl, {
+    action: "confirm_relationship",
+    decision: "approve",
+    confirm: true
+  }, {
+    "If-Match": saveEtag,
+    "Idempotency-Key": `v10-relation-${suffix}`
+  });
+  const relationEtag = related.response.headers.get("etag");
+  const relationDecision = related.payload.decisions.find((decision) => decision.action === "confirm_relationship");
+  const leftAfterRelation = await getJson(`${baseUrl}/api/memories/${leftId}`);
+  const rightAfterRelation = await getJson(`${baseUrl}/api/memories/${rightId}`);
+  const relationPuzzle = await getJson(`${baseUrl}/api/archaeology/puzzle?memoryId=${leftId}&relatedId=${rightId}`);
+  assert(
+    "关系候选经独立批准后只保存关联而不改写两段原文",
+    related.response.status === 201 &&
+      related.payload.run.version === 5 &&
+      relationEtag === `"curator-agent-${runId}-v5"` &&
+      relationDecision.outcome.relationType === "related_context" &&
+      relationPuzzle.response.ok &&
+      relationPuzzle.payload.decision.decision === "related" &&
+      relationPuzzle.payload.decision.metadata.source === "curator-agent" &&
+      leftAfterRelation.payload.memory.rawContent === leftRaw &&
+      rightAfterRelation.payload.memory.rawContent === rightRaw &&
+      leftAfterRelation.response.headers.get("etag") === leftBefore.response.headers.get("etag") &&
+      rightAfterRelation.response.headers.get("etag") === rightBefore.response.headers.get("etag")
+  );
+
+  const published = await postJson(decisionsUrl, {
+    action: "publish_exhibition",
+    decision: "approve",
+    confirm: true
+  }, {
+    "If-Match": relationEtag,
+    "Idempotency-Key": `v10-publish-${suffix}`
+  });
+  const publishEtag = published.response.headers.get("etag");
+  const publishDecision = published.payload.decisions.find((decision) => decision.action === "publish_exhibition");
+  const publishedExhibition = await getJson(`${baseUrl}/api/exhibitions/${exhibitionId}`);
+  const completedWorkspace = await getJson(runUrl);
+  assert(
+    "发布必须由第三次独立批准完成且只发布此前保存的草稿",
+    published.response.status === 201 &&
+      published.payload.run.version === 6 &&
+      publishEtag === `"curator-agent-${runId}-v6"` &&
+      published.payload.decisions.length === 3 &&
+      publishDecision.outcome.exhibitionId === exhibitionId &&
+      publishDecision.outcome.exhibitionStatus === "published" &&
+      publishedExhibition.payload.exhibition.id === exhibitionId &&
+      publishedExhibition.payload.exhibition.status === "published" &&
+      JSON.stringify(completedWorkspace.payload.proposal) === proposalAtExecution
+  );
+
+  const fullExport = await getJson(`${baseUrl}/api/memories/export`);
+  const fullCurator = fullExport.payload.curatorAgent;
+  const archivedRun = fullCurator.runs.find((entry) => entry.run.id === runId);
+  assert(
+    "schema 14 完整 JSON 保留一份可重放的受限策展审计工作区",
+    fullExport.response.ok &&
+      fullExport.payload.schemaVersion === 14 &&
+      fullCurator.mode === "full" &&
+      fullCurator.schemaVersion === 14 &&
+      archivedRun.steps.length === 4 &&
+      archivedRun.proposal.proposalSha256 === executed.payload.proposal.proposalSha256 &&
+      archivedRun.decisions.length === 3
+  );
+  const redactedExport = await getJson(`${baseUrl}/api/memories/export?mode=redacted`);
+  const redactedCurator = redactedExport.payload.curatorAgent;
+  const redactedCuratorText = JSON.stringify(redactedCurator);
+  assert(
+    "脱敏 JSON 的策展审计严格收敛为九键计数且物理排除正文、哈希与内部 ID",
+    redactedExport.response.ok &&
+      redactedCurator.mode === "redacted-summary" &&
+      redactedCurator.runCount === 1 &&
+      redactedCurator.proposalCount === 1 &&
+      redactedCurator.decisionCount === 3 &&
+      Object.keys(redactedCurator).sort().join(",") === "approvedCount,cancelledRunCount,completedRunCount,decisionCount,mode,note,proposalCount,rejectedCount,runCount" &&
+      !redactedCuratorText.includes(leftRaw) &&
+      !redactedCuratorText.includes(rightRaw) &&
+      !redactedCuratorText.includes(leftId) &&
+      !redactedCuratorText.includes(rightId) &&
+      !redactedCuratorText.includes(runId) &&
+      !/[a-f0-9]{64}/iu.test(redactedCuratorText)
+  );
+
+  const staleCreate = await postJson(runsUrl, runRequest, { "Idempotency-Key": `v10-stale-create-${suffix}` });
+  const staleRunId = staleCreate.payload.run.id;
+  const staleRunUrl = `${runsUrl}/${staleRunId}`;
+  const staleExecuted = await postJson(`${staleRunUrl}/execute`, { confirm: true }, {
+    "If-Match": staleCreate.response.headers.get("etag"),
+    "Idempotency-Key": `v10-stale-execute-${suffix}`
+  });
+  const leftForEdit = await getJson(`${baseUrl}/api/memories/${leftId}`);
+  const changedLeft = await putJson(`${baseUrl}/api/memories/${leftId}`, {
+    rawContent: `${leftRaw} 这句由用户明确追加，用来制造来源版本变化。`,
+    changeNote: "V10 来源陈旧回归"
+  }, { "If-Match": leftForEdit.response.headers.get("etag") });
+  const staleDomainBefore = await collectionDomainSha256(baseUrl);
+  const staleStatsBefore = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+  const staleApproval = await postJson(`${staleRunUrl}/decisions`, {
+    action: "save_exhibition",
+    decision: "approve",
+    confirm: true
+  }, {
+    "If-Match": staleExecuted.response.headers.get("etag"),
+    "Idempotency-Key": `v10-stale-save-${suffix}`
+  });
+  const staleWorkspace = await getJson(staleRunUrl);
+  const staleStatsAfter = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+  const staleDomainAfter = await collectionDomainSha256(baseUrl);
+  assert(
+    "来源修改后批准被 CURATOR_AGENT_SOURCE_STALE 拒绝并保持零决定、零副作用",
+    changedLeft.response.ok &&
+      staleApproval.response.status === 409 &&
+      staleApproval.payload.code === "CURATOR_AGENT_SOURCE_STALE" &&
+      staleWorkspace.payload.run.needsReview === true &&
+      staleWorkspace.payload.run.allowDecisions === false &&
+      staleWorkspace.payload.run.version === 4 &&
+      staleWorkspace.payload.decisions.length === 0 &&
+      JSON.stringify(staleStatsAfter) === JSON.stringify(staleStatsBefore) &&
+      staleDomainAfter === staleDomainBefore
+  );
+
+  const listedRuns = await getJson(`${runsUrl}?limit=10`);
+  assert("运行列表只返回有界摘要且包含两个本地审计工作区", listedRuns.response.ok && listedRuns.payload.runs.some((run) => run.id === runId) && listedRuns.payload.runs.some((run) => run.id === staleRunId) && listedRuns.payload.runs.every((run) => !Object.hasOwn(run, "steps") && !Object.hasOwn(run, "proposal")));
+
+  const statsBeforeMainDelete = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+  const deleteMainKey = `v10-delete-main-${suffix}`;
+  const deletedMain = await deleteJson(runUrl, { confirm: true }, {
+    "If-Match": publishEtag,
+    "Idempotency-Key": deleteMainKey
+  });
+  const deletedMainReplay = await deleteJson(runUrl, { confirm: true }, {
+    "If-Match": publishEtag,
+    "Idempotency-Key": deleteMainKey
+  });
+  const missingMain = await getJson(runUrl);
+  const statsAfterMainDelete = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+  const exportAfterMainDelete = await getJson(`${baseUrl}/api/memories/export`);
+  assert(
+    "显式确认、ETag 与幂等键删除运行并清除其步骤、提案与决定证据",
+    deletedMain.response.ok &&
+      deletedMain.payload.deleted === true &&
+      deletedMainReplay.response.ok &&
+      deletedMainReplay.payload.idempotent === true &&
+      deletedMainReplay.payload.deleted === false &&
+      missingMain.response.status === 404 &&
+      statsAfterMainDelete.curatorAgentRuns === statsBeforeMainDelete.curatorAgentRuns - 1 &&
+      statsAfterMainDelete.curatorAgentCompletedRuns === statsBeforeMainDelete.curatorAgentCompletedRuns - 1 &&
+      statsAfterMainDelete.curatorAgentProposals === statsBeforeMainDelete.curatorAgentProposals - 1 &&
+      statsAfterMainDelete.curatorAgentDecisions === statsBeforeMainDelete.curatorAgentDecisions - 3 &&
+      exportAfterMainDelete.payload.curatorAgent.runs.length === 1 &&
+      exportAfterMainDelete.payload.curatorAgent.runs[0].run.id === staleRunId &&
+      exportAfterMainDelete.payload.curatorAgent.runs[0].steps.length === 4
+  );
+
+  const deleteStaleKey = `v10-delete-stale-${suffix}`;
+  const staleDeleteEtag = staleWorkspace.response.headers.get("etag");
+  const deletedStale = await deleteJson(staleRunUrl, { confirm: true }, {
+    "If-Match": staleDeleteEtag,
+    "Idempotency-Key": deleteStaleKey
+  });
+  const deletedStaleReplay = await deleteJson(staleRunUrl, { confirm: true }, {
+    "If-Match": staleDeleteEtag,
+    "Idempotency-Key": deleteStaleKey
+  });
+  assert("陈旧运行同样可精确删除重放且不残留审计正文", deletedStale.payload.deleted === true && deletedStaleReplay.payload.idempotent === true && (await getJson(`${baseUrl}/api/memories/export`)).payload.curatorAgent.runs.length === 0);
+
+  const exhibitionReferenceRun = await postJson(runsUrl, runRequest, {
+    "Idempotency-Key": `v10-exhibition-ref-${suffix}`
+  });
+  const exhibitionReferenceRunId = exhibitionReferenceRun.payload.run.id;
+  const exhibitionReferenceExecuted = await postJson(`${runsUrl}/${exhibitionReferenceRunId}/execute`, { confirm: true }, {
+    "If-Match": exhibitionReferenceRun.response.headers.get("etag"),
+    "Idempotency-Key": `v10-exhibition-ref-execute-${suffix}`
+  });
+  assert("后续只读运行明确记录它查阅过的既有展览", exhibitionReferenceExecuted.response.ok && exhibitionReferenceExecuted.payload.proposal.duplicateContext.some((item) => item.id === exhibitionId));
+  const deletedExhibition = await deleteJson(`${baseUrl}/api/exhibitions/${exhibitionId}`);
+  const runAfterExhibitionDelete = await getJson(`${runsUrl}/${exhibitionReferenceRunId}`);
+  const deletedLeft = await deleteJson(`${baseUrl}/api/memories/${leftId}`);
+  const deletedRight = await deleteJson(`${baseUrl}/api/memories/${rightId}`);
+  const finalHealth = await getJson(`${baseUrl}/api/health`);
+  assert(
+    "删除展览级联清除引用它的运行，V10 专用展品与证据在场景结束后全部清理",
+    deletedExhibition.response.ok &&
+      runAfterExhibitionDelete.response.status === 404 &&
+      deletedLeft.response.ok &&
+      deletedRight.response.ok &&
+      JSON.stringify(finalHealth.payload.stats) === JSON.stringify(baselineStats)
+  );
+}
+
+async function collectionDomainSha256(baseUrl) {
+  const exported = await getJson(`${baseUrl}/api/memories/export`);
+  if (!exported.response.ok) throw new Error(exported.payload.error || "无法读取馆藏边界。");
+  const { curatorAgent: _curatorAgent, exportedAt: _exportedAt, ...domain } = exported.payload;
+  return sha256(Buffer.from(JSON.stringify(domain), "utf8"));
 }
 
 async function runLocalOralHistoryFlow(baseUrl) {
@@ -1437,7 +1833,7 @@ async function runDemoSafetyFlow() {
       AI_BASE_URL: "http://127.0.0.1:1"
     }, async (baseUrl) => {
     const status = await getJson(`${baseUrl}/api/demo/status`);
-    assert("公开 Demo 自动注入四条示例、一场已发布展览与一项时间校准", status.response.ok && status.payload.interviewDemo === true && status.payload.seededExamples === 4 && status.payload.seededExhibitions === 1 && status.payload.seededTimeCalibrations === 1 && status.payload.seededOralHistoryAnswers === 0 && status.payload.oralHistoryMode === "read-only-question");
+    assert("公开 Demo 自动注入四条示例、一场已发布展览与一项时间校准", status.response.ok && status.payload.interviewDemo === true && status.payload.seededExamples === 4 && status.payload.seededExhibitions === 1 && status.payload.seededTimeCalibrations === 1 && status.payload.seededOralHistoryAnswers === 0 && status.payload.oralHistoryMode === "read-only-question" && status.payload.seededCuratorAgentRuns === 0 && status.payload.curatorAgentMode === "read-only-synthetic-sample");
     assert("公开 Demo 使用临时存储并强制本地 Mock", status.payload.storage === "ephemeral-sqlite-on-tmp" && status.payload.destructiveActionsBlocked === true && status.payload.aiMode === "mock-fallback");
     const demoHome = await fetch(`${baseUrl}/`);
     assert("公开 Demo 通过权限策略禁用麦克风", demoHome.headers.get("permissions-policy")?.includes("microphone=()"));
@@ -1503,6 +1899,56 @@ async function runDemoSafetyFlow() {
         demoOralAfter.payload.history.length === 0 &&
         demoOralStatsAfter.oralHistoryQuestions === demoOralStatsBefore.oralHistoryQuestions &&
         demoOralStatsAfter.oralHistoryAnswers === demoOralStatsBefore.oralHistoryAnswers
+    );
+
+    const demoCuratorStatsBefore = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+    const demoCuratorSample = await getJson(`${baseUrl}/api/curator-agent/sample`);
+    const sampleRunId = demoCuratorSample.payload.run.id;
+    const sampleRunUrl = `${baseUrl}/api/curator-agent/runs/${sampleRunId}`;
+    const sampleEtag = demoCuratorSample.response.headers.get("etag");
+    const blockedCuratorMutations = await Promise.all([
+      postJson(`${baseUrl}/api/curator-agent/runs`, {
+        intent: "draft_exhibition",
+        query: "公开 Demo 不应创建运行"
+      }, { "Idempotency-Key": "demo-curator-create" }),
+      postJson(`${sampleRunUrl}/execute`, { confirm: true }, {
+        "If-Match": sampleEtag,
+        "Idempotency-Key": "demo-curator-execute"
+      }),
+      postJson(`${sampleRunUrl}/cancel`, { confirm: true }, {
+        "If-Match": sampleEtag,
+        "Idempotency-Key": "demo-curator-cancel"
+      }),
+      postJson(`${sampleRunUrl}/decisions`, {
+        action: "save_exhibition",
+        decision: "approve",
+        confirm: true
+      }, {
+        "If-Match": sampleEtag,
+        "Idempotency-Key": "demo-curator-decision"
+      }),
+      deleteJson(sampleRunUrl, { confirm: true }, {
+        "If-Match": sampleEtag,
+        "Idempotency-Key": "demo-curator-delete"
+      })
+    ]);
+    const demoCuratorStatsAfter = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+    assert(
+      "公开 Demo 只合成零写入策展工作区且全部 V10 POST/DELETE 均返回 403",
+      demoCuratorSample.response.ok &&
+        demoCuratorSample.payload.demo === true &&
+        demoCuratorSample.payload.synthetic === true &&
+        demoCuratorSample.payload.run.schemaVersion === 14 &&
+        demoCuratorSample.payload.run.status === "completed" &&
+        demoCuratorSample.payload.run.allowDecisions === false &&
+        demoCuratorSample.payload.steps.length === 4 &&
+        demoCuratorSample.payload.proposal.actions.length === 3 &&
+        !demoCuratorSample.payload.proposal.actions.some((action) => action.action.includes("share")) &&
+        blockedCuratorMutations.every((item) => item.response.status === 403 && item.payload.interviewDemo === true) &&
+        demoCuratorStatsBefore.curatorAgentRuns === 0 &&
+        demoCuratorStatsBefore.curatorAgentProposals === 0 &&
+        demoCuratorStatsBefore.curatorAgentDecisions === 0 &&
+        JSON.stringify(demoCuratorStatsAfter) === JSON.stringify(demoCuratorStatsBefore)
     );
 
     const demoPeople = await getJson(`${baseUrl}/api/entities?type=person&limit=20`);
@@ -1848,16 +2294,16 @@ async function getJson(url) {
   return { response, payload: await response.json() };
 }
 
-async function postJson(url, body) {
-  return requestJson(url, "POST", body);
+async function postJson(url, body, headers) {
+  return requestJson(url, "POST", body, headers);
 }
 
-async function putJson(url, body) {
-  return requestJson(url, "PUT", body);
+async function putJson(url, body, headers) {
+  return requestJson(url, "PUT", body, headers);
 }
 
-async function deleteJson(url, body) {
-  return requestJson(url, "DELETE", body);
+async function deleteJson(url, body, headers) {
+  return requestJson(url, "DELETE", body, headers);
 }
 
 async function createReadyAsset(baseUrl, original, display, thumb, fileName) {
@@ -1925,11 +2371,11 @@ function jsonFetch(url, method, body) {
   });
 }
 
-async function requestJson(url, method, body) {
+async function requestJson(url, method, body, headers = {}) {
   const response = await fetch(url, {
     method,
-    headers: writeHeaders(url, { "Content-Type": "application/json" }),
-    body: JSON.stringify(body)
+    headers: writeHeaders(url, { "Content-Type": "application/json", ...headers }),
+    ...(body === undefined ? {} : { body: JSON.stringify(body) })
   });
   return { response, payload: await response.json() };
 }
