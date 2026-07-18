@@ -3,12 +3,14 @@
 const assert = require("node:assert/strict");
 const { createCollectionImporter } = require("../lib/collection-import");
 const { createCollectionExporter } = require("../lib/collection-export");
+const { ORAL_HISTORY_REDACTED_NOTE } = require("../lib/oral-history-backup");
 
 let assertionCount = 0;
 
 function run() {
   checkSchema11Export();
   checkSchema12Export();
+  checkSchema13Export();
   checkPrimitiveBodies();
   checkHardImportLimit();
   checkSchemaEnvelope();
@@ -17,6 +19,7 @@ function run() {
   checkCapsuleImportModes();
   checkRevisitIntentImportModes();
   checkTimeCalibrationImportModes();
+  checkOralHistoryImportModes();
   checkDuplicateReferenceIds();
   checkFeaturePrevalidation();
   checkConflictMapping();
@@ -24,6 +27,150 @@ function run() {
   checkSkippedRestores();
   checkSuccessfulResult();
   console.log(`Collection import checks passed: ${assertionCount} assertions.`);
+}
+
+function checkSchema13Export() {
+  const calls = { oral: [], voice: [] };
+  const store = {
+    buildExhibitionBackup: (mode) => ({ mode, exhibitions: [] }),
+    buildRevisitBackup: (mode) => ({ mode, states: [] }),
+    buildClueBackup: (mode) => ({ mode, entities: [] }),
+    buildVoiceBackup(mode, memoryIds, options) {
+      calls.voice.push({ mode, memoryIds, options });
+      return mode === "redacted"
+        ? { mode: "redacted-summary", assetCount: 1 }
+        : { mode: "full", schemaVersion: 8, assets: [], memoryLinks: [], transcripts: [] };
+    },
+    buildCapsuleBackup: (mode) => ({ mode, capsules: [] }),
+    buildRevisionBackup: (mode) => ({ mode, revisions: [] }),
+    buildRevisitIntentBackup: (mode) => ({ mode, intents: [] }),
+    buildTimeCalibrationBackup: (mode) => ({ mode, calibrations: [] }),
+    buildOralHistoryBackup(mode, eventIds) {
+      calls.oral.push({ mode, eventIds });
+      return mode === "redacted"
+        ? { mode: "redacted-summary", questionCount: 1, answerCount: 1, confirmedAnswerCount: 1, note: ORAL_HISTORY_REDACTED_NOTE }
+        : {
+            mode: "full",
+            schemaVersion: 13,
+            questions: [],
+            answers: [{ assetId: "voice-oral-only" }]
+          };
+    }
+  };
+  const build = createCollectionExporter({
+    store,
+    appVersion: "9.0.0",
+    schemaVersion: 13,
+    buildArchaeologyBackup: (_store, _memories, mode) => mode === "redacted"
+      ? { mode: "redacted-summary" }
+      : { mode: "full", events: [{ id: "event-export-oral" }], claims: [], pairDecisions: [], questions: [] }
+  });
+  const memories = [memory("export-oral")];
+  const full = build(memories, "full");
+  same(calls.oral[0], { mode: "full", eventIds: ["event-export-oral"] }, "schema 13 口述史导出严格限制在考古事件边界");
+  same(calls.voice[0].options, { additionalAssetIds: ["voice-oral-only"] }, "没有 memory_voice link 的口述声音仍显式进入声音真文件归档边界");
+  same(Object.keys(full.oralHistories).sort(), ["answers", "mode", "questions", "schemaVersion"], "schema 13 full JSON 显式导出口述问题与回答 exact 根");
+  const redacted = build(memories, "redacted");
+  same(Object.keys(redacted.oralHistories).sort(), ["answerCount", "confirmedAnswerCount", "mode", "note", "questionCount"], "schema 13 脱敏 JSON 只保留固定口述安全计数");
+  same(calls.voice[1].options, { additionalAssetIds: [] }, "脱敏导出不向声音层传递口述资产 ID");
+
+  const missing = { ...store };
+  delete missing.buildOralHistoryBackup;
+  const broken = createCollectionExporter({ store: missing, appVersion: "9.0.0", schemaVersion: 13, buildArchaeologyBackup: () => ({}) });
+  assert.throws(() => broken(memories, "full"), /oral-history backup support/u, "schema 13 导出缺少口述史处理器时 fail closed");
+  assertionCount += 1;
+}
+
+function checkOralHistoryImportModes() {
+  const required = {
+    entities: fullBackup(),
+    voices: {
+      mode: "full",
+      schemaVersion: 8,
+      assets: [{ id: "voice-oral-json" }],
+      memoryLinks: [],
+      transcripts: []
+    },
+    capsules: { mode: "full", schemaVersion: 9, capsules: [] },
+    revisions: { mode: "full", schemaVersion: 10, revisions: [] },
+    revisitIntents: { mode: "full", schemaVersion: 11, intents: [] },
+    timeCalibrations: { mode: "full", schemaVersion: 12, calibrations: [] },
+    archaeology: { mode: "full", events: [{ id: "event-oral-json", members: [{ memoryId: "source-oral-json" }] }], claims: [], pairDecisions: [], questions: [] }
+  };
+  const oral = {
+    mode: "full",
+    schemaVersion: 13,
+    questions: [],
+    answers: [{ assetId: "voice-oral-json" }]
+  };
+  const missing = createFixture({ schemaVersion: 13 });
+  const missingError = captureError(() => missing.importCollection({
+    schemaVersion: 13,
+    mode: "full",
+    memories: [memory("source-oral-json")],
+    ...required
+  }));
+  ok(missingError?.statusCode === 400 && missingError.message.includes("oralHistories"), "schema 13 full 即使零条口述史也必须显式声明 oralHistories");
+  ok(missing.calls.normalizes === 0 && missing.calls.transactions === 0, "缺失口述史在规范化和事务前拒绝");
+
+  const full = createFixture({ schemaVersion: 13 });
+  const result = full.importCollection({
+    schemaVersion: 13,
+    mode: "full",
+    memories: [memory("source-oral-json")],
+    ...required,
+    oralHistories: oral
+  });
+  ok(full.calls.validations.oralHistories === 1 && !full.calls.events.includes("normalize"), "口述史完成全部只读验真后在任何展品规范化前短路");
+  same(full.calls.oralBoundaries, { eventIds: ["event-oral-json"], voiceAssetIds: ["voice-oral-json"] }, "JSON 口述史 validator 同时收到事件与声音资产边界");
+  ok(result.imported === 0 && result.memories.length === 0 && result.oralHistories.questions === 0 && result.oralHistories.answers === 0 && result.oralHistories.requiresTimeIsle === true && result.oralHistories.skipped === 1, "含口述史的 full JSON 整包返回 requiresTimeIsle 且零记录写入");
+  ok(full.calls.normalizes === 0 && full.calls.transactions === 0 && full.calls.imports === 0, "非空口述史预检在 normalize、transaction 与 importMemories 前短路");
+  ok(Object.values(full.calls.restores).every((count) => count === 0), "非空口述史预检不会半恢复考古、展览、回访、实体、年轮、意愿或时间校准");
+  ok(full.state.memories.size === 0 && result.archaeology.events === 0 && result.timeCalibrations.calibrations === 0, "非空口述史 JSON 保持馆藏与所有依赖模块零写入");
+
+  const empty = createFixture({ schemaVersion: 13 });
+  const emptyResult = empty.importCollection({
+    schemaVersion: 13,
+    mode: "full",
+    memories: [memory("source-oral-json")],
+    ...required,
+    oralHistories: { mode: "full", schemaVersion: 13, questions: [], answers: [] }
+  });
+  ok(emptyResult.imported === 1 && empty.calls.transactions === 1 && empty.calls.imports === 1, "schema 13 空口述史继续允许兼容 JSON 导入普通馆藏");
+
+  const redacted = createFixture({ schemaVersion: 13 });
+  const redactedResult = redacted.importCollection({
+    schemaVersion: 13,
+    mode: "redacted",
+    memories: [memory("source-oral-redacted")],
+    entities: { mode: "redacted-summary" },
+    voices: { mode: "redacted-summary", assetCount: 1 },
+    capsules: { mode: "redacted-summary", capsuleCount: 0 },
+    revisions: { mode: "redacted-summary", revisionCount: 0 },
+    revisitIntents: { mode: "redacted-summary", intentCount: 0, note: "fixed" },
+    timeCalibrations: { mode: "redacted-summary", calibrationCount: 0, uncertainCount: 0, alternativesCount: 0, note: "fixed" },
+    oralHistories: { mode: "redacted-summary", questionCount: 2, answerCount: 3, confirmedAnswerCount: 1, note: ORAL_HISTORY_REDACTED_NOTE }
+  });
+  ok(redactedResult.oralHistories.summarized === true && redactedResult.oralHistories.requiresTimeIsle === false, "脱敏 JSON 只承认安全计数而不恢复口述内容");
+
+  const legacy = createFixture({ schemaVersion: 12 });
+  const legacyError = captureError(() => legacy.importCollection({
+    schemaVersion: 12,
+    mode: "full",
+    memories: [],
+    oralHistories: oral
+  }));
+  ok(legacyError?.statusCode === 400 && legacyError.message.includes("oralHistories"), "schema 12 伪装携带口述史字段被版本 gate 拒绝");
+
+  const unknown = createFixture({ schemaVersion: 13 });
+  const unknownError = captureError(() => unknown.importCollection({
+    schemaVersion: 13,
+    mode: "full",
+    memories: [memory("source-oral-json")],
+    ...required,
+    oralHistories: { ...oral, leakedTranscript: "秘密" }
+  }));
+  ok(unknownError?.statusCode === 400 && unknown.calls.normalizes === 0, "口述史 exact 根出现未知字段时零写入拒绝");
 }
 
 function checkSchema12Export() {
@@ -656,10 +803,12 @@ function createFixture(options = {}) {
     importOptions: [],
     validations: {
       archaeology: 0, exhibitions: 0, revisits: 0, entities: 0,
-      voices: 0, capsules: 0, revisions: 0, revisitIntents: 0, timeCalibrations: 0
+      voices: 0, capsules: 0, revisions: 0, revisitIntents: 0,
+      timeCalibrations: 0, oralHistories: 0
     },
     restores: { archaeology: 0, exhibitions: 0, revisits: 0, entities: 0, revisions: 0, revisitIntents: 0, timeCalibrations: 0 },
     restoreMaps: {},
+    oralBoundaries: null,
     events: []
   };
   const generatedIds = [...(options.generatedIds || [])];
@@ -727,10 +876,11 @@ function createFixture(options = {}) {
       calls.restoreMaps.entities = new Map(memoryIdMap);
       return callRestoreHandler("entities", { backup, memoryIdMap });
     },
-    validateVoiceBackup(backup, sourceIds) {
+    validateVoiceBackup(backup, sourceIds, restoreOptions = {}) {
       calls.validations.voices += 1;
       calls.events.push("validate-voices");
       if (options.validationFailure === "voices") throw new Error("invalid voices");
+      calls.voiceAdditionalAssetIds = [...(restoreOptions.additionalAssetIds || [])];
       return Boolean(backup && Array.isArray(sourceIds));
     },
     validateCapsuleBackup(backup) {
@@ -777,6 +927,16 @@ function createFixture(options = {}) {
         eventIdMap: new Map(restoreOptions.eventIdMap)
       };
       return callRestoreHandler("timeCalibrations", { backup, ...restoreOptions });
+    },
+    validateOralHistoryBackup(backup, boundaries = {}) {
+      calls.validations.oralHistories += 1;
+      calls.events.push("validate-oral-histories");
+      calls.oralBoundaries = {
+        eventIds: [...(boundaries.eventIds || [])],
+        voiceAssetIds: [...(boundaries.voiceAssetIds || [])]
+      };
+      if (options.validationFailure === "oralHistories") throw new Error("invalid oral histories");
+      return Boolean(backup);
     }
   };
 

@@ -10,23 +10,24 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="时屿" />
     <title>时屿｜AI 私人记忆策展工具</title>
-    <link rel="manifest" href="/manifest.webmanifest?v=8.0.0" />
+    <link rel="manifest" href="/manifest.webmanifest?v=9.0.0" />
     <link rel="icon" href="/assets/time-isle-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/assets/time-isle-apple-touch.png" />
     <link rel="stylesheet" href="/styles.css?v=7.2.0-touch5" />
-    <link rel="stylesheet" href="/pwa.css?v=8.0.0" />
+    <link rel="stylesheet" href="/pwa.css?v=9.0.0" />
     <link rel="stylesheet" href="/archaeology.css" />
     <link rel="stylesheet" href="/exhibitions.css?v=7.2.0" />
-    <link rel="stylesheet" href="/capsules.css?v=8.0.0" />
-    <link rel="stylesheet" href="/share-privacy.css?v=8.0.0" />
-    <link rel="stylesheet" href="/revisits.css?v=8.0.0" />
-    <link rel="stylesheet" href="/revisit-intents.css?v=8.0.0" />
-    <link rel="stylesheet" href="/time-calibrations.css?v=8.0.0" />
+    <link rel="stylesheet" href="/capsules.css?v=9.0.0" />
+    <link rel="stylesheet" href="/share-privacy.css?v=9.0.0" />
+    <link rel="stylesheet" href="/revisits.css?v=9.0.0" />
+    <link rel="stylesheet" href="/revisit-intents.css?v=9.0.0" />
+    <link rel="stylesheet" href="/time-calibrations.css?v=9.0.0" />
     <link rel="stylesheet" href="/revisions.css?v=7.2.0-a11y2" />
     <link rel="stylesheet" href="/clues.css?v=7.2.0" />
     <link rel="stylesheet" href="/collection-health.css?v=7.2.0-a11y2" />
     <link rel="stylesheet" href="/media.css" />
     <link rel="stylesheet" href="/voice.css?v=7.2.0-align1" />
+    <link rel="stylesheet" href="/oral-histories.css?v=9.0.0" />
     <link rel="stylesheet" href="/media-evidence.css" />
     <link rel="stylesheet" href="/media-compare.css" />
     <link rel="stylesheet" href="/media-ocr.css" />
@@ -524,6 +525,13 @@
       <div class="dialog-body puzzle-dialog-body">
         <p class="puzzle-status" id="puzzleStatus" aria-live="polite"></p>
         <div id="puzzleBody"></div>
+        <section class="oral-history-sources" id="oralHistorySourceRegion" aria-labelledby="oralHistorySourceTitle" hidden>
+          <div class="oral-history-source-heading">
+            <div><p class="eyebrow">Oral source</p><h3 id="oralHistorySourceTitle">人工确认的口述来源</h3></div>
+            <span class="oral-history-source-count" id="oralHistorySourceCount"></span>
+          </div>
+          <div class="oral-history-source-list" id="oralHistorySourceList"></div>
+        </section>
         <details class="time-calibration-panel" id="timeCalibrationDetails" hidden>
           <summary id="timeCalibrationSummary">
             <span class="time-calibration-summary-copy">
@@ -567,6 +575,94 @@
                 <button type="button" class="button text-button" id="timeCalibrationDeleteButton" hidden>恢复未校准状态</button>
                 <button type="button" class="button secondary" id="timeCalibrationRefreshButton" hidden>重新读取来源</button>
               </div>
+            </form>
+          </div>
+        </details>
+        <details class="oral-history-panel" id="oralHistoryDetails" hidden>
+          <summary id="oralHistorySummary">
+            <span class="oral-history-summary-copy">
+              <strong>用声音补一块拼图</strong>
+              <small id="oralHistorySummaryCopy">回答一个仍未确定的时间问题</small>
+            </span>
+            <span class="oral-history-badge" id="oralHistoryBadge">待回答</span>
+          </summary>
+          <div class="oral-history-body">
+            <p class="oral-history-boundary">这份回答会作为独立来源保存；不会改写两段原文、自动校准日期，也不会判断哪段记忆更真实。</p>
+            <p class="oral-history-status" id="oralHistoryStatus" role="status" aria-live="polite" aria-atomic="true" tabindex="-1"></p>
+            <form id="oralHistoryForm" novalidate>
+              <fieldset class="oral-history-step" id="oralHistoryQuestionStep">
+                <legend><span>1</span> 选择要回答的问题</legend>
+                <p>问题只来自两段记录中尚未解决的时间差异。</p>
+                <div class="oral-history-question-choices" id="oralHistoryQuestionChoices"></div>
+              </fieldset>
+
+              <fieldset class="oral-history-step" id="oralHistoryAudioStep" disabled>
+                <legend><span>2</span> 留下声音</legend>
+                <div class="oral-history-capture-actions">
+                  <button class="button secondary compact" id="oralHistoryRecordButton" type="button">开始录音</button>
+                  <label class="button secondary compact oral-history-file-label" id="oralHistoryFileLabel" for="oralHistoryFileInput">选择音频文件</label>
+                  <input id="oralHistoryFileInput" class="sr-only" type="file" />
+                </div>
+                <p class="oral-history-capture-help" id="oralHistoryCaptureHelp"></p>
+                <div class="oral-history-recording" id="oralHistoryRecording" role="group" aria-label="正在录制口述回答" hidden>
+                  <span>录音中 <output id="oralHistoryRecordingTimer">00:00</output></span>
+                  <button class="button primary compact" id="oralHistoryStopButton" type="button">停止录音</button>
+                  <button class="button text-button compact" id="oralHistoryCancelButton" type="button">取消</button>
+                </div>
+                <audio id="oralHistoryDraftAudio" controls preload="metadata" aria-label="试听本次口述回答" hidden></audio>
+                <div class="oral-history-capture-edit-actions">
+                  <button class="button secondary compact" id="oralHistoryRetryButton" type="button" hidden>重试保存声音</button>
+                  <button class="button text-button compact" id="oralHistoryRemoveAudioButton" type="button" hidden>移除并重选</button>
+                </div>
+                <p class="oral-history-capture-status" id="oralHistoryCaptureStatus" role="status" aria-live="polite" aria-atomic="true"></p>
+              </fieldset>
+
+              <fieldset class="oral-history-step" id="oralHistorySegmentStep" disabled hidden>
+                <legend><span>3</span> 选取回答片段</legend>
+                <p>手工划定真正回答这道问题的部分，至少保留 0.5 秒。</p>
+                <div class="oral-history-segment-fields">
+                  <label for="oralHistorySegmentStart">开始时间 <output id="oralHistorySegmentStartOutput">00:00.0</output>
+                    <input id="oralHistorySegmentStart" type="range" min="0" max="0" step="100" value="0" />
+                  </label>
+                  <label for="oralHistorySegmentEnd">结束时间 <output id="oralHistorySegmentEndOutput">00:00.0</output>
+                    <input id="oralHistorySegmentEnd" type="range" min="0" max="0" step="100" value="0" />
+                  </label>
+                </div>
+                <div class="oral-history-segment-actions">
+                  <button class="button text-button compact" id="oralHistoryMarkStartButton" type="button">以当前进度设为开始</button>
+                  <button class="button text-button compact" id="oralHistoryMarkEndButton" type="button">以当前进度设为结束</button>
+                  <button class="button secondary compact" id="oralHistoryPreviewSegmentButton" type="button">试听选段</button>
+                </div>
+              </fieldset>
+
+              <fieldset class="oral-history-step" id="oralHistoryTranscriptStep" disabled hidden>
+                <legend><span>4</span> 核对文字与时间含义</legend>
+                <label for="oralHistoryTranscript">人工核对的文字稿
+                  <textarea id="oralHistoryTranscript" maxlength="8000" rows="5" placeholder="请根据选定片段忠实填写；这里不会自动转写。"></textarea>
+                </label>
+                <p>只有你人工确认后，文字稿才会成为可回看的独立来源。</p>
+                <fieldset class="oral-history-resolution" id="oralHistoryResolutionChoices">
+                  <legend>这段回答对时间的含义</legend>
+                  <label><input type="radio" name="oralHistoryResolutionChoice" value="first" /><span><strong id="oralHistoryFirstDateLabel">更接近第一种日期</strong><small id="oralHistoryFirstDateMeta"></small></span></label>
+                  <label><input type="radio" name="oralHistoryResolutionChoice" value="second" /><span><strong id="oralHistorySecondDateLabel">更接近第二种日期</strong><small id="oralHistorySecondDateMeta"></small></span></label>
+                  <label><input type="radio" name="oralHistoryResolutionChoice" value="day" /><span><strong>另一个确切日期</strong><small>由你手工填写</small></span></label>
+                  <label><input type="radio" name="oralHistoryResolutionChoice" value="range" /><span><strong>另一个时间范围</strong><small>不制造更精确的日期</small></span></label>
+                  <label><input type="radio" name="oralHistoryResolutionChoice" value="uncertain" /><span><strong>仍不确定</strong><small>口述回答也可以明确保留不确定</small></span></label>
+                </fieldset>
+                <div class="oral-history-custom-interval" id="oralHistoryCustomInterval" hidden>
+                  <label for="oralHistoryIntervalStart"><span id="oralHistoryIntervalStartLabel">日期</span><input id="oralHistoryIntervalStart" type="date" /></label>
+                  <label for="oralHistoryIntervalEnd" id="oralHistoryIntervalEndField" hidden>结束日期<input id="oralHistoryIntervalEnd" type="date" /></label>
+                </div>
+                <label class="oral-history-acknowledge" for="oralHistoryAcknowledge">
+                  <input id="oralHistoryAcknowledge" type="checkbox" />
+                  <span>我已经听过选定片段，并确认这份文字稿忠实表达了其中的内容。</span>
+                </label>
+                <div class="oral-history-form-actions">
+                  <button class="button primary" id="oralHistorySaveButton" type="submit" disabled>确认并保存为独立来源</button>
+                  <button class="button text-button" id="oralHistoryResetButton" type="button">清空本次回答</button>
+                  <button class="button secondary" id="oralHistoryRefreshButton" type="button" hidden>重新读取问题</button>
+                </div>
+              </fieldset>
             </form>
           </div>
         </details>
@@ -767,28 +863,30 @@
 
     <footer class="site-footer">
       <span>时屿 · 让记忆可整理，也让 AI 的依据可回看。</span>
-      <span id="footerVersion">v8.0.0</span>
+      <span id="footerVersion">v9.0.0</span>
     </footer>
 
     <script src="/assets/portability.js"></script>
     <script src="/assets/media-intelligence.js"></script>
     <script src="/assets/media.js"></script>
+    <script src="/assets/voice-capture.js?v=9.0.0"></script>
     <script src="/assets/voice.js?v=7.2.0"></script>
     <script src="/assets/media-evidence.js"></script>
     <script src="/assets/media-compare.js"></script>
     <script src="/assets/media-ocr.js"></script>
     <script src="/assets/media-lab.js"></script>
     <script src="/assets/exhibitions.js?v=7.2.0"></script>
-    <script src="/assets/capsule-crypto.js?v=8.0.0"></script>
-    <script src="/assets/share-privacy.js?v=8.0.0"></script>
-    <script src="/assets/capsules.js?v=8.0.0"></script>
-    <script src="/assets/revisit-intents.js?v=8.0.0"></script>
-    <script src="/assets/revisits.js?v=8.0.0"></script>
-    <script src="/assets/time-calibrations.js?v=8.0.0"></script>
+    <script src="/assets/capsule-crypto.js?v=9.0.0"></script>
+    <script src="/assets/share-privacy.js?v=9.0.0"></script>
+    <script src="/assets/capsules.js?v=9.0.0"></script>
+    <script src="/assets/revisit-intents.js?v=9.0.0"></script>
+    <script src="/assets/revisits.js?v=9.0.0"></script>
+    <script src="/assets/time-calibrations.js?v=9.0.0"></script>
+    <script src="/assets/oral-histories.js?v=9.0.0"></script>
     <script src="/assets/revisions.js?v=7.2.0-a11y2"></script>
     <script src="/assets/clues.js?v=7.2.0"></script>
     <script src="/assets/collection-health.js?v=7.2.0-a11y2"></script>
-    <script src="/assets/pwa.js?v=8.0.0"></script>
-    <script src="/assets/app.js?v=8.0.0"></script>
+    <script src="/assets/pwa.js?v=9.0.0"></script>
+    <script src="/assets/app.js?v=9.0.0"></script>
   </body>
 </html>

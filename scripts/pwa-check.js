@@ -32,16 +32,16 @@ async function main() {
   deepEqual(pngSize("public/assets/time-isle-512.png"), { width: 512, height: 512 }, "512 图标具有真实 PNG 尺寸");
   deepEqual(pngSize("public/assets/time-isle-apple-touch.png"), { width: 180, height: 180 }, "Apple 图标具有真实 PNG 尺寸");
 
-  check(html.includes('rel="manifest" href="/manifest.webmanifest?v=8.0.0"'), "页面声明带版本的 Manifest");
+  check(html.includes('rel="manifest" href="/manifest.webmanifest?v=9.0.0"'), "页面声明带版本的 Manifest");
   check(html.includes('rel="apple-touch-icon" href="/assets/time-isle-apple-touch.png"'), "页面声明 Apple 主屏图标");
   check((html.match(/class="nav-button/g) || []).length === 4, "PWA 仍严格保持四项主导航");
   const dataStart = html.indexOf('data-view-panel="data"');
   const installStart = html.indexOf('id="pwaInstallPanel"');
-  const appScript = html.indexOf('/assets/pwa.js?v=8.0.0');
+  const appScript = html.indexOf('/assets/pwa.js?v=9.0.0');
   check(dataStart >= 0 && installStart > dataStart && installStart < html.indexOf("</main>"), "安装入口只位于数据与项目页");
   check(/<details class="pwa-install-panel" id="pwaInstallPanel" hidden>/u.test(html), "安装入口默认隐藏且渐进披露");
   check(html.includes('id="pwaInstallStatus" role="status" aria-live="polite" aria-atomic="true"'), "安装状态通过单一 live region 宣告");
-  check(appScript > html.indexOf('/assets/capsules.js?v=8.0.0') && appScript < html.indexOf('/assets/app.js?v=8.0.0'), "PWA 模块独立且在主应用前载入");
+  check(appScript > html.indexOf('/assets/capsules.js?v=9.0.0') && appScript < html.indexOf('/assets/app.js?v=9.0.0'), "PWA 模块独立且在主应用前载入");
 
   check(css.includes("min-height: 44px;") && css.includes("min-height: 52px;"), "安装入口保持触控边界");
   check(css.includes("@media (display-mode: standalone)") && ["safe-area-inset-top", "safe-area-inset-right", "safe-area-inset-left"].every((token) => css.includes(token)), "standalone 平板布局覆盖顶部与横向安全区");
@@ -64,7 +64,7 @@ async function main() {
   checkStandaloneFlow();
 
   const shellBlock = /const SHELL_ASSETS = Object\.freeze\(\[([\s\S]*?)\]\);/u.exec(worker)?.[1] || "";
-  check(shellBlock.includes("OFFLINE_URL") && shellBlock.includes('"/pwa.css?v=8.0.0"'), "Service Worker 只预缓存离线边界壳");
+  check(shellBlock.includes("OFFLINE_URL") && shellBlock.includes('"/pwa.css?v=9.0.0"'), "Service Worker 只预缓存离线边界壳");
   check(!/index\.html|assets\/app|manifest\.webmanifest|\/api\//u.test(shellBlock), "预缓存白名单不含主应用、Manifest 或 API");
   check(worker.includes('request.mode === "navigate"') && worker.includes("fetch(request).catch(() => caches.match(OFFLINE_URL))"), "断网导航明确回退独立离线页");
   check(worker.includes('request.method !== "GET"') && worker.includes("url.origin !== self.location.origin"), "写请求与跨源请求完全旁路");
@@ -146,7 +146,7 @@ async function checkWorkerRuntime() {
   const fetches = [];
   const cachesApi = {
     open: async () => ({ addAll: async (assets) => { addedAssets.push(...assets); } }),
-    keys: async () => ["unrelated-cache", "time-isle-public-shell-v7.0.0", "time-isle-public-shell-v7.2.0", "time-isle-public-shell-v7.3.0", "time-isle-public-shell-v8.0.0"],
+    keys: async () => ["unrelated-cache", "time-isle-public-shell-v7.0.0", "time-isle-public-shell-v7.2.0", "time-isle-public-shell-v7.3.0", "time-isle-public-shell-v8.0.0", "time-isle-public-shell-v9.0.0"],
     delete: async (name) => { deletedCaches.push(name); return true; },
     match: async (input) => {
       const pathname = typeof input === "string" ? input : new URL(input.url).pathname;
@@ -170,12 +170,12 @@ async function checkWorkerRuntime() {
   let installWork;
   listeners.get("install")({ waitUntil: (promise) => { installWork = promise; } });
   await installWork;
-  deepEqual(addedAssets, ["/offline.html", "/pwa.css?v=8.0.0", "/assets/time-isle-icon.svg"], "Worker 安装只写入三项公开离线壳资源");
+  deepEqual(addedAssets, ["/offline.html", "/pwa.css?v=9.0.0", "/assets/time-isle-icon.svg"], "Worker 安装只写入三项公开离线壳资源");
 
   let activateWork;
   listeners.get("activate")({ waitUntil: (promise) => { activateWork = promise; } });
   await activateWork;
-  deepEqual(deletedCaches, ["time-isle-public-shell-v7.0.0", "time-isle-public-shell-v7.2.0", "time-isle-public-shell-v7.3.0"], "Worker 激活只删除自身旧版本缓存");
+  deepEqual(deletedCaches, ["time-isle-public-shell-v7.0.0", "time-isle-public-shell-v7.2.0", "time-isle-public-shell-v7.3.0", "time-isle-public-shell-v8.0.0"], "Worker 激活只删除自身旧版本缓存");
 
   const offlineNavigation = await dispatchWorkerFetch(listeners, { method: "GET", mode: "navigate", url: "https://demo.example/#collection" });
   equal(await offlineNavigation, "offline-response", "断网导航返回独立离线页");
@@ -184,7 +184,7 @@ async function checkWorkerRuntime() {
   equal(await dispatchWorkerFetch(listeners, { method: "POST", mode: "cors", url: "https://demo.example/api/memories" }), undefined, "写请求完全旁路 Worker");
   equal(await dispatchWorkerFetch(listeners, { method: "GET", mode: "cors", url: "https://cdn.example/photo.webp" }), undefined, "跨源媒体完全旁路 Worker");
   equal(await dispatchWorkerFetch(listeners, { method: "GET", mode: "cors", url: "https://demo.example/assets/app.js" }), undefined, "主应用脚本不进入离线缓存策略");
-  equal(await dispatchWorkerFetch(listeners, { method: "GET", mode: "cors", url: "https://demo.example/pwa.css?v=8.0.0" }), "cached-pwa-css", "唯一公开壳样式可从缓存读取");
+  equal(await dispatchWorkerFetch(listeners, { method: "GET", mode: "cors", url: "https://demo.example/pwa.css?v=9.0.0" }), "cached-pwa-css", "唯一公开壳样式可从缓存读取");
   equal(fetches.length, 1, "只有导航尝试网络；旁路请求由浏览器默认处理");
 }
 

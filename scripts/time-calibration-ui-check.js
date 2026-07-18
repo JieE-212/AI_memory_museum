@@ -167,16 +167,16 @@ function checkHostIntegration() {
   }
   ok(html.includes('id="timeCalibrationStatus" role="status" aria-live="polite" aria-atomic="true"'), "宿主状态区静态声明原子 polite live region");
   ok(html.includes('id="timeCalibrationNote" maxlength="500"'), "宿主备注长度与后端 500 字合同一致");
-  equal((html.match(/\/time-calibrations\.css\?v=8\.0\.0/gu) || []).length, 1, "独立时间校准样式只加载一次");
-  equal((html.match(/\/assets\/time-calibrations\.js\?v=8\.0\.0/gu) || []).length, 1, "独立时间校准脚本只加载一次");
-  const moduleScript = html.indexOf('/assets/time-calibrations.js?v=8.0.0');
+  equal((html.match(/\/time-calibrations\.css\?v=9\.0\.0/gu) || []).length, 1, "独立时间校准样式只加载一次");
+  equal((html.match(/\/assets\/time-calibrations\.js\?v=9\.0\.0/gu) || []).length, 1, "独立时间校准脚本只加载一次");
+  const moduleScript = html.indexOf('/assets/time-calibrations.js?v=9.0.0');
   const appScript = html.indexOf('/assets/app.js');
   ok(moduleScript > 0 && moduleScript < appScript, "时间校准 UMD 在主应用之前加载");
   equal((html.match(/class="nav-button/gu) || []).length, 4, "V8 入口留在时光拼图内，不增加主导航或 Tab");
   ok(app.includes("TimeIsleTimeCalibrations.createController") && app.includes("initializeTimeCalibrationController"), "主应用初始化独立时间校准 controller");
   ok(app.includes("timeCalibrationController?.syncPuzzle({") && app.includes("sessionKey: state.puzzleSession"), "宿主同步面板目标时传入当前拼图 sessionKey");
-  ok(app.includes("timeCalibrationController?.reset()") && app.includes("timeCalibrationController?.setHostBusy?.(busy)"), "宿主在关闭/换图时 reset，并同步拼图 mutation 锁");
-  ok(app.includes("onBusyChange: (busy) => setPuzzleBusy(busy, { fromTimeCalibration: true })"), "controller 内部 busy 锁定宿主关闭及其它 mutation 操作且避免递归");
+  ok(app.includes("timeCalibrationController?.reset()") && app.includes('item !== "calibration"'), "宿主在关闭/换图时 reset，并以 busy owner 同步拼图 mutation 锁");
+  ok(app.includes('onBusyChange: (busy) => setPuzzleBusy("calibration", busy)') && app.includes('item !== "oralHistory"'), "controller 内部 busy 与口述史互锁，不会互相提前解锁");
   ok(app.includes('const dateQuestionHandledByCalibration = calibrationTarget?.handlesDateQuestion && payload.question?.basedOn?.field === "date"'), "只有时间校准目标实际存在时才隐藏通用日期补问");
 }
 

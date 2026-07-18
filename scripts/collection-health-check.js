@@ -13,12 +13,46 @@ main().catch((error) => {
 async function main() {
   await checkHealthyScan();
   await checkTimeCalibrationReviewClassification();
+  await checkOralHistoryReviewClassification();
   await checkIssueSanitizationAndTruncation();
   await checkSingleTaskAndCancellation();
   await checkFailurePrivacy();
   await checkRetentionAndIsolation();
   checkDependencyAndInputBoundaries();
   console.log(`Collection health checks passed: ${assertions} assertions.`);
+}
+
+async function checkOralHistoryReviewClassification() {
+  const service = createCollectionHealthService({
+    getDatabaseHealthSnapshot: async () => ({
+      ok: true,
+      checks: [{ code: "DATABASE_ORAL_HISTORY_STRUCTURE", ok: true }],
+      counts: { oralHistoryQuestions: 2, oralHistoryAnswers: 3, confirmedOralHistoryAnswers: 1 },
+      issues: [
+        { code: "ORAL_HISTORY_ANSWER_DRAFT", area: "curation", severity: "attention", recordId: "oral-answer-draft" },
+        { code: "ORAL_HISTORY_QUESTION_OPEN", area: "curation", severity: "attention", recordId: "oral-question-open" }
+      ],
+      issueCounts: [
+        { code: "ORAL_HISTORY_ANSWER_DRAFT", area: "curation", severity: "attention", count: 1 },
+        { code: "ORAL_HISTORY_QUESTION_OPEN", area: "curation", severity: "attention", count: 1 }
+      ]
+    }),
+    media: { listAssets: async () => [], verifyVariant: async () => true },
+    voice: { listAssets: async () => [], verifyAsset: async () => true },
+    createId: () => "health-oral-history"
+  });
+  const finished = await service.wait(service.start().id);
+  equal(finished.summary.database.status, "pass", "口述草稿和开放问题不冒充数据库损坏");
+  deepEqual(finished.summary.database.records, {
+    oralHistoryQuestions: 2,
+    oralHistoryAnswers: 3,
+    confirmedOralHistoryAnswers: 1
+  }, "馆藏体检只公开口述史安全计数");
+  equal(finished.summary.curation.needsReview, 2, "口述草稿与开放问题进入策展待整理汇总");
+  equal(finished.issues.find((item) => item.code === "ORAL_HISTORY_ANSWER_DRAFT")?.message, "一段口述回答仍是草稿，确认后才会成为时间来源。", "口述草稿使用固定安全文案");
+  equal(finished.issues.find((item) => item.code === "ORAL_HISTORY_QUESTION_OPEN")?.message, "一个口述问题还没有人工确认的回答。", "开放问题使用固定安全文案");
+  equal(/(?:transcript|segment|interval|sourceKey)/u.test(JSON.stringify(finished)), false, "馆藏体检不泄露口述文字、片段、日期或来源键");
+  service.destroy();
 }
 
 async function checkTimeCalibrationReviewClassification() {

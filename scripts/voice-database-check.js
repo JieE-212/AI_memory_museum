@@ -71,6 +71,23 @@ function checkMigrationAndConstraints() {
     equal(fixture.voice.listVoiceAssets({ status: "ready" }).length, 4, "asset list filters by status");
     equal(fixture.voice.listUnreferencedVoiceAssets({ status: "ready" }).length, 4, "unreferenced query exposes GC candidates");
     equal(fixture.voice.listVoiceAssets()[0].referenceCount, 0, "asset list includes its reference count");
+    fixture.additionalUsage.set(fourth.id, 1);
+    equal(fixture.voice.listUnreferencedVoiceAssets({ status: "ready" }).length, 3, "oral-history usage excludes an otherwise unlinked asset from GC");
+    equal(fixture.voice.getVoiceUsage(fourth.id).oralHistoryCount, 1, "usage reports the additional oral-history reference");
+    throwsCode(
+      () => fixture.voice.deleteVoiceAsset(fourth.id),
+      "VOICE_ASSET_IN_USE",
+      "voice deletion refuses an oral-history referenced asset"
+    );
+    const oralOnlyBackup = fixture.voice.exportVoiceData("full", ["memory-a"], { additionalAssetIds: [fourth.id] });
+    equal(oralOnlyBackup.assets.length, 1, "voice export includes an oral-only referenced asset once");
+    equal(fixture.voice.validateVoiceBackup(oralOnlyBackup, ["memory-a"], { additionalAssetIds: [fourth.id] }), true, "voice validator accepts the explicit oral asset boundary");
+    throwsCode(
+      () => fixture.voice.validateVoiceBackup(oralOnlyBackup, ["memory-a"]),
+      "VOICE_BACKUP_REFERENCE_INVALID",
+      "voice validator rejects an unexplained unlinked asset"
+    );
+    fixture.additionalUsage.delete(fourth.id);
 
     throwsCode(
       () => fixture.voice.createVoiceAsset(asset("bad-mime", { mimeType: "audio/ogg", codec: "opus" })),
@@ -420,9 +437,13 @@ function createFixture(prefix, memoryIds, callback) {
       throw error;
     }
   };
-  const options = () => ({ db, now, createId, withTransaction, onConfirmedTranscriptChanged: callback });
+  const additionalUsage = new Map();
+  const options = () => ({
+    db, now, createId, withTransaction, onConfirmedTranscriptChanged: callback,
+    getAdditionalAssetUsage: (assetId) => additionalUsage.get(assetId) || 0
+  });
   const voice = initializeVoiceDatabase(options());
-  return { db, now, createId, withTransaction, options, voice, close: () => db.close() };
+  return { db, now, createId, withTransaction, options, voice, additionalUsage, close: () => db.close() };
 }
 
 function createBaseSchema(db, memoryIds) {

@@ -4,6 +4,8 @@ const assert = require("node:assert/strict");
 const { DatabaseSync } = require("node:sqlite");
 const { createDatabaseHealthReader } = require("../lib/database-health");
 const { TIME_CALIBRATION_MIGRATION } = require("../lib/time-calibration-database");
+const { ORAL_HISTORY_MIGRATION } = require("../lib/oral-history-database");
+const { buildQuestionKey } = require("../lib/oral-history-service");
 
 let assertions = 0;
 const db = new DatabaseSync(":memory:");
@@ -73,9 +75,131 @@ try {
   check(schemaMismatch.checks.find((item) => item.code === "DATABASE_SCHEMA").ok === false, "运行 schema 与账本不一致会被发现");
   check(schemaMismatch.ok === false, "任一结构检查失败会收敛为非健康状态");
   checkTimeCalibrationHealth();
+  checkOralHistoryHealth();
   console.log(`Database health checks passed: ${assertions} assertions.`);
 } finally {
   db.close();
+}
+
+function checkOralHistoryHealth() {
+  const oralDb = new DatabaseSync(":memory:");
+  try {
+    oralDb.exec(`
+      PRAGMA foreign_keys = ON;
+      PRAGMA user_version = 13;
+      CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY);
+      INSERT INTO schema_migrations VALUES (13);
+      CREATE TABLE memories (id TEXT PRIMARY KEY);
+      CREATE TABLE memory_events (id TEXT PRIMARY KEY, title TEXT, status TEXT);
+      CREATE TABLE event_members (event_id TEXT, memory_id TEXT);
+      CREATE TABLE memory_search_documents (id INTEGER PRIMARY KEY, memory_id TEXT UNIQUE);
+      CREATE TABLE memory_search_fts_docsize (id INTEGER PRIMARY KEY);
+      CREATE TABLE voice_assets (
+        id TEXT PRIMARY KEY,
+        content_sha256 TEXT,
+        original_name TEXT,
+        mime_type TEXT,
+        codec TEXT,
+        byte_size INTEGER,
+        duration_ms INTEGER,
+        storage_key TEXT,
+        status TEXT,
+        created_at TEXT,
+        updated_at TEXT
+      );
+      CREATE TABLE time_calibrations (
+        id TEXT, memory_id TEXT, event_id TEXT, resolution_kind TEXT,
+        interval_start TEXT, interval_end TEXT, selected_source_keys_json TEXT,
+        selected_source_snapshots_json TEXT, source_set_sha256 TEXT, note TEXT,
+        created_at TEXT, updated_at TEXT
+      );
+      INSERT INTO memory_events VALUES ('event-oral-health', '一次重逢', 'confirmed');
+      INSERT INTO voice_assets VALUES (
+        'voice-oral-health', '${"a".repeat(64)}', '', 'audio/webm', 'opus', 100,
+        20000, 'ready/aa/${"a".repeat(64)}.webm', 'ready',
+        '2026-07-18T10:00:00.000Z', '2026-07-18T10:00:00.000Z'
+      );
+    `);
+    ORAL_HISTORY_MIGRATION.up(oralDb);
+    const sources = [
+      oralSource("b", "2018-01-01", "memory-left"),
+      oralSource("c", "2020-01-01", "memory-right")
+    ];
+    oralDb.prepare(`
+      INSERT INTO oral_history_questions (
+        id, event_id, question_key, question_text, origin_sources_json,
+        origin_source_set_sha256, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      "oral-question-health",
+      "event-oral-health",
+      buildQuestionKey("event-oral-health", sources),
+      "这段往事更接近什么时候？",
+      JSON.stringify(sources),
+      "d".repeat(64),
+      "2026-07-18T10:00:00.000Z",
+      "2026-07-18T10:00:00.000Z"
+    );
+    oralDb.prepare(`
+      INSERT INTO oral_history_answers (
+        id, question_id, submission_id, request_sha256, asset_id, segment_start_ms,
+        segment_end_ms, transcript_text, status, resolution_kind,
+        interval_start, interval_end, created_at, confirmed_at,
+        superseded_at, withdrawn_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', 'day', ?, ?, ?, ?, '', '')
+    `).run(
+      "oral-answer-health", "oral-question-health", "oral-submission-health",
+      "e".repeat(64), "voice-oral-health", 1000, 9000, "只用于健康检查的私人文字稿",
+      "2020-01-01", "2020-01-01", "2026-07-18T10:00:00.000Z", "2026-07-18T10:00:00.000Z"
+    );
+
+    const healthy = createDatabaseHealthReader({ db: oralDb, schemaVersion: 13 }).snapshot();
+    check(healthy.checks.find((item) => item.code === "DATABASE_ORAL_HISTORY_STRUCTURE")?.ok === true, "schema 13 口述问题、回答、事件、声音与片段边界通过统一合同验真");
+    check(healthy.counts.oralHistoryQuestions === 1 && healthy.counts.oralHistoryAnswers === 1 && healthy.counts.confirmedOralHistoryAnswers === 1, "数据库健康快照只公开口述史安全计数");
+    check(!JSON.stringify(healthy).includes("私人文字稿"), "数据库健康快照不泄露口述文字稿");
+
+    oralDb.exec("DROP TRIGGER oral_history_answer_content_immutable; UPDATE oral_history_answers SET segment_end_ms = 30000;");
+    const corrupt = createDatabaseHealthReader({ db: oralDb, schemaVersion: 13 }).snapshot();
+    check(corrupt.checks.find((item) => item.code === "DATABASE_ORAL_HISTORY_STRUCTURE")?.ok === false, "片段越过声音真时长时口述史结构检查失败");
+    oralDb.exec("UPDATE oral_history_answers SET segment_end_ms = 9000;");
+
+    const secondSources = [oralSource("e", "2017-01-01", "memory-left"), oralSource("f", "2021-01-01", "memory-right")];
+    oralDb.prepare(`INSERT INTO oral_history_questions
+      (id, event_id, question_key, question_text, origin_sources_json, origin_source_set_sha256, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      "oral-question-open", "event-oral-health", buildQuestionKey("event-oral-health", secondSources),
+      "另一个尚未确认的问题", JSON.stringify(secondSources), "1".repeat(64),
+      "2026-07-18T10:01:00.000Z", "2026-07-18T10:01:00.000Z"
+    );
+    oralDb.prepare(`INSERT INTO oral_history_answers
+      (id, question_id, submission_id, request_sha256, asset_id, segment_start_ms, segment_end_ms,
+       transcript_text, status, resolution_kind, interval_start, interval_end,
+       created_at, confirmed_at, superseded_at, withdrawn_at)
+      VALUES (?, ?, ?, ?, ?, 0, 1000, ?, 'draft', 'uncertain', '', '', ?, '', '', '')`
+    ).run(
+      "oral-answer-draft", "oral-question-open", "oral-submission-draft", "f".repeat(64), "voice-oral-health",
+      "尚未确认的草稿", "2026-07-18T10:01:00.000Z"
+    );
+    const reviews = createDatabaseHealthReader({ db: oralDb, schemaVersion: 13 }).snapshot();
+    check(reviews.issues.some((item) => item.code === "ORAL_HISTORY_ANSWER_DRAFT"), "口述草稿进入温和待整理事项");
+    check(reviews.issues.some((item) => item.code === "ORAL_HISTORY_QUESTION_OPEN"), "没有确认回答的问题进入开放问题提醒");
+    check(!JSON.stringify(reviews).includes("尚未确认的草稿"), "口述健康提醒只含固定 code 和安全 ID，不泄露草稿正文");
+  } finally {
+    oralDb.close();
+  }
+}
+
+function oralSource(seed, day, memoryId) {
+  return {
+    sourceKey: `time-source:${seed.repeat(64)}`,
+    sourceType: "memory-current",
+    precision: "day",
+    intervalStart: day,
+    intervalEnd: day,
+    memoryId,
+    memoryTitle: memoryId
+  };
 }
 
 function checkTimeCalibrationHealth() {

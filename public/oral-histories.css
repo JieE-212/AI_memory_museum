@@ -1,0 +1,556 @@
+.oral-history-panel[hidden],
+.oral-history-sources[hidden],
+.oral-history-panel [hidden] {
+  display: none !important;
+}
+
+.oral-history-sources {
+  min-width: 0;
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--accent);
+  background: #fffefa;
+}
+
+.oral-history-source-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.oral-history-source-heading h3,
+.oral-history-source-heading p {
+  margin: 0;
+}
+
+.oral-history-source-heading h3 {
+  margin-top: 2px;
+  font-size: 1rem;
+}
+
+.oral-history-source-count,
+.oral-history-badge,
+.oral-history-source-tag {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-height: 28px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--accent-dark);
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.oral-history-source-list {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.oral-history-source-card {
+  min-width: 0;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+}
+
+.oral-history-source-card:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.oral-history-source-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.oral-history-source-card h4,
+.oral-history-source-card q,
+.oral-history-source-card blockquote,
+.oral-history-source-card p {
+  overflow-wrap: anywhere;
+}
+
+.oral-history-source-card h4 {
+  margin: 0;
+  font-size: 0.94rem;
+}
+
+.oral-history-source-card q {
+  display: block;
+  margin-top: 9px;
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+  line-height: 1.6;
+}
+
+.oral-history-source-card blockquote {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-left: 2px solid var(--accent);
+  background: var(--surface-muted);
+  color: var(--ink);
+  font-size: 0.83rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.oral-history-source-card audio,
+#oralHistoryDraftAudio {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 44px;
+}
+
+.oral-history-source-meta,
+.oral-history-source-actions,
+.oral-history-form-actions,
+.oral-history-capture-actions,
+.oral-history-capture-edit-actions,
+.oral-history-segment-actions,
+.oral-history-recording {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.oral-history-source-meta {
+  margin: 7px 0;
+  color: var(--ink-soft);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.oral-history-source-actions {
+  margin-top: 9px;
+}
+
+.oral-history-history {
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.oral-history-history > summary {
+  min-height: 44px;
+  padding: 10px 0 4px;
+  color: var(--accent-dark);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.oral-history-panel {
+  min-width: 0;
+  margin-top: 18px;
+  border: 1px solid var(--line-strong);
+  background: #fffefa;
+}
+
+.oral-history-panel > summary {
+  display: flex;
+  min-width: 0;
+  min-height: 56px;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 15px;
+  list-style: none;
+}
+
+.oral-history-panel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.oral-history-panel > summary::after {
+  flex: 0 0 auto;
+  color: var(--accent-dark);
+  content: "＋";
+  font-size: 1.1rem;
+}
+
+.oral-history-panel[open] > summary::after {
+  content: "－";
+}
+
+.oral-history-summary-copy {
+  min-width: 0;
+  margin-right: auto;
+}
+
+.oral-history-summary-copy strong,
+.oral-history-summary-copy small {
+  display: block;
+}
+
+.oral-history-summary-copy strong {
+  font-family: "Noto Serif SC", "Songti SC", Georgia, serif;
+  font-size: 0.98rem;
+}
+
+.oral-history-summary-copy small {
+  margin-top: 2px;
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.oral-history-body {
+  min-width: 0;
+  padding: 2px max(15px, env(safe-area-inset-right)) max(17px, env(safe-area-inset-bottom)) max(15px, env(safe-area-inset-left));
+}
+
+.oral-history-boundary,
+.oral-history-status,
+.oral-history-step > p,
+.oral-history-capture-help,
+.oral-history-capture-status {
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.oral-history-boundary {
+  margin: 0;
+  padding: 12px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+}
+
+.oral-history-status,
+.oral-history-capture-status {
+  min-height: 1.5em;
+}
+
+.oral-history-status {
+  margin: 10px 0 0;
+}
+
+.oral-history-status[data-state="error"],
+.oral-history-capture-status[data-state="error"] {
+  color: var(--danger);
+}
+
+.oral-history-status[data-state="success"],
+.oral-history-capture-status[data-state="success"] {
+  color: var(--accent-dark);
+}
+
+.oral-history-step {
+  min-width: 0;
+  margin: 14px 0 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+}
+
+.oral-history-step > legend,
+.oral-history-resolution > legend {
+  padding: 0 5px;
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.oral-history-step > legend span {
+  display: inline-grid;
+  width: 23px;
+  height: 23px;
+  margin-right: 4px;
+  place-items: center;
+  border: 1px solid var(--accent);
+  border-radius: 50%;
+  color: var(--accent-dark);
+  font-family: Georgia, serif;
+  font-size: 0.7rem;
+}
+
+.oral-history-step > p {
+  margin: 0 0 10px;
+}
+
+.oral-history-question-choices,
+.oral-history-resolution {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.oral-history-question-choice,
+.oral-history-resolution > label {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 11px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.oral-history-question-choice:has(input:checked),
+.oral-history-resolution > label:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.oral-history-question-choice input,
+.oral-history-resolution input[type="radio"] {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+}
+
+.oral-history-question-choice strong,
+.oral-history-question-choice small,
+.oral-history-resolution strong,
+.oral-history-resolution small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.oral-history-question-choice strong,
+.oral-history-resolution strong {
+  color: var(--ink);
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
+.oral-history-question-choice small,
+.oral-history-resolution small {
+  margin-top: 3px;
+  color: var(--ink-soft);
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
+.oral-history-panel button,
+.oral-history-panel summary,
+.oral-history-panel input,
+.oral-history-panel textarea,
+.oral-history-sources button,
+.oral-history-sources summary {
+  min-height: 44px;
+}
+
+.oral-history-file-label {
+  margin: 0;
+}
+
+.oral-history-file-label.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.oral-history-capture-actions > label[for="oralHistoryFileInput"]:has(+ #oralHistoryFileInput:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.oral-history-capture-help,
+.oral-history-capture-status {
+  margin: 8px 0 0;
+}
+
+.oral-history-recording {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+}
+
+.oral-history-recording > span {
+  margin-right: auto;
+  color: var(--accent-dark);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+#oralHistoryDraftAudio {
+  margin-top: 10px;
+}
+
+.oral-history-capture-edit-actions {
+  margin-top: 8px;
+}
+
+.oral-history-segment-fields,
+.oral-history-custom-interval {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.oral-history-segment-fields label,
+.oral-history-custom-interval label {
+  min-width: 0;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.73rem;
+}
+
+.oral-history-segment-fields output {
+  float: right;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.oral-history-segment-fields input[type="range"] {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin-top: 5px;
+}
+
+.oral-history-segment-actions,
+.oral-history-form-actions {
+  margin-top: 10px;
+}
+
+#oralHistoryTranscript {
+  width: 100%;
+  min-height: 120px;
+  margin-top: 4px;
+  resize: vertical;
+}
+
+.oral-history-resolution {
+  margin: 13px 0 0;
+  padding: 11px;
+  border: 1px solid var(--line);
+}
+
+.oral-history-custom-interval {
+  margin-top: 10px;
+}
+
+.oral-history-custom-interval input {
+  width: 100%;
+  min-width: 0;
+  margin-top: 4px;
+}
+
+.oral-history-acknowledge {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: flex-start;
+  gap: 9px;
+  margin: 13px 0 0;
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.oral-history-acknowledge input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+}
+
+.oral-history-panel :focus-visible,
+.oral-history-sources :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 650px) {
+  .oral-history-sources {
+    padding-right: max(13px, env(safe-area-inset-right));
+    padding-left: max(13px, env(safe-area-inset-left));
+  }
+
+  .oral-history-panel > summary {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    padding-right: max(13px, env(safe-area-inset-right));
+    padding-left: max(13px, env(safe-area-inset-left));
+  }
+
+  .oral-history-panel > summary::after {
+    order: 2;
+  }
+
+  .oral-history-badge {
+    order: 3;
+  }
+
+  .oral-history-segment-fields,
+  .oral-history-custom-interval {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 390px) {
+  .oral-history-source-heading,
+  .oral-history-source-card > header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .oral-history-capture-actions,
+  .oral-history-capture-edit-actions,
+  .oral-history-segment-actions,
+  .oral-history-form-actions,
+  .oral-history-source-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .oral-history-capture-actions .button,
+  .oral-history-capture-actions .oral-history-file-label,
+  .oral-history-capture-edit-actions .button,
+  .oral-history-segment-actions .button,
+  .oral-history-form-actions .button,
+  .oral-history-source-actions .button {
+    width: 100%;
+    text-align: center;
+  }
+
+  .oral-history-recording {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .oral-history-recording > span {
+    width: 100%;
+  }
+}
+
+@media (max-width: 320px) {
+  .oral-history-sources,
+  .oral-history-step,
+  .oral-history-resolution {
+    padding-right: 9px;
+    padding-left: 9px;
+  }
+
+  .oral-history-body,
+  .oral-history-panel > summary {
+    padding-right: max(10px, env(safe-area-inset-right));
+    padding-left: max(10px, env(safe-area-inset-left));
+  }
+
+  .oral-history-question-choice,
+  .oral-history-resolution > label {
+    padding: 9px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oral-history-panel *,
+  .oral-history-sources * {
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+}

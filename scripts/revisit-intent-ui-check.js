@@ -40,11 +40,11 @@ ok(html.includes('id="revisitIntentManagerStatus" role="status" aria-live="polit
 equal((html.match(/class="nav-button/g) || []).length, 4, "回访意愿不增加第五项主导航");
 ok(!html.includes('data-view="revisit-intent"'), "回访意愿留在回顾页渐进区域");
 
-const intentScript = html.indexOf('/assets/revisit-intents.js?v=8.0.0');
-const revisitScript = html.indexOf('/assets/revisits.js?v=8.0.0');
-const appScript = html.indexOf('/assets/app.js?v=8.0.0');
+const intentScript = html.indexOf('/assets/revisit-intents.js?v=9.0.0');
+const revisitScript = html.indexOf('/assets/revisits.js?v=9.0.0');
+const appScript = html.indexOf('/assets/app.js?v=9.0.0');
 ok(intentScript > 0 && intentScript < revisitScript && revisitScript < appScript, "资源按意愿模块、回访控制器、主应用顺序加载");
-equal((html.match(/\/revisit-intents\.css\?v=8\.0\.0/g) || []).length, 1, "回访意愿样式只加载一次");
+equal((html.match(/\/revisit-intents\.css\?v=9\.0\.0/g) || []).length, 1, "回访意愿样式只加载一次");
 ok(revisits.includes("TimeIsleRevisitIntents?.createController"), "今日回访控制器接入长期意愿子模块");
 ok(revisits.includes("intentController?.renderPanel(memory, current.intent)"), "单件展品在呈现后才生成意愿面板");
 ok(revisits.includes("button.disabled = busyAction || busyLoad") && revisits.includes("if (!button || busyAction || busyLoad) return;"), "读取候选期间禁止切换方式，避免旧响应覆盖新选择");

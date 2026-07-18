@@ -37,6 +37,7 @@ const { createRuntimeMetadata } = require("./lib/runtime-metadata");
 const { createCollectionHealthApi } = require("./lib/collection-health-api");
 const { createArchiveInspectionApi } = require("./lib/archive-inspection-api");
 const { createTimeCalibrationApi } = require("./lib/time-calibration-api");
+const { createOralHistoryApi } = require("./lib/oral-history-api");
 
 const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
@@ -53,8 +54,8 @@ const MEDIA_ROOT = process.env.MEDIA_ROOT || (INTERVIEW_DEMO
   ? path.join(os.tmpdir(), "ai-memory-museum-interview-demo-media")
   : path.join(path.dirname(DB_PATH), "media"));
 const VOICE_ROOT = INTERVIEW_DEMO ? path.join(MEDIA_ROOT, "voice") : (process.env.VOICE_ROOT || path.join(MEDIA_ROOT, "voice"));
-const APP_VERSION = "8.0.0";
-const SCHEMA_VERSION = 12;
+const APP_VERSION = "9.0.0";
+const SCHEMA_VERSION = 13;
 const MAX_RAW_LENGTH = 4000;
 const MAX_BODY_LENGTH = 2 * 1024 * 1024;
 const MAX_IMPORT_BODY_LENGTH = 64 * 1024 * 1024;
@@ -89,12 +90,14 @@ const capsuleApi = createCapsuleApi({ database: store, store, buildSafeSnapshot,
 const offlineExhibitApi = createOfflineExhibitApi({ database: store, store, buildSafeSnapshot, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
 const revisionApi = createRevisionApi({ store, sendJson, readJsonBody, httpError, decorateMemory: withMemoryMedia, normalizeNote: (value) => limitText(value, 500) });
 const timeCalibrationApi = createTimeCalibrationApi({ store, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
+const oralHistoryApi = createOralHistoryApi({ store, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
 const collectionHealthApi = createCollectionHealthApi({ store, mediaStorage, voiceStorage, mediaApi, voiceApi, sendJson, readJsonBody, httpError });
 const archiveInspectionApi = createArchiveInspectionApi({
   mediaRoot: MEDIA_ROOT,
   prepareMediaArchive,
   validateVoiceBackup: store.validateVoiceBackup,
   validateTimeCalibrationBackup: store.validateTimeCalibrationBackup,
+  validateOralHistoryBackup: store.validateOralHistoryBackup,
   supportedSchemaVersion: SCHEMA_VERSION,
   sendJson,
   httpError
@@ -118,10 +121,11 @@ const buildPrivacySummary = createPrivacySummary({
     { name: "时光胶囊与加密离线展览", location: "胶囊外壳与安全快照分表保存在本机 SQLite；分享口令只在浏览器内用于加密，不发送给服务端，也不写入导出文件" },
     { name: "回访状态与明确意愿", location: "查看/略过状态、欢迎出现、指定日期以后或暂停主动出现均只保存在本机 SQLite；later 会保存用户选择的本地日期与 IANA 时区，不生成心理判断" },
     { name: "不确定时间线与来源校准", location: "用户确认的时间范围、所选来源摘要与待复核状态只保存在本机 SQLite；不会回写展品日期或把冲突裁决成历史事实" },
+    { name: "事件级口述史与声音选段", location: "问题、手划声音片段、人工文字稿和明确时间含义保存在本机 SQLite；声音仍位于本机内容寻址目录，不做自动转写、说话人或情绪识别" },
     { name: "实体线索、别名与检索索引", location: "仅保存于本机 SQLite；同名默认只是线索，只有明确确认后才会新增别名或合并档案" },
     { name: "声音片段与人工文字稿", location: "声音文件仅保存在本机内容寻址目录；只有人工确认的文字稿会进入本地检索，不发送给外部模型" }
   ],
-  featureControls: ["编辑与历史恢复必须匹配当前展品版本，冲突时不会覆盖较新的内容", "时间校准只接受用户明确确认；来源集合变化后旧判断转为待复核且不改写原日期", "回访意愿只接受用户明确确认；恢复自然回访会删除对应长期意愿记录", "实体别名与合并必须先预览，再由用户明确确认", "声音文字稿只有人工确认后才会公开展示并进入检索"]
+  featureControls: ["编辑与历史恢复必须匹配当前展品版本，冲突时不会覆盖较新的内容", "时间校准只接受用户明确确认；来源集合变化后旧判断转为待复核且不改写原日期", "口述史草稿和‘仍不确定’不会生成日期来源；重答与撤回答案保留为只读历史", "回访意愿只接受用户明确确认；恢复自然回访会删除对应长期意愿记录", "实体别名与合并必须先预览，再由用户明确确认", "声音文字稿只有人工确认后才会公开展示并进入检索"]
 });
 seedInterviewDemoData({
   enabled: INTERVIEW_DEMO,
@@ -224,6 +228,8 @@ async function handleRequest(request, response) {
     if (revisionHandled !== false) return revisionHandled;
     const timeCalibrationHandled = await timeCalibrationApi.handle(request, response, url);
     if (timeCalibrationHandled !== false) return timeCalibrationHandled;
+    const oralHistoryHandled = await oralHistoryApi.handle(request, response, url);
+    if (oralHistoryHandled !== false) return oralHistoryHandled;
     const collectionHealthHandled = await collectionHealthApi.handle(request, response, url);
     if (collectionHealthHandled !== false) return collectionHealthHandled;
     const archiveInspectionHandled = await archiveInspectionApi.handle(request, response, url);
@@ -251,6 +257,7 @@ async function handleRequest(request, response) {
             stagingRoot,
             validateVoiceBackup: store.validateVoiceBackup,
             validateTimeCalibrationBackup: store.validateTimeCalibrationBackup,
+            validateOralHistoryBackup: store.validateOralHistoryBackup,
             supportedSchemaVersion: SCHEMA_VERSION,
             signal
           });
@@ -270,6 +277,8 @@ async function handleRequest(request, response) {
               validateRevisionBackup: store.validateRevisionBackup, restoreRevisionBackup: store.restoreRevisionBackup,
               validateTimeCalibrationBackup: store.validateTimeCalibrationBackup,
               restoreTimeCalibrationBackup: store.restoreTimeCalibrationBackup,
+              validateOralHistoryBackup: store.validateOralHistoryBackup,
+              restoreOralHistoryBackup: store.restoreOralHistoryBackup,
               createId
             });
           }));
@@ -1120,6 +1129,7 @@ function parseAiJson(content) {
 
 function isInterviewDemoBlockedMutation(request, url) {
   if (!INTERVIEW_DEMO) return false;
+  if (url.pathname.startsWith("/api/oral-histories/")) return false;
   if (request.method === "DELETE" || url.pathname === "/api/memories/purge" || url.pathname === "/api/memories/import" || url.pathname === "/api/archive/restore") return true;
   if (request.method === "POST" && /^\/api\/memories\/[a-zA-Z0-9_-]+\/revisions\/[a-zA-Z0-9_-]+\/restore$/.test(url.pathname)) return true;
   if (request.method === "PUT" && /^\/api\/revisits\/[a-zA-Z0-9_-]+\/intent$/.test(url.pathname)) return true;

@@ -22,6 +22,11 @@ const {
   TIME_CALIBRATION_REDACTED_NOTE,
   validateTimeCalibrationBackupPayload
 } = require("../lib/time-calibration-database");
+const {
+  ORAL_HISTORY_REDACTED_NOTE,
+  validateOralHistoryBackupPayload
+} = require("../lib/oral-history-database");
+const { buildQuestionKey } = require("../lib/oral-history-service");
 
 let assertions = 0;
 
@@ -366,9 +371,10 @@ async function checkFeatureSections(temporaryRoot, fixture, sourceCollection) {
       { name: "capsules", path: ARCHIVE_PATHS.capsules, sinceSchemaVersion: 9 },
       { name: "revisions", path: ARCHIVE_PATHS.revisions, sinceSchemaVersion: 10 },
       { name: "revisit-intents", path: ARCHIVE_PATHS.revisitIntents, sinceSchemaVersion: 11 },
-      { name: "time-calibrations", path: ARCHIVE_PATHS.timeCalibrations, sinceSchemaVersion: 12 }
+      { name: "time-calibrations", path: ARCHIVE_PATHS.timeCalibrations, sinceSchemaVersion: 12 },
+      { name: "oral-history", path: ARCHIVE_PATHS.oralHistories, sinceSchemaVersion: 13 }
     ],
-    "功能 section 注册表应按 schema 顺序声明展览、回访、实体线索、时间胶囊、记忆年轮与回访意愿"
+    "功能 section 注册表应按 schema 顺序声明至 schema 13 口述史"
   );
 
   const exhibitions = { mode: "full", schemaVersion: 5, exhibitions: [] };
@@ -1143,6 +1149,171 @@ async function checkFeatureSections(temporaryRoot, fixture, sourceCollection) {
     }),
     "recomputed manifest hashes cannot bypass semantic calibration validation"
   );
+
+  const oralSources = [
+    oralSourceFixture("a", "1998-08-31", "memory-one"),
+    oralSourceFixture("b", "2001-09-01", "memory-two")
+  ];
+  const oralHistories = {
+    mode: "full",
+    schemaVersion: 13,
+    questions: [{
+      id: "oral-question-archive",
+      eventId: calibrationEventId,
+      questionKey: buildQuestionKey(calibrationEventId, oralSources),
+      text: "这段往事更接近什么时候？",
+      sources: oralSources,
+      originSourceSetSha256: "e".repeat(64),
+      createdAt: "2026-07-18T10:00:00.000Z",
+      updatedAt: "2026-07-18T10:00:00.000Z"
+    }],
+    answers: []
+  };
+  const oralValidationCalls = [];
+  const validateOralHistories = (backup, boundaries) => {
+    validateOralHistoryBackupPayload(backup, boundaries);
+    oralValidationCalls.push({
+      eventIds: [...boundaries.eventIds],
+      voiceAssetIds: [...boundaries.voiceAssetIds]
+    });
+    return true;
+  };
+  const schema13Store = {
+    ...schema12Store,
+    validateOralHistoryBackup: validateOralHistories
+  };
+  const schema13Collection = {
+    ...schema12Collection,
+    version: "9.0.0",
+    schemaVersion: 13,
+    oralHistories
+  };
+  throwsCode(
+    "MEDIA_ARCHIVE_FEATURE_SCHEMA_INVALID",
+    () => buildMediaArchive({
+      collection: { ...schema12Collection, oralHistories },
+      store: schema13Store,
+      storage: fixture.storage,
+      voiceStorage: emptyVoiceStorage,
+      appVersion: "8.0.0",
+      schemaVersion: 12
+    }),
+    "schema 12 不能越级声明口述史 section"
+  );
+  throwsCode(
+    "MEDIA_ARCHIVE_REQUIRED_SECTION_MISSING",
+    () => buildMediaArchive({
+      collection: { ...schema12Collection, version: "9.0.0", schemaVersion: 13 },
+      store: schema13Store,
+      storage: fixture.storage,
+      voiceStorage: emptyVoiceStorage,
+      appVersion: "9.0.0",
+      schemaVersion: 13
+    }),
+    "schema 13 full 即使没有口述问题也不能省略 required oral-history section"
+  );
+  throwsCode(
+    "MEDIA_ARCHIVE_ORAL_HISTORY_VALIDATOR_REQUIRED",
+    () => buildMediaArchive({
+      collection: schema13Collection,
+      store: schema12Store,
+      storage: fixture.storage,
+      voiceStorage: emptyVoiceStorage,
+      appVersion: "9.0.0",
+      schemaVersion: 13
+    }),
+    "schema 13 writer 缺少口述史 validator 时 fail closed"
+  );
+  const schema13Archive = buildMediaArchive({
+    collection: schema13Collection,
+    store: schema13Store,
+    storage: fixture.storage,
+    voiceStorage: emptyVoiceStorage,
+    appVersion: "9.0.0",
+    schemaVersion: 13
+  });
+  deepEqual(oralValidationCalls[0], { eventIds: [calibrationEventId], voiceAssetIds: [] }, "writer 以考古事件和声音 section 的冻结边界验真口述史");
+  const schema13Entries = await readArchiveEntries(schema13Archive, path.join(temporaryRoot, "unpack-schema13-oral-history"));
+  const schema13Manifest = parseJson(schema13Entries.get(ARCHIVE_PATHS.manifest));
+  deepEqual(
+    schema13Manifest.sections.find((section) => section.name === "oral-history"),
+    { name: "oral-history", path: "oral-history/state.json", count: 1, required: true, version: 1 },
+    "schema 13 full 以独立 required section 声明口述史"
+  );
+  deepEqual(parseJson(schema13Entries.get(ARCHIVE_PATHS.oralHistories)), oralHistories, "口述问题与来源上下文无损写入独立 section");
+  check(!Object.hasOwn(parseJson(schema13Entries.get(ARCHIVE_PATHS.collection)), "oralHistories"), "口述史不得同时内联在 collection.json");
+
+  const missingOralValidatorRoot = path.join(temporaryRoot, "reject-schema13-missing-oral-validator");
+  await rejectsCode(
+    "MEDIA_ARCHIVE_ORAL_HISTORY_VALIDATOR_REQUIRED",
+    () => prepareMediaArchive(schema13Archive, {
+      stagingRoot: missingOralValidatorRoot,
+      validateVoiceBackup: validateEmptyVoices,
+      validateTimeCalibrationBackup: validateTimeCalibrations,
+      supportedSchemaVersion: 13
+    }),
+    "schema 13 prepare 缺少口述史 validator 时不返回可恢复 descriptor"
+  );
+  equal(fs.existsSync(missingOralValidatorRoot), false, "缺 validator 的 schema 13 staging 不留墓碑目录");
+
+  const schema13Prepared = await prepareMediaArchive(schema13Archive, {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-schema13-oral-history"),
+    validateVoiceBackup: validateEmptyVoices,
+    validateTimeCalibrationBackup: validateTimeCalibrations,
+    validateOralHistoryBackup: validateOralHistories,
+    supportedSchemaVersion: 13
+  });
+  deepEqual(schema13Prepared.collection.oralHistories, oralHistories, "prepare 只在跨 section 验真后重挂口述史");
+  deepEqual(oralValidationCalls.at(-1), { eventIds: [calibrationEventId], voiceAssetIds: [] }, "reader 复用与 writer 相同的事件和声音边界");
+
+  const missingOral = cloneEntries(schema13Entries);
+  const missingOralManifest = parseJson(missingOral.get(ARCHIVE_PATHS.manifest));
+  missingOralManifest.sections = missingOralManifest.sections.filter((section) => section.name !== "oral-history");
+  missingOralManifest.entries = missingOralManifest.entries.filter((entry) => entry.path !== ARCHIVE_PATHS.oralHistories);
+  missingOralManifest.entryCount = missingOralManifest.entries.length;
+  missingOral.delete(ARCHIVE_PATHS.oralHistories);
+  missingOral.set(ARCHIVE_PATHS.manifest, jsonBuffer(missingOralManifest));
+  await rejectsCode(
+    "MEDIA_ARCHIVE_REQUIRED_SECTION_MISSING",
+    () => prepareMediaArchive(repack(missingOral), {
+      stagingRoot: path.join(temporaryRoot, "reject-schema13-missing-oral-history"),
+      validateVoiceBackup: validateEmptyVoices,
+      validateTimeCalibrationBackup: validateTimeCalibrations,
+      validateOralHistoryBackup: validateOralHistories,
+      supportedSchemaVersion: 13
+    }),
+    "schema 13 full reader 不得把缺失口述史 section 静默降级为空"
+  );
+
+  const redactedOralHistories = {
+    mode: "redacted-summary",
+    questionCount: 1,
+    answerCount: 2,
+    confirmedAnswerCount: 1,
+    note: ORAL_HISTORY_REDACTED_NOTE
+  };
+  const redactedOralArchive = buildMediaArchive({
+    collection: {
+      ...sourceCollection,
+      version: "9.0.0",
+      schemaVersion: 13,
+      mode: "redacted",
+      oralHistories: redactedOralHistories
+    },
+    appVersion: "9.0.0",
+    schemaVersion: 13
+  });
+  const redactedOralEntries = await readArchiveEntries(redactedOralArchive, path.join(temporaryRoot, "unpack-redacted-schema13-oral-history"));
+  const redactedOralText = redactedOralEntries.get(ARCHIVE_PATHS.oralHistories).toString("utf8");
+  deepEqual(Object.keys(JSON.parse(redactedOralText)).sort(), ["answerCount", "confirmedAnswerCount", "mode", "note", "questionCount"], "脱敏口述史 section 只有固定说明与三个安全计数");
+  for (const canary of ["oral-question-archive", "这段往事更接近什么时候", "memory-one", "time-source:", "1998-08-31", "segmentStartMs", "assetId"]) {
+    check(!redactedOralText.includes(canary), `脱敏口述史物理排除 ${canary}`);
+  }
+  const redactedOralPrepared = await prepareMediaArchive(redactedOralArchive, {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-redacted-schema13-oral-history"),
+    supportedSchemaVersion: 13
+  });
+  deepEqual(redactedOralPrepared.collection.oralHistories, redactedOralHistories, "脱敏口述史安全摘要无需私人 validator 即可回环");
 
   const redactedTimeCalibrations = {
     mode: "redacted-summary",
@@ -2146,6 +2317,18 @@ function timeCalibrationCanaries(backup) {
     calibration.createdAt,
     calibration.updatedAt
   ]).filter(Boolean);
+}
+
+function oralSourceFixture(seed, day, memoryId) {
+  return {
+    sourceKey: `time-source:${seed.repeat(64)}`,
+    sourceType: "memory-current",
+    precision: "day",
+    intervalStart: day,
+    intervalEnd: day,
+    memoryId,
+    memoryTitle: `展品 ${memoryId}`
+  };
 }
 
 function capsuleBackupFixture(assetId) {

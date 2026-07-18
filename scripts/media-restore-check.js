@@ -8,6 +8,7 @@ const path = require("node:path");
 const { createMemoryStore } = require("../database");
 const { createMediaStorage } = require("../lib/media-storage");
 const { createVoiceStorage } = require("../lib/voice-storage");
+const { inspectVoice } = require("../lib/voice-format");
 const { buildMediaArchive, prepareMediaArchive } = require("../lib/media-backup");
 const { restorePreparedArchive } = require("../lib/media-restore");
 const { validateArchaeologyBackup, restoreArchaeologyBackup } = require("../lib/archaeology-backup");
@@ -66,6 +67,7 @@ function deepEqual(actual, expected, message) {
 
 async function main() {
   try {
+    checkOralHistoryRestoreOrdering(path.join(root, "oral-history-order"));
     const source = createFixture(path.join(root, "source"));
     sourceStore = source.store;
     const archive = buildMediaArchive({
@@ -1075,6 +1077,273 @@ async function main() {
     }
     fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
+}
+
+function checkOralHistoryRestoreOrdering(directory) {
+  fs.mkdirSync(directory, { recursive: true });
+  const stagingRoot = path.join(directory, "staging");
+  fs.mkdirSync(path.join(stagingRoot, "voices"), { recursive: true });
+  const bytes = makeOralRestoreWebm(12_000);
+  const inspected = inspectVoice(bytes, { declaredMimeType: "audio/webm" });
+  const contentSha256 = sha256(bytes);
+  const sourceVoiceId = "voice-oral-source";
+  const sourceAsset = {
+    id: sourceVoiceId,
+    schemaVersion: 8,
+    contentSha256,
+    originalName: "private-oral.webm",
+    mimeType: "audio/webm",
+    codec: inspected.codec,
+    byteSize: bytes.length,
+    durationMs: inspected.durationMs,
+    storageKey: `ready/${contentSha256.slice(0, 2)}/${contentSha256}.webm`,
+    status: "ready",
+    createdAt: "2026-07-18T10:00:00.000Z",
+    updatedAt: "2026-07-18T10:00:00.000Z"
+  };
+  const stagedVoicePath = path.join(stagingRoot, "voices", "oral.webm");
+  fs.writeFileSync(stagedVoicePath, bytes);
+  const sourceMemory = normalizeMemory({
+    id: "memory-oral-source",
+    title: "口述史冲突展品",
+    rawContent: "用于验证完整恢复顺序。",
+    exhibitText: "完整恢复顺序。"
+  });
+  const oralHistories = {
+    mode: "full",
+    schemaVersion: 13,
+    questions: [{ id: "oral-question-source", eventId: "event-oral-source" }],
+    answers: [{ id: "oral-answer-source", assetId: sourceVoiceId }]
+  };
+  const prepared = {
+    verified: true,
+    stagingRoot,
+    manifest: { mode: "full", schemaVersion: 13, entries: [] },
+    collection: {
+      memories: [sourceMemory],
+      revisions: { mode: "full", schemaVersion: 10, revisions: [] },
+      archaeology: {
+        mode: "full",
+        events: [{ id: "event-oral-source", members: [{ memoryId: sourceMemory.id }] }],
+        claims: [],
+        pairDecisions: [],
+        questions: []
+      },
+      voices: { mode: "full", schemaVersion: 8, assets: [sourceAsset], memoryLinks: [], transcripts: [] },
+      oralHistories,
+      timeCalibrations: { mode: "full", schemaVersion: 12, calibrations: [] },
+      exhibitions: { mode: "full", schemaVersion: 5, exhibitions: [] },
+      revisits: { mode: "full", schemaVersion: 6, states: [] },
+      revisitIntents: { mode: "full", schemaVersion: 11, intents: [] },
+      entities: { mode: "full", schemaVersion: 7, entities: [] }
+    },
+    assets: [],
+    links: [],
+    mediaObservations: [],
+    files: {
+      variants: [],
+      voices: [{
+        assetId: sourceVoiceId,
+        archivePath: `voices/assets/${sourceVoiceId}/audio.webm`,
+        filePath: stagedVoicePath,
+        byteSize: bytes.length,
+        sha256: contentSha256,
+        mimeType: "audio/webm",
+        codec: inspected.codec,
+        durationMs: inspected.durationMs
+      }]
+    }
+  };
+  const storage = createMediaStorage({ root: path.join(directory, "media") });
+  const voiceStorage = createVoiceStorage({ root: path.join(directory, "voice") });
+  const order = [];
+  const captured = {};
+  const store = {
+    listMemories: () => [{ ...sourceMemory }],
+    listMediaAssets: () => [],
+    listMediaObservations: () => [],
+    listVoiceAssets: () => [{
+      ...sourceAsset,
+      contentSha256: "f".repeat(64),
+      storageKey: "ready/ff/preexisting.webm"
+    }],
+    getVoiceAssetByHash: () => null,
+    getVoiceAsset: () => null,
+    withTransaction(operation) { return operation(); },
+    importMemories(memories) { order.push("memories"); captured.memories = memories; return { imported: memories.length, memories }; },
+    createMediaAsset() {},
+    replaceMemoryMedia() {},
+    saveMediaObservation() {},
+    getMemory(id) { return captured.memories?.find((memory) => memory.id === id) || null; }
+  };
+  const createId = (prefix) => ({
+    memory: "memory-oral-remapped",
+    voice: "voice-oral-remapped"
+  })[prefix] || `${prefix}-remapped`;
+  const base = {
+    prepared,
+    store,
+    storage,
+    voiceStorage,
+    normalizeMemory,
+    createId,
+    validateRevisionBackup: () => true,
+    restoreRevisionBackup(_backup, memoryIdMap) {
+      order.push("revisions");
+      captured.revisionMemoryMap = new Map(memoryIdMap);
+      return { memories: 0, revisions: 0, skipped: 0, idMap: { memories: {}, revisions: {} } };
+    },
+    validateArchaeologyBackup: () => true,
+    restoreArchaeologyBackup(_store, _backup, memoryIdMap) {
+      order.push("archaeology");
+      captured.archaeologyMemoryMap = new Map(memoryIdMap);
+      return { events: 1, claims: 0, decisions: 0, questions: 0, skipped: 0, idMap: { events: { "event-oral-source": "event-oral-remapped" } } };
+    },
+    validateVoiceBackup: () => true,
+    restoreVoiceBackup(_backup, options) {
+      order.push("voices");
+      captured.voiceOptions = options;
+      return {
+        assets: 1,
+        assetsReused: 0,
+        memoryLinks: 0,
+        transcripts: 0,
+        idMap: {
+          memories: {},
+          assets: Object.fromEntries(options.assetIdMap),
+          storageKeys: Object.fromEntries(options.storageKeyMap)
+        }
+      };
+    },
+    validateOralHistoryBackup: () => true,
+    restoreOralHistoryBackup(_backup, options) {
+      order.push("oral-history");
+      captured.oralOptions = options;
+      return {
+        questions: 1,
+        answers: 1,
+        skipped: 0,
+        idMap: {
+          questions: { "oral-question-source": "oral-question-remapped" },
+          answers: { "oral-answer-source": "oral-answer-remapped" },
+          questionKeys: {
+            [`oral-question:${"a".repeat(64)}`]: `oral-question:${"b".repeat(64)}`
+          }
+        }
+      };
+    },
+    validateTimeCalibrationBackup: () => true,
+    restoreTimeCalibrationBackup(_backup, options) {
+      order.push("time-calibrations");
+      captured.timeOptions = options;
+      return { calibrations: 0, skipped: 0, idMap: { calibrations: {} } };
+    },
+    validateExhibitionBackup: () => true,
+    restoreExhibitionBackup() { order.push("exhibitions"); return { exhibitions: 0, skipped: 0, idMap: {} }; },
+    validateRevisitBackup: () => true,
+    restoreRevisitBackup() { order.push("revisits"); return { states: 0, skipped: 0, idMap: {} }; },
+    validateRevisitIntentBackup: () => true,
+    restoreRevisitIntentBackup() { order.push("revisit-intents"); return { intents: 0, skipped: 0, idMap: {} }; },
+    validateEntityBackup: () => true,
+    restoreEntityBackup() { order.push("entities"); return { entities: 0, aliases: 0, memoryLinks: 0, skipped: 0, idMap: {} }; }
+  };
+
+  const restored = restorePreparedArchive(base);
+  deepEqual(order, [
+    "memories", "revisions", "archaeology", "voices", "oral-history",
+    "time-calibrations", "exhibitions", "revisits", "revisit-intents", "entities"
+  ], "完整恢复冻结顺序为 memories/revisions/media → archaeology → voices → oral → time → 其余模块");
+  deepEqual(Object.fromEntries(captured.oralOptions.memoryIdMap), { "memory-oral-source": "memory-oral-remapped" }, "口述恢复收到完整 memoryIdMap 以重写来源身份");
+  deepEqual(Object.fromEntries(captured.oralOptions.eventIdMap), { "event-oral-source": "event-oral-remapped" }, "口述恢复收到考古 eventIdMap 以重算 questionKey");
+  deepEqual(Object.fromEntries(captured.oralOptions.assetIdMap), { "voice-oral-source": "voice-oral-remapped" }, "口述恢复收到声音 assetIdMap 以重写回答引用");
+  deepEqual(Object.fromEntries(captured.timeOptions.oralQuestionKeyMap), {
+    [`oral-question:${"a".repeat(64)}`]: `oral-question:${"b".repeat(64)}`
+  }, "时间校准恢复收到口述问题 old→new key 映射以重建归档来源键");
+  deepEqual(captured.voiceOptions.additionalAssetIds, [sourceVoiceId], "声音恢复显式允许没有 memory_voice link 的口述资产");
+  equal(restored.idMap.oralHistoryQuestions["oral-question-source"], "oral-question-remapped", "恢复结果公开完整问题 ID 映射");
+  equal(restored.idMap.oralHistoryAnswers["oral-answer-source"], "oral-answer-remapped", "恢复结果公开完整回答 ID 映射");
+
+  const blockedRoot = path.join(directory, "blocked-voice");
+  const blockedVoiceStorage = createVoiceStorage({ root: blockedRoot });
+  assert.throws(() => restorePreparedArchive({
+    ...base,
+    voiceStorage: blockedVoiceStorage,
+    restoreOralHistoryBackup: undefined
+  }), (error) => error?.code === "MEDIA_RESTORE_ORAL_HISTORY_HANDLER_REQUIRED");
+  assertions += 1;
+  equal(listRegularFiles(blockedRoot).length, 0, "缺口述恢复 handler 时在声音物化前整包拒绝");
+
+  const rollbackRoot = path.join(directory, "rollback-voice");
+  const rollbackVoiceStorage = createVoiceStorage({ root: rollbackRoot });
+  assert.throws(() => restorePreparedArchive({
+    ...base,
+    voiceStorage: rollbackVoiceStorage,
+    restoreOralHistoryBackup() {
+      order.push("oral-history-failed");
+      throw new Error("forced oral restore failure");
+    }
+  }), /forced oral restore failure/);
+  assertions += 1;
+  equal(listRegularFiles(rollbackRoot).length, 0, "口述 DB 恢复失败时删除本轮新物化声音文件");
+}
+
+function listRegularFiles(directory) {
+  if (!fs.existsSync(directory)) return [];
+  return fs.readdirSync(directory, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile());
+}
+
+function makeOralRestoreWebm(durationMs) {
+  const opusHead = Buffer.alloc(19);
+  opusHead.write("OpusHead", 0, "ascii");
+  opusHead[8] = 1;
+  opusHead[9] = 1;
+  opusHead.writeUInt32LE(48_000, 12);
+  const audio = oralEbmlElement("e1", Buffer.concat([oralEbmlUInt("9f", 1), oralEbmlFloat("b5", 48_000)]));
+  const track = oralEbmlElement("ae", Buffer.concat([
+    oralEbmlUInt("d7", 1),
+    oralEbmlUInt("83", 2),
+    oralEbmlElement("86", Buffer.from("A_OPUS")),
+    oralEbmlElement("63a2", opusHead),
+    audio
+  ]));
+  const segment = oralEbmlElement("18538067", Buffer.concat([
+    oralEbmlElement("1549a966", Buffer.concat([oralEbmlUInt("2ad7b1", 1_000_000), oralEbmlFloat("4489", durationMs)])),
+    oralEbmlElement("1654ae6b", track),
+    oralEbmlElement("1f43b675", Buffer.concat([oralEbmlUInt("e7", 0), oralEbmlElement("a3", Buffer.from([0x81, 0, 0, 0x80, 0xf8]))]))
+  ]));
+  return Buffer.concat([oralEbmlElement("1a45dfa3", oralEbmlElement("4282", Buffer.from("webm"))), segment]);
+}
+
+function oralEbmlElement(id, payload) {
+  return Buffer.concat([Buffer.from(id, "hex"), oralEbmlSize(payload.length), payload]);
+}
+
+function oralEbmlUInt(id, value) {
+  let hex = BigInt(value).toString(16);
+  if (hex.length % 2) hex = `0${hex}`;
+  return oralEbmlElement(id, Buffer.from(hex, "hex"));
+}
+
+function oralEbmlFloat(id, value) {
+  const data = Buffer.alloc(8);
+  data.writeDoubleBE(value);
+  return oralEbmlElement(id, data);
+}
+
+function oralEbmlSize(value) {
+  const number = BigInt(value);
+  for (let width = 1; width <= 8; width += 1) {
+    if (number >= (1n << BigInt(7 * width)) - 1n) continue;
+    let marked = number | (1n << BigInt(7 * width));
+    const output = Buffer.alloc(width);
+    for (let index = width - 1; index >= 0; index -= 1) {
+      output[index] = Number(marked & 0xffn);
+      marked >>= 8n;
+    }
+    return output;
+  }
+  throw new Error("fixture too large");
 }
 
 function createFixture(directory) {

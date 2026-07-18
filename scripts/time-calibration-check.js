@@ -106,6 +106,37 @@ function checkPureService() {
   equal(candidates.find((item) => item.sourceType === "raw-claim").sourceQuote, "2021-06-20", "bounded raw claim quote remains locally reviewable");
   check(!JSON.stringify(candidates).includes("latitude"), "GPS values never enter candidates");
 
+  const oralCandidates = buildTimeCandidates({
+    oralHistories: [{
+      sourceType: "oral-history", status: "confirmed", eventId: "event-oral-a", eventTitle: "Oral event",
+      questionKey: `oral-question:${H.d}`, assetContentSha256: H.e,
+      segmentStartMs: 100, segmentEndMs: 3200, transcriptSha256: H.f,
+      transcriptExcerpt: "人工确认的口述回答", resolutionKind: "day", precision: "day",
+      intervalStart: "2021-06-18", intervalEnd: "2021-06-18"
+    }]
+  });
+  equal(oralCandidates.length, 1, "only a fully confirmed manual oral answer becomes a time candidate");
+  equal(oralCandidates[0].eventId, "event-oral-a", "oral evidence is anchored to its event");
+  equal(oralCandidates[0].transcriptExcerpt, "人工确认的口述回答", "oral excerpt remains locally reviewable");
+  equal(buildTimeCandidates({ oralHistories: [{
+    ...oralCandidates[0], status: "draft", sourceKey: ""
+  }] }).length, 0, "draft oral transcript never becomes a time candidate");
+  notEqual(
+    buildStableSourceKey({ ...oralCandidates[0], sourceKey: "", segmentEndMs: 3300 }),
+    oralCandidates[0].sourceKey,
+    "manual segment change changes the oral source identity"
+  );
+  notEqual(
+    buildStableSourceKey({ ...oralCandidates[0], sourceKey: "", transcriptSha256: H.a }),
+    oralCandidates[0].sourceKey,
+    "manual transcript change changes the oral source identity"
+  );
+  notEqual(
+    buildStableSourceKey({ ...oralCandidates[0], sourceKey: "", eventId: "event-oral-b" }),
+    oralCandidates[0].sourceKey,
+    "event remapping changes only the event identity component of the oral source key"
+  );
+
   const alternativesClaimCandidates = buildTimeCandidates({
     claims: [{
       memoryId: "private-memory-a", claimKey: "date",

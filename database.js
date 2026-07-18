@@ -10,6 +10,7 @@ const { initializeCapsuleDatabase } = require("./lib/capsule-database");
 const { initializeRevisionDatabase } = require("./lib/revision-database");
 const { initializeRevisitIntentDatabase } = require("./lib/revisit-intent-database");
 const { initializeTimeCalibrationDatabase } = require("./lib/time-calibration-database");
+const { initializeOralHistoryDatabase } = require("./lib/oral-history-database");
 const { createDatabaseHealthReader } = require("./lib/database-health");
 
 function createMemoryStore({ dbPath, halls, schemaVersion }) {
@@ -222,6 +223,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
   ensureColumn("memories", "attachments_json", "TEXT NOT NULL DEFAULT '[]'");
   ensureColumn("memories", "agent_run_id", "TEXT NOT NULL DEFAULT ''");
 
+  let oralHistoryDatabase = null;
   const mediaDatabase = initializeMediaDatabase({
     db,
     withTransaction,
@@ -254,7 +256,8 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     schemaVersion,
     now: () => new Date().toISOString(),
     createId,
-    onConfirmedTranscriptChanged: (memoryId) => clueDatabase.syncMemoryClues(memoryId)
+    onConfirmedTranscriptChanged: (memoryId) => clueDatabase.syncMemoryClues(memoryId),
+    getAdditionalAssetUsage: (assetId) => oralHistoryDatabase?.getOralVoiceAssetUsage(assetId) || 0
   });
   const capsuleDatabase = initializeCapsuleDatabase({
     db,
@@ -286,7 +289,18 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
         withTransaction,
         schemaVersion,
         now: () => new Date().toISOString(),
-        createId
+        createId,
+        listOralHistoryEvidence: (memoryIds) => oralHistoryDatabase?.listConfirmedOralHistoryEvidence(memoryIds) || []
+      })
+    : null;
+  oralHistoryDatabase = Number(schemaVersion) >= 13
+    ? initializeOralHistoryDatabase({
+        db,
+        withTransaction,
+        schemaVersion,
+        now: () => new Date().toISOString(),
+        createId,
+        getEventCalibrationWorkspace: (eventId) => timeCalibrationDatabase.getEventCalibrationWorkspace(eventId)
       })
     : null;
   const databaseHealth = createDatabaseHealthReader({
@@ -669,6 +683,10 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     const memoryEventsDeleted = Number(statements.countMemoryEvents.get()?.count) || 0;
     return withTransaction(() => {
       const capsuleCleanup = capsuleDatabase.clearCapsules();
+      const oralHistoryCleanup = oralHistoryDatabase?.clearOralHistories() || {
+        oralHistoryQuestionsDeleted: 0,
+        oralHistoryAnswersDeleted: 0
+      };
       const voiceCleanup = voiceDatabase.clearVoiceData();
       const clueCleanup = clueDatabase.clearClues();
       const revisitStatesDeleted = revisitDatabase.clearRevisitStates().revisitStatesDeleted;
@@ -693,7 +711,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
         DELETE FROM agent_runs;
         DELETE FROM memories;
       `);
-      return { memoriesDeleted, agentRunsDeleted, memoryEventsDeleted, exhibitionsDeleted, revisitStatesDeleted, revisitIntentsDeleted, timeCalibrationsDeleted, ...capsuleCleanup, ...clueCleanup, ...voiceCleanup };
+      return { memoriesDeleted, agentRunsDeleted, memoryEventsDeleted, exhibitionsDeleted, revisitStatesDeleted, revisitIntentsDeleted, timeCalibrationsDeleted, ...capsuleCleanup, ...oralHistoryCleanup, ...clueCleanup, ...voiceCleanup };
     });
   }
 
@@ -1129,6 +1147,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     const voiceStats = voiceDatabase.getVoiceStats();
     const capsuleStats = capsuleDatabase.getCapsuleStats();
     const timeCalibrationStats = timeCalibrationDatabase?.getTimeCalibrationStats?.() || { calibrations: 0, needsReview: 0 };
+    const oralHistoryStats = oralHistoryDatabase?.getOralHistoryStats?.() || { questions: 0, answers: 0, confirmed: 0 };
     return {
       memories: memories.length,
       halls: new Set(memories.map((memory) => memory.hall)).size,
@@ -1149,6 +1168,9 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
       voiceLinks: voiceStats.memoryLinks,
       voiceTranscripts: voiceStats.transcripts,
       confirmedVoiceTranscripts: voiceStats.confirmedTranscripts,
+      oralHistoryQuestions: oralHistoryStats.questions,
+      oralHistoryAnswers: oralHistoryStats.answers,
+      confirmedOralHistoryAnswers: oralHistoryStats.confirmed,
       capsules: capsuleStats.capsules,
       capsuleMediaLinks: capsuleStats.mediaLinks
     };
@@ -1642,6 +1664,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     ...(revisionDatabase || {}),
     ...(revisitIntentDatabase || {}),
     ...(timeCalibrationDatabase || {}),
+    ...(oralHistoryDatabase || {}),
     listRecentMemoryRevisions,
     searchClues,
     searchMemories,

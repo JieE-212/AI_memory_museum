@@ -8,6 +8,7 @@ const pwaCss = read("public/pwa.css");
 const archaeologyCss = read("public/archaeology.css");
 const mediaCss = read("public/media.css");
 const voiceCss = read("public/voice.css");
+const oralHistoryCss = read("public/oral-histories.css");
 const capsuleCss = read("public/capsules.css");
 const sharePrivacyCss = read("public/share-privacy.css");
 const mediaEvidenceCss = read("public/media-evidence.css");
@@ -24,6 +25,8 @@ const app = read("public/assets/app.js");
 const pwaApp = read("public/assets/pwa.js");
 const mediaApp = read("public/assets/media.js");
 const voiceApp = read("public/assets/voice.js");
+const voiceCaptureApp = read("public/assets/voice-capture.js");
+const oralHistoryApp = read("public/assets/oral-histories.js");
 const capsuleCryptoApp = read("public/assets/capsule-crypto.js");
 const capsuleApp = read("public/assets/capsules.js");
 const sharePrivacyApp = read("public/assets/share-privacy.js");
@@ -58,7 +61,8 @@ const voiceDetailMarkup = globalThis.TimeIsleVoice.renderDetailVoices({ voices: 
 const queriedIds = [app, pwaApp, mediaApp, voiceApp, capsuleApp, sharePrivacyApp, mediaEvidenceApp, portabilityApp, exhibitionsApp, revisitsApp, cluesApp].flatMap((source) => [
   ...source.matchAll(/(?:querySelector\("#|getElementById\(")([a-zA-Z0-9_-]+)"\)/g)
 ].map((match) => match[1])).concat(
-  [...sharePrivacyApp.matchAll(/^\s+\w+: "(share[a-zA-Z0-9_-]+)",?$/gm)].map((match) => match[1])
+  [...sharePrivacyApp.matchAll(/^\s+\w+: "(share[a-zA-Z0-9_-]+)",?$/gm)].map((match) => match[1]),
+  [...oralHistoryApp.matchAll(/^\s+\w+: "(oralHistory[a-zA-Z0-9_-]+)",?$/gm)].map((match) => match[1])
 );
 const htmlIds = [...html.matchAll(/\sid="([a-zA-Z0-9_-]+)"/g)].map((match) => match[1]);
 const tabletCssStart = css.indexOf("@media (max-width: 980px)");
@@ -87,9 +91,9 @@ const compactButtonRule = ruleDeclarations(compactMobileCss, ".nav-button");
 
 const checks = [
   ["V7.1 PWA stays inside the four-view information architecture", (html.match(/class="nav-button/g) || []).length === 4 && html.includes('id="pwaInstallPanel" hidden') && html.indexOf('id="pwaInstallPanel"') > html.indexOf('data-view-panel="data"') && !html.includes('data-view="pwa"')],
-  ["PWA resources load in manifest-style-controller-app order", html.includes('/manifest.webmanifest?v=8.0.0') && html.indexOf('/styles.css?v=7.2.0') < html.indexOf('/pwa.css?v=8.0.0') && html.indexOf('/assets/pwa.js?v=8.0.0') < html.indexOf('/assets/app.js?v=8.0.0')],
+  ["PWA resources load in manifest-style-controller-app order", html.includes('/manifest.webmanifest?v=9.0.0') && html.indexOf('/styles.css?v=7.2.0') < html.indexOf('/pwa.css?v=9.0.0') && html.indexOf('/assets/pwa.js?v=9.0.0') < html.indexOf('/assets/app.js?v=9.0.0')],
   ["PWA install uses progressive disclosure without private persistence", pwaApp.includes('beforeinstallprompt') && pwaApp.includes('appinstalled') && pwaApp.includes('updateViaCache: "none"') && !/localStorage|sessionStorage|indexedDB|\bcaches\b/iu.test(pwaApp) && pwaCss.includes('.pwa-install-panel [hidden]')],
-  ["V7.2 记忆年轮保持四导航并默认按需展开", (html.match(/class="nav-button/g) || []).length === 4 && html.includes('id="revisionTimelineDetails"') && !html.includes('<details class="revision-timeline-card" id="revisionTimelineDetails" open') && !html.includes('data-view="revisions"') && html.indexOf('/assets/revisions.js?v=7.2.0') < html.indexOf('/assets/app.js?v=8.0.0') && app.includes("TimeIsleRevisions?.createController")],
+  ["V7.2 记忆年轮保持四导航并默认按需展开", (html.match(/class="nav-button/g) || []).length === 4 && html.includes('id="revisionTimelineDetails"') && !html.includes('<details class="revision-timeline-card" id="revisionTimelineDetails" open') && !html.includes('data-view="revisions"') && html.indexOf('/assets/revisions.js?v=7.2.0') < html.indexOf('/assets/app.js?v=9.0.0') && app.includes("TimeIsleRevisions?.createController")],
   ["记忆年轮提供并发保护、二次确认与不覆盖恢复", revisionsApp.includes('"If-Match"') && revisionsApp.includes("data-revision-confirm") && revisionsApp.includes("当前版本不会被删除") && revisionsApp.includes("restoredFromRevisionId") && revisionsApp.includes("error.status === 412") && !/localStorage|sessionStorage|indexedDB/iu.test(revisionsApp)],
   ["记忆年轮移动端克制且不使用渐变", revisionsCss.includes("@media (max-width: 650px)") && revisionsCss.includes("@media (max-width: 360px)") && revisionsCss.includes("min-height: 44px") && !/gradient\s*\(/iu.test(revisionsCss)],
   ["馆藏体检位于归档入口之前且保持只读渐进披露", html.includes('id="collectionHealthDetails"') && html.indexOf('id="collectionHealthDetails"') < html.indexOf('id="exportButton"') && !html.includes('<details class="collection-health-panel" id="collectionHealthDetails" open') && collectionHealthApp.includes("/api/collection-health/scans") && collectionHealthApp.includes("/api/archive/inspect") && collectionHealthApp.includes("不会自动删除或改写") && !/localStorage|sessionStorage|indexedDB/iu.test(collectionHealthApp)],
@@ -150,6 +154,14 @@ const checks = [
   ["实体档案覆盖窄屏安全区、触控和克制视觉", cluesCss.includes("@media (max-width: 650px)") && cluesCss.includes("@media (max-width: 390px)") && ["safe-area-inset-top", "safe-area-inset-right", "safe-area-inset-bottom", "safe-area-inset-left"].every((token) => cluesCss.includes(token)) && cluesCss.includes("min-height: 44px;") && cluesCss.includes("grid-template-columns: 1fr;") && cluesCss.includes("overflow-wrap: anywhere") && !/gradient\s*\(/i.test(cluesCss)],
   ["记忆考古使用局部航线和独立拼图", html.includes('id="routesPanel"') && html.includes('id="puzzleDialog"') && html.includes('id="dialogRouteButton"')],
   ["补一块拼图允许回答或保留不确定", ["puzzleSaveAnswerButton", "puzzleUnknownButton", "puzzleSkipButton"].every((id) => html.includes(`id="${id}"`))],
+  ["口述史保持在时光拼图内且不增加导航", (html.match(/class="nav-button/g) || []).length === 4 && html.includes('id="oralHistorySourceRegion"') && html.includes('<details class="oral-history-panel" id="oralHistoryDetails" hidden>') && html.indexOf('id="timeCalibrationDetails"') < html.indexOf('id="oralHistoryDetails"') && !html.includes('data-view="oral-history"')],
+  ["口述史资源以单段采集、口述控制器、主应用顺序载入", html.indexOf('/assets/voice-capture.js?v=9.0.0') < html.indexOf('/assets/oral-histories.js?v=9.0.0') && html.indexOf('/assets/oral-histories.js?v=9.0.0') < html.indexOf('/assets/app.js?v=9.0.0') && html.indexOf('/voice.css') < html.indexOf('/oral-histories.css?v=9.0.0')],
+  ["单段声音采集不绑定展品并覆盖权限与孤儿清理", voiceCaptureApp.includes('/api/voice/uploads?filename=') && voiceCaptureApp.includes('/api/voice/assets/${encodeURIComponent(assetId)}') && !voiceCaptureApp.includes('/api/memories/') && voiceCaptureApp.includes('cancelPermissionRequest(true)') && voiceCaptureApp.includes('stopTracks(stream)') && voiceCaptureApp.includes('if (demo) throw new Error')],
+  ["口述史四步要求手工选段、文字和时间含义", ["oralHistoryQuestionStep", "oralHistoryAudioStep", "oralHistorySegmentStep", "oralHistoryTranscriptStep", "oralHistoryAcknowledge"].every((id) => html.includes(`id="${id}"`)) && (html.match(/name="oralHistoryResolutionChoice"/g) || []).length === 5 && html.includes('这里不会自动转写') && oralHistoryApp.includes('MIN_SEGMENT_MS = 500')],
+  ["口述史保存具备版本、幂等与人工确认边界", oralHistoryApp.includes('"If-Match": state.etag') && oralHistoryApp.includes('questionSetSha256: state.questionSetSha256') && oralHistoryApp.includes('confirmTranscript: true') && oralHistoryApp.includes('submissionId: state.submissionId') && oralHistoryApp.includes('selectedQuestionKey') && oralHistoryApp.includes('questionKey || id') && oralHistoryApp.includes('"superseded", "withdrawn"')],
+  ["口述史 Demo 零写且冲突保留本地草稿", oralHistoryApp.includes('if (state.demo || hostBusy || isBusy()') && oralHistoryApp.includes('本次草稿仍保留') && oralHistoryApp.includes('state.selectedQuestionKey = ""') && voiceCaptureApp.includes('不请求麦克风、不打开文件选择')],
+  ["拼图 busy owner 防止时间校准与口述史互相提前解锁", app.includes('puzzleBusyOwners: new Set()') && app.includes('setPuzzleBusy("calibration", busy)') && app.includes('setPuzzleBusy("oralHistory", busy)') && app.includes('item !== "calibration"') && app.includes('item !== "oralHistory"')],
+  ["口述史窄屏保持 320/390 触控、安全区与无渐变", oralHistoryCss.includes('@media (max-width: 390px)') && oralHistoryCss.includes('@media (max-width: 320px)') && oralHistoryCss.includes('min-height: 44px;') && oralHistoryCss.includes('max-width: 100%;') && ["safe-area-inset-right", "safe-area-inset-bottom", "safe-area-inset-left"].every((token) => oralHistoryCss.includes(token)) && !/gradient\s*\(/iu.test(oralHistoryCss)],
   ["回顾标签具备完整 ARIA 关联", (html.match(/role="tab"/g) || []).length === 4 && (html.match(/role="tabpanel"/g) || []).length === 4 && (html.match(/role="tab"[^>]*aria-controls="/g) || []).length === 4],
   ["非导航视图切换聚焦标题且尊重减少动态偏好", app.includes('switchView(button.dataset.view)') && app.includes('switchView(button.dataset.goView, { focusHeading: true })') && app.includes('querySelector("h1")?.focus({ preventScroll: true })') && app.includes('matchMedia?.("(prefers-reduced-motion: reduce)")') && (html.match(/<h1 tabindex="-1">/g) || []).length === 4],
   ["详情内切换展品重置滚动并聚焦标题", html.includes('id="dialogTitle" tabindex="-1"') && app.includes("elements.dialogBody.scrollTop = 0") && app.includes("elements.dialogTitle.focus({ preventScroll: true })")],
@@ -164,7 +176,7 @@ const checks = [
   ["页面不再暴露阶段治理术语", !/Phase\s*\d+|Reviewer|插件生态|运行时沙箱|发布审批/.test(html)],
   ["页面没有内联脚本或样式", !/<script(?!\s+src=)/i.test(html) && !/<style/i.test(html) && !/\sstyle="/i.test(html)],
   ["Vercel 静态页面复用完整安全响应头", hasVercelSecurityHeaders(vercel)],
-  ["样式未使用渐变", !/gradient\s*\(/i.test(`${css}\n${pwaCss}\n${archaeologyCss}\n${mediaCss}\n${voiceCss}\n${capsuleCss}\n${sharePrivacyCss}\n${mediaEvidenceCss}\n${mediaCompareCss}\n${mediaOcrCss}\n${mediaLabCss}\n${exhibitionsCss}\n${revisitsCss}\n${cluesCss}`)],
+  ["样式未使用渐变", !/gradient\s*\(/i.test(`${css}\n${pwaCss}\n${archaeologyCss}\n${mediaCss}\n${voiceCss}\n${oralHistoryCss}\n${capsuleCss}\n${sharePrivacyCss}\n${mediaEvidenceCss}\n${mediaCompareCss}\n${mediaOcrCss}\n${mediaLabCss}\n${exhibitionsCss}\n${revisitsCss}\n${cluesCss}`)],
   ["前端覆盖核心 API", ["/api/memories", "/api/analyze", "/api/search", "/api/guide", "/api/insights", "/api/privacy", "/api/archaeology/routes", "/api/archaeology/puzzle"].every((endpoint) => app.includes(endpoint))],
   ["图片前端覆盖安全上传和关联 API", ["/uploads", "/complete", "/api/memories/"].every((endpoint) => mediaApp.includes(endpoint))],
   ["附件关联失败后复用已创建展品而不重复新增", app.includes("const targetMemoryId = state.editingMemoryId || state.pendingSaveMemoryId;") && app.includes('method: targetMemoryId ? "PUT" : "POST"') && app.indexOf("state.pendingSaveMemoryId = saved.memory.id") < app.indexOf('runAttachmentControllers("saveToMemory", saved.memory.id)') && app.includes("不会重复创建展品") && app.includes('return "继续完成保存"') && app.includes('state.pendingSaveMemoryId = "";')],
@@ -181,7 +193,7 @@ const checks = [
   ["考古结论保留人工确认边界", archaeology.includes('sameEvent: "unassessed"') && archaeology.includes("requiresConfirmation") && archaeology.includes("sourceQuote")],
   ["服务端不再加载旧运维治理模块", !server.includes("createOperationsService") && !server.includes("phase29") && !server.includes("phase30")],
   ["npm 命令保持精简", Object.keys(pkg.scripts || {}).length <= 7],
-  ["核心文件规模已收敛", lineCount(server) < 1400 && lineCount(app) < 1400 && lineCount(pwaApp) < 250 && lineCount(mediaApp) < 1150 && lineCount(voiceApp) < 900 && lineCount(capsuleApp) < 1000 && lineCount(sharePrivacyApp) < 600 && lineCount(mediaEvidenceApp) < 850 && lineCount(mediaCompareApp) < 850 && lineCount(mediaOcrApp) < 750 && lineCount(mediaLabApp) < 500 && lineCount(portabilityApp) < 250 && lineCount(exhibitionsApp) < 850 && lineCount(revisitsApp) < 550 && lineCount(revisionsApp) < 400 && lineCount(cluesApp) < 750 && lineCount(collectionHealthApp) < 350 && lineCount(timeCalibrationApp) < 850 && lineCount(css) < 1600 && lineCount(pwaCss) < 250 && lineCount(archaeologyCss) < 400 && lineCount(mediaCss) < 700 && lineCount(voiceCss) < 450 && lineCount(capsuleCss) < 650 && lineCount(sharePrivacyCss) < 200 && lineCount(mediaEvidenceCss) < 500 && lineCount(exhibitionsCss) < 800 && lineCount(revisitsCss) < 450 && lineCount(revisionsCss) < 350 && lineCount(cluesCss) < 550 && lineCount(collectionHealthCss) < 300 && lineCount(timeCalibrationCss) < 500 && lineCount(archaeology) < 900 && lineCount(archaeologyBackup) < 300]
+  ["核心文件规模已收敛", lineCount(server) < 1400 && lineCount(app) < 1400 && lineCount(pwaApp) < 250 && lineCount(mediaApp) < 1150 && lineCount(voiceApp) < 900 && lineCount(voiceCaptureApp) < 650 && lineCount(oralHistoryApp) < 1200 && lineCount(capsuleApp) < 1000 && lineCount(sharePrivacyApp) < 600 && lineCount(mediaEvidenceApp) < 850 && lineCount(mediaCompareApp) < 850 && lineCount(mediaOcrApp) < 750 && lineCount(mediaLabApp) < 500 && lineCount(portabilityApp) < 250 && lineCount(exhibitionsApp) < 850 && lineCount(revisitsApp) < 550 && lineCount(revisionsApp) < 400 && lineCount(cluesApp) < 750 && lineCount(collectionHealthApp) < 350 && lineCount(timeCalibrationApp) < 850 && lineCount(css) < 1600 && lineCount(pwaCss) < 250 && lineCount(archaeologyCss) < 400 && lineCount(mediaCss) < 700 && lineCount(voiceCss) < 450 && lineCount(oralHistoryCss) < 600 && lineCount(capsuleCss) < 650 && lineCount(sharePrivacyCss) < 200 && lineCount(mediaEvidenceCss) < 500 && lineCount(exhibitionsCss) < 800 && lineCount(revisitsCss) < 450 && lineCount(revisionsCss) < 350 && lineCount(cluesCss) < 550 && lineCount(collectionHealthCss) < 300 && lineCount(timeCalibrationCss) < 500 && lineCount(archaeology) < 900 && lineCount(archaeologyBackup) < 300]
 ];
 
 let failed = 0;

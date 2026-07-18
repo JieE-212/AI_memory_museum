@@ -18,12 +18,39 @@ async function main() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "time-isle-inspection-check-"));
   try {
     await checkSchema12ForwardingAndCleanup(root);
+    await checkSchema13OralHistoryForwarding(root);
     checkDependencyBoundary(root);
     checkSafeCounts();
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
   console.log(`Archive inspection checks passed: ${assertions} assertions.`);
+}
+
+async function checkSchema13OralHistoryForwarding(root) {
+  const oralValidator = () => true;
+  let forwarded = null;
+  const api = createArchiveInspectionApi({
+    mediaRoot: root,
+    supportedSchemaVersion: 13,
+    validateVoiceBackup: () => true,
+    validateTimeCalibrationBackup: () => true,
+    validateOralHistoryBackup: oralValidator,
+    prepareMediaArchive: async (_source, options) => {
+      forwarded = options;
+      return preparedFixture({ schemaVersion: 13, oralQuestionCount: 2, oralAnswerCount: 3, confirmedOralAnswerCount: 1 });
+    },
+    sendJson(_response, status, payload) { return { status, payload }; },
+    httpError(statusCode, message) { return Object.assign(new Error(message), { statusCode }); }
+  });
+  const result = await api.handle(requestFixture(), responseFixture(), { pathname: "/api/archive/inspect" });
+  equal(result.status, 200, "schema 13 口述史归档只读验真成功");
+  equal(forwarded.validateOralHistoryBackup, oralValidator, "口述史严格 validator 转发到正式 prepare 链");
+  equal(result.payload.inspection.counts.oralHistoryQuestions, 2, "验真摘要只公开口述问题安全计数");
+  equal(result.payload.inspection.counts.oralHistoryAnswers, 3, "验真摘要只公开口述回答安全计数");
+  equal(result.payload.inspection.counts.confirmedOralHistoryAnswers, 1, "验真摘要公开人工确认回答安全计数");
+  const serialized = JSON.stringify(result.payload.inspection);
+  equal(/(?:transcriptText|segmentStartMs|intervalStart|sourceKey|assetId)/u.test(serialized), false, "验真摘要不泄露口述文字、片段、日期、来源键或声音 ID");
 }
 
 async function checkSchema12ForwardingAndCleanup(root) {
@@ -92,6 +119,15 @@ function checkDependencyBoundary(root) {
     TypeError,
     "schema 12 验真缺少时间校准 validator 时构造即失败"
   );
+  throws(
+    () => createArchiveInspectionApi({
+      ...base,
+      supportedSchemaVersion: 13,
+      validateTimeCalibrationBackup: () => true
+    }),
+    TypeError,
+    "schema 13 验真缺少口述史 validator 时构造即失败"
+  );
   ok(
     createArchiveInspectionApi({ ...base, supportedSchemaVersion: 11 }),
     "schema 11 兼容验真不虚构 schema 12 依赖"
@@ -111,6 +147,7 @@ function checkSafeCounts() {
 function preparedFixture(options = {}) {
   const count = options.calibrationCount || 0;
   const mode = options.mode || "full";
+  const schemaVersion = options.schemaVersion || 12;
   const timeCalibrations = mode === "redacted"
     ? { mode: "redacted-summary", calibrationCount: count, uncertainCount: count, alternativesCount: 0, note: "fixed" }
     : { mode: "full", schemaVersion: 12, calibrations: Array.from({ length: count }, (_, index) => ({ id: `calibration-${index + 1}` })) };
@@ -118,12 +155,34 @@ function preparedFixture(options = {}) {
     verified: true,
     manifest: {
       formatVersion: 2,
-      schemaVersion: 12,
+      schemaVersion,
       mode,
       exportedAt: "2026-07-18T10:00:00.000Z",
       entries: []
     },
-    collection: { memories: [], timeCalibrations },
+    collection: {
+      memories: [],
+      timeCalibrations,
+      ...(schemaVersion >= 13 ? {
+        oralHistories: mode === "redacted"
+          ? {
+              mode: "redacted-summary",
+              questionCount: options.oralQuestionCount || 0,
+              answerCount: options.oralAnswerCount || 0,
+              confirmedAnswerCount: options.confirmedOralAnswerCount || 0,
+              note: "fixed"
+            }
+          : {
+              mode: "full",
+              schemaVersion: 13,
+              questions: Array.from({ length: options.oralQuestionCount || 0 }, (_, index) => ({ id: `oral-question-${index}` })),
+              answers: Array.from({ length: options.oralAnswerCount || 0 }, (_, index) => ({
+                id: `oral-answer-${index}`,
+                status: index < (options.confirmedOralAnswerCount || 0) ? "confirmed" : "draft"
+              }))
+            }
+      } : {})
+    },
     assets: []
   };
 }

@@ -21,10 +21,9 @@ const state = {
   routeRequest: 0,
   puzzle: null,
   puzzleSession: 0,
-  puzzleMutation: false,
+  puzzleBusyOwners: new Set(),
   selectedMemoryId: ""
 };
-
 const elements = {
   navButtons: [...document.querySelectorAll("[data-view]")],
   viewPanels: [...document.querySelectorAll("[data-view-panel]")],
@@ -113,20 +112,17 @@ const elements = {
   toast: document.querySelector("#toast"),
   footerVersion: document.querySelector("#footerVersion")
 };
-
 const sampleMemories = [
   "毕业那天傍晚，我们在操场尽头站了很久。大家都说以后常联系，但真正想说的话反而没有说出口。",
   "有次出差很晚才到家，妈妈没有多问，只把厨房里温着的面端出来。那一刻突然觉得，回家是有人替你留着一盏灯。",
   "雨停后我没有立刻回去，而是沿着河边多走了一段。路灯落在积水里，普通的一天忽然安静了下来。",
   "最迷茫的那段时间，一个朋友突然打来电话。他没有劝我振作，只陪我把混乱的话说完。"
 ];
-
 let searchTimer = null;
 let toastTimer = null;
 let mediaController = null, voiceController = null;
 let mediaEvidenceController = null, portabilityController = null, mediaCompareControllers = [], mediaLabController = null;
-let exhibitionsController = null, capsulesController = null, revisitsController = null, cluesController = null, revisionsController = null, collectionHealthController = null, timeCalibrationController = null;
-
+let exhibitionsController = null, capsulesController = null, revisitsController = null, cluesController = null, revisionsController = null, collectionHealthController = null, timeCalibrationController = null, oralHistoriesController = null;
 bindEvents();
 initialize();
 
@@ -162,10 +158,10 @@ async function initialize() {
     cluesController = window.TimeIsleClues?.createEntityDialogController({ demo: demo.interviewDemo, onOpenMemory: openMemory, onDataChanged: reloadMemories }) || null;
     revisionsController = window.TimeIsleRevisions?.createController({ demo: demo.interviewDemo, onOpenMemory: openMemory, onRestored: async (memory) => { await reloadMemories(); await openMemory(memory.id); } }) || null;
     collectionHealthController = window.TimeIsleCollectionHealth?.createController({ demo: demo.interviewDemo }) || null;
-    initializeTimeCalibrationController(demo.interviewDemo);
+    initializeTimeCalibrationController(options.voicePolicy, demo.interviewDemo);
     populateOptions();
     renderApp();
-    elements.footerVersion.textContent = `v${version.version || "8.0.0"}`;
+    elements.footerVersion.textContent = `v${version.version || "9.0.0"}`;
     setRuntimeStatus(demo.interviewDemo ? "Demo 已连接" : "本地馆藏已连接", "ready");
     const initialView = normalizeView(location.hash.replace("#", ""));
     switchView(initialView, { updateHash: false });
@@ -176,7 +172,6 @@ async function initialize() {
     showToast(`无法连接项目：${error.message}`, true);
   }
 }
-
 function initializeVoiceController(policy, demo) {
   try {
     if (typeof window.TimeIsleVoice?.createController !== "function") throw new Error("声音模块未加载");
@@ -187,25 +182,30 @@ function initializeVoiceController(policy, demo) {
     showVoiceUnavailable("声音模块未能加载，请刷新页面重试。", "声音模块暂不可用；其他馆藏功能不受影响。");
   }
 }
-
-function initializeTimeCalibrationController(demo) {
+function initializeTimeCalibrationController(voicePolicy, demo) {
   try {
     if (typeof window.TimeIsleTimeCalibrations?.createController !== "function") throw new Error("时间校准模块未加载");
     timeCalibrationController = window.TimeIsleTimeCalibrations.createController({
       demo,
-      onBusyChange: (busy) => setPuzzleBusy(busy, { fromTimeCalibration: true }),
+      onBusyChange: (busy) => setPuzzleBusy("calibration", busy),
       onChanged: async () => {
         state.insights = null;
         const timelineActive = elements.insightTabs.some((button) => button.dataset.insightTab === "timeline" && button.classList.contains("is-active"));
         if (timelineActive) await loadInsights(true);
+        await oralHistoriesController?.refresh?.();
       }
     });
   } catch (error) {
     console.error("时间校准模块初始化失败：", error);
     timeCalibrationController = null;
   }
+  try {
+    oralHistoriesController = window.TimeIsleOralHistories?.createController({ policy: voicePolicy, demo, dialog: elements.puzzleDialog, closeButton: elements.puzzleCloseButton, onBusyChange: (busy) => setPuzzleBusy("oralHistory", busy), onChanged: () => setTimeout(() => timeCalibrationController?.refreshLedger?.(), 0) }) || null;
+  } catch (error) {
+    console.error("口述史模块初始化失败：", error);
+    oralHistoriesController = null;
+  }
 }
-
 function bindEvents() {
   elements.navButtons.forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
   document.querySelectorAll("[data-go-view]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.goView, { focusHeading: true })));
@@ -268,12 +268,13 @@ function bindEvents() {
   elements.puzzleConfirmButton.addEventListener("click", confirmPuzzleEvent);
   elements.puzzleAnswer.addEventListener("input", updatePuzzleAnswerAction);
   elements.puzzleDialog.addEventListener("cancel", (event) => {
-    if (state.puzzleMutation) event.preventDefault();
+    if (state.puzzleBusyOwners.size) event.preventDefault();
   });
   elements.puzzleDialog.addEventListener("close", () => {
     state.puzzleSession += 1;
-    state.puzzleMutation = false;
+    state.puzzleBusyOwners.clear();
     timeCalibrationController?.reset();
+    oralHistoriesController?.reset();
     destroyMediaCompare();
   });
 }
@@ -882,7 +883,7 @@ async function openPuzzle(leftId, rightId) {
   if (!leftId || !rightId || leftId === rightId) return;
   const session = ++state.puzzleSession;
   state.puzzle = null;
-  state.puzzleMutation = false;
+  state.puzzleBusyOwners.clear();
   resetPuzzleDialog();
   if (!elements.puzzleDialog.open) elements.puzzleDialog.showModal();
   requestAnimationFrame(() => document.querySelector("#puzzleTitle")?.focus({ preventScroll: true }));
@@ -933,6 +934,7 @@ function renderPuzzle() {
     demo: Boolean(state.demo?.interviewDemo),
     sessionKey: state.puzzleSession
   });
+  oralHistoriesController?.syncPuzzle({ payload, demo: Boolean(state.demo?.interviewDemo), sessionKey: state.puzzleSession });
 
   const questionAlreadyHandled = (payload.savedQuestions || []).some((item) => item.question === payload.question?.question);
   const dateQuestionHandledByCalibration = calibrationTarget?.handlesDateQuestion && payload.question?.basedOn?.field === "date";
@@ -973,7 +975,7 @@ function renderPuzzleEvidence(item, modifier) {
 
 async function savePuzzleAnswer(action) {
   const pair = state.puzzle?.puzzle?.pair;
-  if (!pair || state.puzzleMutation) return;
+  if (!pair || state.puzzleBusyOwners.size) return;
   const answer = elements.puzzleAnswer.value.trim();
   if (action === "answer" && !answer) {
     elements.puzzleStatus.textContent = "请先写下补充，或选择保留不确定。";
@@ -982,7 +984,7 @@ async function savePuzzleAnswer(action) {
   }
   const session = state.puzzleSession;
   const activePair = puzzlePairKey(pair);
-  setPuzzleBusy(true);
+  setPuzzleBusy("host", true);
   try {
     const result = await requestJson("/api/archaeology/questions", {
       method: "POST",
@@ -1005,13 +1007,13 @@ async function savePuzzleAnswer(action) {
     elements.puzzleStatus.classList.remove("is-success");
     elements.puzzleStatus.classList.add("is-error");
   } finally {
-    if (session === state.puzzleSession) setPuzzleBusy(false);
+    if (session === state.puzzleSession) setPuzzleBusy("host", false);
   }
 }
 
 async function confirmPuzzleEvent() {
   const pair = state.puzzle?.puzzle?.pair;
-  if (!pair || state.puzzleMutation) return;
+  if (!pair || state.puzzleBusyOwners.size) return;
   if (state.puzzle?.event) {
     if (state.demo?.interviewDemo) return;
     await removePuzzleEvent();
@@ -1020,7 +1022,7 @@ async function confirmPuzzleEvent() {
   if (!window.confirm("确认把这两段记录保存为同一往事的两个版本吗？原文不会被合并或改写。")) return;
   const session = state.puzzleSession;
   const activePair = puzzlePairKey(pair);
-  setPuzzleBusy(true);
+  setPuzzleBusy("host", true);
   elements.puzzleConfirmButton.textContent = "保存中…";
   try {
     const result = await requestJson("/api/archaeology/events", {
@@ -1043,18 +1045,18 @@ async function confirmPuzzleEvent() {
     elements.puzzleConfirmButton.disabled = false;
     elements.puzzleConfirmButton.textContent = "确认属于同一往事";
   } finally {
-    if (session === state.puzzleSession) setPuzzleBusy(false);
+    if (session === state.puzzleSession) setPuzzleBusy("host", false);
   }
 }
 
 async function removePuzzleEvent() {
   const eventId = state.puzzle?.event?.id;
   const pair = state.puzzle?.puzzle?.pair;
-  if (!eventId || !pair || state.puzzleMutation) return;
-  if (!window.confirm("解除这组时光拼图吗？两段原文会继续保留；已保存的字段证据与这组时间校准会被移除。")) return;
+  if (!eventId || !pair || state.puzzleBusyOwners.size) return;
+  if (!window.confirm("解除这组时光拼图吗？两段原文会继续保留；已保存的字段证据、时间校准与这组口述来源会一并移除。")) return;
   const session = state.puzzleSession;
   const activePair = puzzlePairKey(pair);
-  setPuzzleBusy(true);
+  setPuzzleBusy("host", true);
   elements.puzzleConfirmButton.textContent = "解除中…";
   try {
     const result = await requestJson(`/api/archaeology/events/${encodeURIComponent(eventId)}`, { method: "DELETE" });
@@ -1063,6 +1065,7 @@ async function removePuzzleEvent() {
     state.puzzle.event = null;
     state.puzzle.decision = null;
     timeCalibrationController?.reset();
+    oralHistoriesController?.reset();
     renderCollection();
     renderPuzzle();
     await loadRoutes(state.routeFocusId, true);
@@ -1074,27 +1077,30 @@ async function removePuzzleEvent() {
     elements.puzzleStatus.classList.remove("is-success");
     elements.puzzleStatus.classList.add("is-error");
   } finally {
-    if (session === state.puzzleSession) setPuzzleBusy(false);
+    if (session === state.puzzleSession) setPuzzleBusy("host", false);
   }
 }
 
-function setPuzzleBusy(busy, options = {}) {
-  state.puzzleMutation = busy;
-  elements.puzzleSaveAnswerButton.disabled = busy || !elements.puzzleAnswer.value.trim();
-  elements.puzzleUnknownButton.disabled = busy;
-  elements.puzzleSkipButton.disabled = busy;
-  elements.puzzleConfirmButton.disabled = busy || Boolean(state.demo?.interviewDemo && state.puzzle?.event);
-  elements.puzzleCloseButton.disabled = busy;
-  if (!options.fromTimeCalibration) timeCalibrationController?.setHostBusy?.(busy);
+function setPuzzleBusy(owner, busy) {
+  if (busy) state.puzzleBusyOwners.add(owner); else state.puzzleBusyOwners.delete(owner);
+  const active = state.puzzleBusyOwners.size > 0;
+  elements.puzzleSaveAnswerButton.disabled = active || !elements.puzzleAnswer.value.trim();
+  elements.puzzleUnknownButton.disabled = active;
+  elements.puzzleSkipButton.disabled = active;
+  elements.puzzleConfirmButton.disabled = active || Boolean(state.demo?.interviewDemo && state.puzzle?.event);
+  elements.puzzleCloseButton.disabled = active;
+  timeCalibrationController?.setHostBusy?.([...state.puzzleBusyOwners].some((item) => item !== "calibration"));
+  oralHistoriesController?.setHostBusy?.([...state.puzzleBusyOwners].some((item) => item !== "oralHistory"));
 }
 
 function updatePuzzleAnswerAction() {
-  elements.puzzleSaveAnswerButton.disabled = state.puzzleMutation || !elements.puzzleAnswer.value.trim();
+  elements.puzzleSaveAnswerButton.disabled = Boolean(state.puzzleBusyOwners.size) || !elements.puzzleAnswer.value.trim();
 }
 
 function resetPuzzleDialog() {
   destroyMediaCompare();
   timeCalibrationController?.reset();
+  oralHistoriesController?.reset();
   elements.puzzleBody.innerHTML = "";
   elements.puzzleStatus.textContent = "正在逐条核对原文证据…";
   elements.puzzleStatus.classList.remove("is-success", "is-error");

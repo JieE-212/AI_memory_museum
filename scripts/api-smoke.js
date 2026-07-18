@@ -200,7 +200,7 @@ async function runArchiveMediaFlow() {
         body: archive
       });
       const inspection = await inspectionResponse.json();
-      assert("备份验真只读返回可恢复边界并清理暂存", inspectionResponse.ok && inspection.inspection.restorable === true && inspection.inspection.schemaVersion === 12 && inspection.inspection.counts.memories === 2 && inspection.inspection.counts.mediaAssets === 2 && inspection.inspection.counts.voices === 1 && inspection.inspection.counts.revisions === 2 && inspection.inspection.counts.revisitIntents === 1 && inspection.inspection.counts.timeCalibrations === 0 && (await getJson(`${baseUrl}/api/memories`)).payload.memories.length === 2 && !fs.existsSync(path.join(mediaRoot, ".inspect")));
+      assert("备份验真只读返回可恢复边界并清理暂存", inspectionResponse.ok && inspection.inspection.restorable === true && inspection.inspection.schemaVersion === 13 && inspection.inspection.counts.memories === 2 && inspection.inspection.counts.mediaAssets === 2 && inspection.inspection.counts.voices === 1 && inspection.inspection.counts.revisions === 2 && inspection.inspection.counts.revisitIntents === 1 && inspection.inspection.counts.timeCalibrations === 0 && inspection.inspection.counts.oralHistoryQuestions === 0 && inspection.inspection.counts.oralHistoryAnswers === 0 && (await getJson(`${baseUrl}/api/memories`)).payload.memories.length === 2 && !fs.existsSync(path.join(mediaRoot, ".inspect")));
       const archiveCollection = await getJson(`${baseUrl}/api/memories/export`);
       const archivedEntityCount = archiveCollection.payload.entities.entities.length;
       const archivedEntityId = archiveCollection.payload.entities.entities[0].id;
@@ -218,7 +218,7 @@ async function runArchiveMediaFlow() {
         body: archive
       });
       const restored = await restoreResponse.json();
-      assert("完整归档以单次事务恢复展品、图片、声音、胶囊、展览、回访、意愿、年轮、时间校准与实体图", restoreResponse.ok && restored.imported === 2 && restored.media.assetsCreated === 2 && restored.media.links === 2 && restored.media.observations === 3 && restored.voices.assets === 1 && restored.voices.memoryLinks === 1 && restored.voices.transcripts === 1 && restored.capsules.capsules === 2 && restored.capsules.mediaLinks === 2 && restored.exhibitions.exhibitions === 1 && restored.revisits.states === 2 && restored.revisitIntents.intents === 1 && restored.revisions.revisions === 2 && restored.timeCalibrations.calibrations === 0 && restored.entities.entities === archivedEntityCount && restored.idMap.entities[archivedEntityId] && restored.idMap.revisitIntents[rightId] === restored.idMap.memories[rightId]);
+      assert("完整归档以单次事务恢复展品、图片、声音、口述史、胶囊、展览、回访、意愿、年轮、时间校准与实体图", restoreResponse.ok && restored.imported === 2 && restored.media.assetsCreated === 2 && restored.media.links === 2 && restored.media.observations === 3 && restored.voices.assets === 1 && restored.voices.memoryLinks === 1 && restored.voices.transcripts === 1 && restored.oralHistories.questions === 0 && restored.oralHistories.answers === 0 && restored.capsules.capsules === 2 && restored.capsules.mediaLinks === 2 && restored.exhibitions.exhibitions === 1 && restored.revisits.states === 2 && restored.revisitIntents.intents === 1 && restored.revisions.revisions === 2 && restored.timeCalibrations.calibrations === 0 && restored.entities.entities === archivedEntityCount && restored.idMap.entities[archivedEntityId] && restored.idMap.revisitIntents[rightId] === restored.idMap.memories[rightId]);
       const restoredLeftId = restored.idMap.memories[leftId];
       const restoredLeftAsset = restored.idMap.assets[leftAsset.id];
       const restoredVoiceId = restored.idMap.voices[sourceVoiceId];
@@ -296,7 +296,7 @@ async function runLocalFlow() {
     assert("离线页明确不缓存或展示私人馆藏", offlineResponse.ok && offlineText.includes("不会展示馆藏、照片、声音或导出内容") && !offlineText.includes("<script"));
 
     const health = await getJson(`${baseUrl}/api/health`);
-    assert("健康检查返回时屿 V8 与 schema 12", health.response.ok && health.response.headers.get("cache-control") === "no-store" && health.payload.ok && health.payload.version === "8.0.0" && health.payload.schemaVersion === 12 && health.payload.name === "时屿" && health.payload.englishName === "TIME ISLE" && health.payload.tagline === "AI 私人记忆策展工具" && health.payload.stats.capsules === 0 && health.payload.stats.timeCalibrations === 0);
+    assert("健康检查返回时屿 V9 与 schema 13", health.response.ok && health.response.headers.get("cache-control") === "no-store" && health.payload.ok && health.payload.version === "9.0.0" && health.payload.schemaVersion === 13 && health.payload.name === "时屿" && health.payload.englishName === "TIME ISLE" && health.payload.tagline === "AI 私人记忆策展工具" && health.payload.stats.capsules === 0 && health.payload.stats.timeCalibrations === 0 && health.payload.stats.oralHistoryQuestions === 0 && health.payload.stats.oralHistoryAnswers === 0);
     assert("本地模式使用 SQLite", health.payload.mode === "local" && health.payload.storage === "local-sqlite");
     assert("健康检查声明本地语义线索检索与短词回退", health.payload.search?.engine === "fts5-trigram" && health.payload.search?.shortQueryFallback === "parameterized-like" && health.payload.search?.externalModelRequired === false);
 
@@ -321,7 +321,7 @@ async function runLocalFlow() {
     assert("写请求以 403 拒绝恶意 Origin", maliciousOrigin === 403);
 
     const version = await getJson(`${baseUrl}/api/version`);
-    assert("版本接口描述 V8 核心产品流程", version.response.ok && version.payload.version === "8.0.0" && version.payload.productFlow.join(",") === "记录,AI 整理,照片与声音归档,语义线索检索与讲解,主题策展,记忆回访,时光胶囊与加密分享,记忆考古,历史恢复,安全导出" && version.payload.v7.offlineSharing.includes("AES-256-GCM") && version.payload.v7.pwa.includes("不缓存私人馆藏") && version.payload.v72.concurrency.includes("If-Match") && version.payload.v73.sharePrivacy.includes("浏览器内") && version.payload.v73.revisitIntent.includes("明确选择") && version.payload.v8.uncertainTimeline.includes("不会回写展品日期") && version.payload.v8.provenanceReview.includes("待复核"));
+    assert("版本接口描述 V9 核心产品流程与人工边界", version.response.ok && version.payload.version === "9.0.0" && version.payload.productFlow.join(",") === "记录,AI 整理,照片与声音归档,语义线索检索与讲解,主题策展,记忆回访,时光胶囊与加密分享,记忆考古,口述史回答与时间来源,历史恢复,安全导出" && version.payload.v7.offlineSharing.includes("AES-256-GCM") && version.payload.v7.pwa.includes("不缓存私人馆藏") && version.payload.v72.concurrency.includes("If-Match") && version.payload.v73.sharePrivacy.includes("浏览器内") && version.payload.v73.revisitIntent.includes("明确选择") && version.payload.v8.uncertainTimeline.includes("不会回写展品日期") && version.payload.v8.provenanceReview.includes("待复核") && version.payload.v9.oralHistory.includes("一个问题") && version.payload.v9.humanBoundary.includes("不自动转写") && version.payload.v9.provenance.includes("草稿"));
 
     const demo = await getJson(`${baseUrl}/api/demo/status`);
     assert("本地模式未伪装成公开 Demo", demo.response.ok && demo.payload.interviewDemo === false);
@@ -641,6 +641,7 @@ async function runLocalFlow() {
     assert("隐私接口说明实体同名不自动认定且变更需确认", privacy.payload.dataLocations.some((item) => item.name.includes("实体线索") && item.location.includes("同名默认只是线索")) && privacy.payload.controls.some((item) => item.includes("先预览")));
     assert("隐私接口说明胶囊分表与口令零上传", privacy.payload.dataLocations.some((item) => item.name.includes("时光胶囊") && item.location.includes("不发送给服务端") && item.location.includes("不写入导出文件")));
     assert("隐私接口说明时间校准不回写日期且来源变化待复核", privacy.payload.dataLocations.some((item) => item.name.includes("时间线") && item.location.includes("不会回写展品日期")) && privacy.payload.controls.some((item) => item.includes("来源集合变化") && item.includes("待复核")));
+    assert("隐私接口说明口述史只保存人工选段与文字且草稿不生成日期", privacy.payload.dataLocations.some((item) => item.name.includes("口述史") && item.location.includes("不做自动转写")) && privacy.payload.controls.some((item) => item.includes("仍不确定") && item.includes("不会生成日期来源")));
 
     const fullExport = await getJson(`${baseUrl}/api/memories/export`);
     assert("馆藏备份保留品牌和原文", fullExport.response.ok && fullExport.payload.product === "时屿" && fullExport.payload.productEnglish === "TIME ISLE" && fullExport.payload.memories.some((memory) => memory.rawContent === rawContent));
@@ -648,7 +649,7 @@ async function runLocalFlow() {
     assert("馆藏备份包含已确认主题展览", fullExport.payload.exhibitions.exhibitions.some((item) => item.id === exhibitionId));
     assert("馆藏备份包含回访与当日隐藏状态", fullExport.payload.revisits.mode === "full" && fullExport.payload.revisits.states.length === 2 && fullExport.payload.revisits.states.some((state) => state.memoryId === memoryId && state.viewCount === 1) && fullExport.payload.revisits.states.some((state) => state.memoryId === relatedId && state.dismissedLocalDate === "2026-05-20"));
     assert("馆藏完整备份包含非空 later 回访意愿", fullExport.payload.revisitIntents.mode === "full" && fullExport.payload.revisitIntents.schemaVersion === 11 && fullExport.payload.revisitIntents.intents.length === 1 && fullExport.payload.revisitIntents.intents[0].memoryId === relatedId && fullExport.payload.revisitIntents.intents[0].intent === "later" && fullExport.payload.revisitIntents.intents[0].notBeforeLocalDate === "2027-05-20" && fullExport.payload.revisitIntents.intents[0].notBeforeTimezone === "Asia/Shanghai");
-    assert("schema 12 馆藏备份包含实体、声音、胶囊、修订、回访意愿与时间校准边界", fullExport.payload.schemaVersion === 12 && fullExport.payload.entities.mode === "full" && fullExport.payload.entities.entities.some((entity) => entity.aliases.some((alias) => alias.alias === "老友")) && fullExport.payload.voices.mode === "full" && fullExport.payload.capsules.mode === "full" && fullExport.payload.revisions.mode === "full" && fullExport.payload.revisitIntents.mode === "full" && fullExport.payload.timeCalibrations.mode === "full" && fullExport.payload.timeCalibrations.calibrations.length === 1);
+    assert("schema 13 馆藏备份包含实体、声音、胶囊、修订、回访意愿、时间校准与口述史边界", fullExport.payload.schemaVersion === 13 && fullExport.payload.entities.mode === "full" && fullExport.payload.entities.entities.some((entity) => entity.aliases.some((alias) => alias.alias === "老友")) && fullExport.payload.voices.mode === "full" && fullExport.payload.capsules.mode === "full" && fullExport.payload.revisions.mode === "full" && fullExport.payload.revisitIntents.mode === "full" && fullExport.payload.timeCalibrations.mode === "full" && fullExport.payload.timeCalibrations.calibrations.length === 1 && fullExport.payload.oralHistories.mode === "full" && fullExport.payload.oralHistories.questions.length === 0 && fullExport.payload.oralHistories.answers.length === 0);
 
     await putJson(`${baseUrl}/api/memories/${memoryId}`, { rawContent: "这段原文已被重新整理，不再包含此前的日期、人物或地点线索。", expectedUpdatedAt: updated.payload.memory.updatedAt });
     const revalidatedExport = await getJson(`${baseUrl}/api/memories/export`);
@@ -784,7 +785,7 @@ async function runLocalFlow() {
 
     const beforeRejectedImport = await getJson(`${baseUrl}/api/memories`);
     const futureSchema = await postJson(`${baseUrl}/api/memories/import`, {
-      schemaVersion: 13,
+      schemaVersion: 14,
       mode: "full",
       memories: [{ ...created.payload.memory, id: "future-schema-memory" }],
       entities: { mode: "full", schemaVersion: 7, entities: [] }
@@ -821,18 +822,255 @@ async function runLocalFlow() {
     });
     const { timeCalibrations: omittedTimeCalibrations, ...missingTimeCalibrationBody } = revalidatedExport.payload;
     const missingTimeCalibrations = await postJson(`${baseUrl}/api/memories/import`, missingTimeCalibrationBody);
-    assert("JSON 导入拒绝未来 schema、缺失必需 section、null 回访意愿与缺失时间校准", futureSchema.response.status === 400 && missingEntities.response.status === 400 && missingVoices.response.status === 400 && missingCapsules.response.status === 400 && missingRevisions.response.status === 400 && nullRevisitIntents.response.status === 400 && missingTimeCalibrations.response.status === 400 && omittedTimeCalibrations.mode === "full");
+    const { oralHistories: omittedOralHistories, ...missingOralHistoryBody } = revalidatedExport.payload;
+    const missingOralHistories = await postJson(`${baseUrl}/api/memories/import`, missingOralHistoryBody);
+    assert("JSON 导入拒绝未来 schema、缺失必需 section、null 回访意愿、缺失时间校准与缺失口述史", futureSchema.response.status === 400 && missingEntities.response.status === 400 && missingVoices.response.status === 400 && missingCapsules.response.status === 400 && missingRevisions.response.status === 400 && nullRevisitIntents.response.status === 400 && missingTimeCalibrations.response.status === 400 && omittedTimeCalibrations.mode === "full" && missingOralHistories.response.status === 400 && omittedOralHistories.mode === "full");
     const rejectedArchive = await postJson(`${baseUrl}/api/memories/import`, {
       memories: [{ ...created.payload.memory, id: "corrupt-archive-memory" }],
       archaeology: { mode: "full", events: [null], claims: [], pairDecisions: [], questions: [] }
     });
     const afterRejectedImport = await getJson(`${baseUrl}/api/memories`);
     assert("损坏的考古备份在写入前被拒绝", rejectedArchive.response.status === 400 && afterRejectedImport.payload.memories.length === beforeRejectedImport.payload.memories.length);
+    await runLocalOralHistoryFlow(baseUrl);
     });
   } finally {
     removeDatabase(dbPath);
     removeDirectory(mediaRoot);
   }
+}
+
+async function runLocalOralHistoryFlow(baseUrl) {
+  const suffix = Date.now();
+  const leftId = `oral-left-${suffix}`;
+  const rightId = `oral-right-${suffix}`;
+  for (const memory of [
+    {
+      id: leftId,
+      title: "六月第一种日期",
+      rawContent: "日记写着这次告别发生在 2024 年 6 月 1 日。",
+      exhibitText: "仍待与另一段记录核对。",
+      date: "2024-06-01"
+    },
+    {
+      id: rightId,
+      title: "六月第二种日期",
+      rawContent: "聊天记录把同一次告别记作 2024 年 6 月 3 日。",
+      exhibitText: "保留另一种日期来源。",
+      date: "2024-06-03"
+    }
+  ]) {
+    const created = await postJson(`${baseUrl}/api/memories`, {
+      ...memory,
+      hall: "friends",
+      sourceType: "日记"
+    });
+    assert("口述史 HTTP 场景创建互相冲突但不覆盖的两段记忆", created.response.status === 201);
+  }
+
+  const event = await postJson(`${baseUrl}/api/archaeology/events`, { memoryIds: [leftId, rightId] });
+  const oralUrl = `${baseUrl}/api/oral-histories/events/${encodeURIComponent(event.payload.event.id)}`;
+  const statsBeforeRead = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+  const initial = await getJson(oralUrl);
+  const statsAfterRead = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+  assert(
+    "口述问题只面向已确认事件的真实日期分歧且 GET 零写入",
+    event.response.status === 201 &&
+      initial.response.ok &&
+      initial.payload.eligibility.eligible === true &&
+      initial.payload.question.id === "" &&
+      initial.payload.question.questionKey.startsWith("oral-question:") &&
+      initial.payload.question.sources.length === 2 &&
+      statsAfterRead.oralHistoryQuestions === statsBeforeRead.oralHistoryQuestions &&
+      statsAfterRead.oralHistoryAnswers === statsBeforeRead.oralHistoryAnswers
+  );
+
+  const voiceUpload = await uploadVoice(baseUrl, createVoiceWebm(2_400), "口述日期.webm", "audio/webm");
+  const assetId = voiceUpload.payload.asset.id;
+  assert("口述回答声音作为事件级独立资产上传而不挂靠任意展品", voiceUpload.response.status === 201 && voiceUpload.payload.asset.durationMs === 2_400);
+
+  const draftBody = {
+    questionSetSha256: initial.payload.questionSetSha256,
+    assetId,
+    segmentStartMs: 0,
+    segmentEndMs: 1_200,
+    transcriptText: "我先把这段声音保存成草稿，日期还没有最终确认。",
+    resolutionKind: "day",
+    intervalStart: "2024-06-02",
+    intervalEnd: "2024-06-02",
+    confirmTranscript: false,
+    confirm: true,
+    submissionId: `oral-draft-${suffix}`
+  };
+  const initialEtag = initial.response.headers.get("etag");
+  const draftResponse = await fetch(oralUrl, {
+    method: "PUT",
+    headers: writeHeaders(oralUrl, { "Content-Type": "application/json", "If-Match": initialEtag }),
+    body: JSON.stringify(draftBody)
+  });
+  const draft = await draftResponse.json();
+  const draftReplayResponse = await fetch(oralUrl, {
+    method: "PUT",
+    headers: writeHeaders(oralUrl, { "Content-Type": "application/json", "If-Match": initialEtag }),
+    body: JSON.stringify(draftBody)
+  });
+  const draftReplay = await draftReplayResponse.json();
+  const afterDraftTime = await getJson(`${baseUrl}/api/time-calibrations/events/${encodeURIComponent(event.payload.event.id)}`);
+  assert(
+    "草稿不进入时间来源且丢失响应后的同 submissionId 可安全重放",
+    draftResponse.status === 201 &&
+      draft.currentDraft.status === "draft" &&
+      draft.currentConfirmed === null &&
+      draftReplayResponse.status === 200 &&
+      draftReplay.idempotent === true &&
+      draftReplay.history.length === 1 &&
+      !afterDraftTime.payload.candidates.some((candidate) => candidate.sourceType === "oral-history")
+  );
+
+  const uncertainWorkspace = await getJson(oralUrl);
+  const uncertainBody = {
+    ...draftBody,
+    questionSetSha256: uncertainWorkspace.payload.questionSetSha256,
+    segmentStartMs: 200,
+    segmentEndMs: 1_600,
+    transcriptText: "我认真听过了，但现在仍不能确定到底是哪一天。",
+    resolutionKind: "uncertain",
+    intervalStart: "",
+    intervalEnd: "",
+    confirmTranscript: true,
+    submissionId: `oral-uncertain-${suffix}`
+  };
+  const uncertainResponse = await fetch(oralUrl, {
+    method: "PUT",
+    headers: writeHeaders(oralUrl, { "Content-Type": "application/json", "If-Match": uncertainWorkspace.response.headers.get("etag") }),
+    body: JSON.stringify(uncertainBody)
+  });
+  const uncertain = await uncertainResponse.json();
+  const afterUncertainTime = await getJson(`${baseUrl}/api/time-calibrations/events/${encodeURIComponent(event.payload.event.id)}`);
+  assert(
+    "人工确认但仍不确定的回答只成为口述证据而不伪造日期",
+    uncertainResponse.status === 201 &&
+      uncertain.currentConfirmed.resolutionKind === "uncertain" &&
+      uncertain.history.some((answer) => answer.status === "superseded") &&
+      !afterUncertainTime.payload.candidates.some((candidate) => candidate.sourceType === "oral-history")
+  );
+
+  const dayWorkspace = await getJson(oralUrl);
+  const dayBody = {
+    ...draftBody,
+    questionSetSha256: dayWorkspace.payload.questionSetSha256,
+    segmentStartMs: 300,
+    segmentEndMs: 1_800,
+    transcriptText: "重新核对后，我只确认它发生在六月二日。",
+    resolutionKind: "day",
+    intervalStart: "2024-06-02",
+    intervalEnd: "2024-06-02",
+    confirmTranscript: true,
+    submissionId: `oral-day-${suffix}`
+  };
+  const dayEtag = dayWorkspace.response.headers.get("etag");
+  const dayResponse = await fetch(oralUrl, {
+    method: "PUT",
+    headers: writeHeaders(oralUrl, { "Content-Type": "application/json", "If-Match": dayEtag }),
+    body: JSON.stringify(dayBody)
+  });
+  const day = await dayResponse.json();
+  const dayTime = await getJson(`${baseUrl}/api/time-calibrations/events/${encodeURIComponent(event.payload.event.id)}`);
+  const oralCandidate = dayTime.payload.candidates.find((candidate) => candidate.sourceType === "oral-history");
+  assert(
+    "人工确认的单日回答成为事件级可核验时间来源",
+    dayResponse.status === 201 &&
+      day.currentConfirmed.resolutionKind === "day" &&
+      oralCandidate?.eventId === event.payload.event.id &&
+      oralCandidate.intervalStart === "2024-06-02" &&
+      oralCandidate.questionKey === initial.payload.question.questionKey &&
+      oralCandidate.transcriptExcerpt.includes("重新核对")
+  );
+
+  const staleBody = { ...dayBody, transcriptText: "这条并发新回答不应被写入。", submissionId: `oral-stale-${suffix}` };
+  const staleResponse = await fetch(oralUrl, {
+    method: "PUT",
+    headers: writeHeaders(oralUrl, { "Content-Type": "application/json", "If-Match": dayEtag }),
+    body: JSON.stringify(staleBody)
+  });
+  const afterStale = await getJson(oralUrl);
+  assert("不同 submissionId 的过期写入仍以 412 拒绝且不追加回答", staleResponse.status === 412 && afterStale.payload.history.length === 3);
+
+  const calibrationResponse = await fetch(`${baseUrl}/api/time-calibrations/events/${encodeURIComponent(event.payload.event.id)}`, {
+    method: "PUT",
+    headers: writeHeaders(`${baseUrl}/api/time-calibrations/events/${encodeURIComponent(event.payload.event.id)}`, {
+      "Content-Type": "application/json",
+      "If-Match": dayTime.response.headers.get("etag")
+    }),
+    body: JSON.stringify({
+      resolutionKind: "day",
+      intervalStart: oralCandidate.intervalStart,
+      intervalEnd: oralCandidate.intervalEnd,
+      selectedSourceKeys: [oralCandidate.sourceKey],
+      sourceSetSha256: dayTime.payload.sourceSetSha256,
+      note: "只确认人工口述支持的日期。",
+      confirm: true
+    })
+  });
+  assert("时间校准只能在用户再次确认后选择口述来源", calibrationResponse.status === 201);
+
+  const voiceRange = await fetch(`${baseUrl}/api/voice/assets/${assetId}/content`, { headers: { Range: "bytes=0-9" } });
+  const blockedVoiceDelete = await deleteJson(`${baseUrl}/api/voice/assets/${assetId}`);
+  assert("口述历史引用保护声音播放与删除边界", voiceRange.status === 206 && blockedVoiceDelete.response.status === 409);
+
+  const fullExport = await getJson(`${baseUrl}/api/memories/export`);
+  const oralBackup = fullExport.payload.oralHistories;
+  assert(
+    "schema 13 JSON 明确包含问题、追加式回答与 oral-only 声音索引",
+    oralBackup.mode === "full" &&
+      oralBackup.questions.length === 1 &&
+      oralBackup.answers.length === 3 &&
+      fullExport.payload.voices.assets.some((asset) => asset.id === assetId) &&
+      oralBackup.answers.every((answer) => answer.assetId === assetId)
+  );
+  const redactedExport = await getJson(`${baseUrl}/api/memories/export?mode=redacted`);
+  const redactedOral = redactedExport.payload.oralHistories;
+  const redactedOralText = JSON.stringify(redactedOral);
+  assert(
+    "脱敏口述史只保留固定计数并物理排除声音、文字、日期、ID 与哈希",
+    redactedOral.mode === "redacted-summary" &&
+      redactedOral.questionCount === 1 &&
+      redactedOral.answerCount === 3 &&
+      Object.keys(redactedOral).sort().join(",") === "answerCount,confirmedAnswerCount,mode,note,questionCount" &&
+      !redactedOralText.includes(assetId) &&
+      !/(?:2024|transcript|segment|questionKey|sha256|oral-day)/iu.test(redactedOralText)
+  );
+
+  const beforeJsonImport = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+  const jsonImport = await postJson(`${baseUrl}/api/memories/import`, fullExport.payload);
+  const afterJsonImport = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+  assert(
+    "非空口述史 JSON 只提示使用 .time-isle 且整批零写入",
+    jsonImport.response.ok &&
+      jsonImport.payload.imported === 0 &&
+      jsonImport.payload.oralHistories.requiresTimeIsle === true &&
+      afterJsonImport.memories === beforeJsonImport.memories &&
+      afterJsonImport.oralHistoryQuestions === beforeJsonImport.oralHistoryQuestions &&
+      afterJsonImport.oralHistoryAnswers === beforeJsonImport.oralHistoryAnswers
+  );
+
+  const beforeWithdraw = await getJson(oralUrl);
+  const withdrawResponse = await fetch(oralUrl, {
+    method: "DELETE",
+    headers: writeHeaders(oralUrl, { "Content-Type": "application/json", "If-Match": beforeWithdraw.response.headers.get("etag") }),
+    body: JSON.stringify({ questionSetSha256: beforeWithdraw.payload.questionSetSha256, confirm: true })
+  });
+  const withdrawn = await withdrawResponse.json();
+  const timeAfterWithdraw = await getJson(`${baseUrl}/api/time-calibrations/events/${encodeURIComponent(event.payload.event.id)}`);
+  const voiceDeleteAfterWithdraw = await deleteJson(`${baseUrl}/api/voice/assets/${assetId}`);
+  assert(
+    "撤回答案保留历史与声音引用，并让选择它的旧校准进入待复核",
+    withdrawResponse.ok &&
+      withdrawn.currentConfirmed === null &&
+      withdrawn.history.some((answer) => answer.status === "withdrawn") &&
+      timeAfterWithdraw.payload.needsReview === true &&
+      !timeAfterWithdraw.payload.candidates.some((candidate) => candidate.sourceType === "oral-history") &&
+      voiceDeleteAfterWithdraw.response.status === 409
+  );
 }
 
 async function runLocalMediaFlow(baseUrl, memoryId, relatedId, mediaRoot) {
@@ -1199,7 +1437,7 @@ async function runDemoSafetyFlow() {
       AI_BASE_URL: "http://127.0.0.1:1"
     }, async (baseUrl) => {
     const status = await getJson(`${baseUrl}/api/demo/status`);
-    assert("公开 Demo 自动注入四条示例、一场已发布展览与一项时间校准", status.response.ok && status.payload.interviewDemo === true && status.payload.seededExamples === 4 && status.payload.seededExhibitions === 1 && status.payload.seededTimeCalibrations === 1);
+    assert("公开 Demo 自动注入四条示例、一场已发布展览与一项时间校准", status.response.ok && status.payload.interviewDemo === true && status.payload.seededExamples === 4 && status.payload.seededExhibitions === 1 && status.payload.seededTimeCalibrations === 1 && status.payload.seededOralHistoryAnswers === 0 && status.payload.oralHistoryMode === "read-only-question");
     assert("公开 Demo 使用临时存储并强制本地 Mock", status.payload.storage === "ephemeral-sqlite-on-tmp" && status.payload.destructiveActionsBlocked === true && status.payload.aiMode === "mock-fallback");
     const demoHome = await fetch(`${baseUrl}/`);
     assert("公开 Demo 通过权限策略禁用麦克风", demoHome.headers.get("permissions-policy")?.includes("microphone=()"));
@@ -1239,6 +1477,33 @@ async function runDemoSafetyFlow() {
     });
     const demoCalibrationAfter = await getJson(demoCalibrationUrl);
     assert("公开 Demo 展示预置多种日期记录但拒绝访客改写", demoTimeline.response.ok && demoCalibrationEntry.target.memberIds.length === 2 && demoCalibrationBefore.payload.calibration.resolutionKind === "alternatives" && blockedCalibration.response.status === 403 && demoCalibrationAfter.payload.calibration.updatedAt === demoCalibrationBefore.payload.calibration.updatedAt && demoCalibrationAfter.payload.calibration.resolutionKind === "alternatives");
+
+    const demoOralUrl = `${baseUrl}/api/oral-histories/events/${encodeURIComponent(demoCalibrationEntry.target.id)}`;
+    const demoOralStatsBefore = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+    const demoOral = await getJson(demoOralUrl);
+    const blockedOralPut = await fetch(demoOralUrl, {
+      method: "PUT",
+      headers: writeHeaders(demoOralUrl, { "Content-Type": "application/json", "If-Match": demoOral.response.headers.get("etag") }),
+      body: JSON.stringify({})
+    });
+    const blockedOralDelete = await fetch(demoOralUrl, {
+      method: "DELETE",
+      headers: writeHeaders(demoOralUrl, { "Content-Type": "application/json", "If-Match": demoOral.response.headers.get("etag") }),
+      body: JSON.stringify({ confirm: true })
+    });
+    const demoOralAfter = await getJson(demoOralUrl);
+    const demoOralStatsAfter = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+    assert(
+      "公开 Demo 只读展示口述问题并以零麦克风、零回答写入拒绝 PUT/DELETE",
+      demoOral.response.ok &&
+        demoOral.payload.demo === true &&
+        demoOral.payload.question?.sources.length === 2 &&
+        blockedOralPut.status === 403 &&
+        blockedOralDelete.status === 403 &&
+        demoOralAfter.payload.history.length === 0 &&
+        demoOralStatsAfter.oralHistoryQuestions === demoOralStatsBefore.oralHistoryQuestions &&
+        demoOralStatsAfter.oralHistoryAnswers === demoOralStatsBefore.oralHistoryAnswers
+    );
 
     const demoPeople = await getJson(`${baseUrl}/api/entities?type=person&limit=20`);
     const [demoTargetPerson, demoSourcePerson] = demoPeople.payload.entities;
