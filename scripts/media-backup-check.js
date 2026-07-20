@@ -32,6 +32,22 @@ const {
   CURATOR_AGENT_REDACTED_NOTE,
   validateCuratorAgentArchiveState
 } = require("../lib/curator-agent-backup");
+const {
+  PROVENANCE_REDACTED_NOTE,
+  validateProvenanceBackupPayload
+} = require("../lib/provenance-backup");
+const {
+  OFFSET_UNIT,
+  buildEventSha256,
+  normalizeClaimDraftInput
+} = require("../lib/provenance-service");
+const coMemoryCrypto = require("../public/assets/co-memory-crypto.js");
+const {
+  CO_MEMORY_RESPONSE_REDACTED_NOTE,
+  buildCoMemoryResponseBackup,
+  validateCoMemoryResponseBackupPayload
+} = require("../lib/co-memory-response-backup");
+const { validateCoMemoryResponseConfirmation } = require("../lib/co-memory-response-service");
 
 let assertions = 0;
 
@@ -115,6 +131,8 @@ async function runChecks(temporaryRoot) {
   await checkArchiveVersioning(temporaryRoot, pristineEntries);
   await checkArchiveMetadataContract(temporaryRoot, pristineEntries, fixture, collection);
   await checkFeatureSections(temporaryRoot, fixture, collection);
+  await checkProvenanceArchiveSection(temporaryRoot, fixture, collection);
+  await checkCoMemoryArchiveSection(temporaryRoot, fixture, collection);
 
   const corruptedEntries = cloneEntries(pristineEntries);
   const corruptedImage = Buffer.from(corruptedEntries.get(imagePath));
@@ -380,6 +398,431 @@ async function checkArchiveMetadataContract(temporaryRoot, pristineEntries, fixt
   );
 }
 
+async function checkProvenanceArchiveSection(temporaryRoot, fixture, sourceCollection) {
+  const provenance = provenanceBackupFixture("memory-one");
+  const collection = schema16CollectionFixture(sourceCollection, provenance);
+  const validators = {
+    ...fixture.store,
+    validateVoiceBackup: () => true,
+    validateTimeCalibrationBackup: () => true,
+    validateOralHistoryBackup: () => true,
+    validateCuratorAgentBackup: () => true,
+    validateMemoryInboxBackup: () => true
+  };
+  const voiceStorage = { resolveStorageKey: () => path.join(temporaryRoot, "unused-schema16-voice") };
+  const build = (value) => buildMediaArchive({
+    collection: value,
+    store: validators,
+    storage: fixture.storage,
+    voiceStorage,
+    appVersion: "11.1.0",
+    schemaVersion: value.schemaVersion
+  });
+  const prepare = (archive, name) => prepareMediaArchive(archive, {
+    stagingRoot: path.join(temporaryRoot, name),
+    supportedSchemaVersion: 16,
+    validateVoiceBackup: () => true,
+    validateTimeCalibrationBackup: () => true,
+    validateOralHistoryBackup: () => true,
+    validateCuratorAgentBackup: () => true,
+    validateMemoryInboxBackup: () => true
+  });
+
+  const { provenance: _removedProvenance, ...withoutProvenance } = collection;
+  throwsCode(
+    "MEDIA_ARCHIVE_REQUIRED_SECTION_MISSING",
+    () => build(withoutProvenance),
+    "schema 16 full archive requires an explicit provenance section"
+  );
+  throwsCode(
+    "MEDIA_ARCHIVE_FEATURE_SCHEMA_INVALID",
+    () => build({ ...collection, schemaVersion: 15 }),
+    "schema 15 archive cannot declare schema 16 provenance"
+  );
+  throwsCode(
+    "MEDIA_ARCHIVE_FEATURE_INVALID",
+    () => build({ ...collection, provenance: provenanceBackupFixture("memory-outside") }),
+    "provenance claims cannot cross the exported memory boundary"
+  );
+
+  const archive = build(collection);
+  const entries = await readArchiveEntries(archive, path.join(temporaryRoot, "unpack-schema16-provenance"));
+  const manifest = parseJson(entries.get(ARCHIVE_PATHS.manifest));
+  deepEqual(
+    manifest.sections.find((section) => section.name === "provenance"),
+    { name: "provenance", path: ARCHIVE_PATHS.provenance, count: 1, required: true, version: 1 },
+    "schema 16 full archive declares one required provenance claim"
+  );
+  deepEqual(parseJson(entries.get(ARCHIVE_PATHS.provenance)), provenance,
+    "full provenance state is preserved losslessly in its standalone entry");
+  check(!Object.hasOwn(parseJson(entries.get(ARCHIVE_PATHS.collection)), "provenance"),
+    "provenance state is not duplicated in collection.json");
+  const prepared = await prepare(archive, "roundtrip-schema16-provenance");
+  deepEqual(prepared.provenance, provenance, "prepare exposes strictly verified provenance state");
+  deepEqual(prepared.collection.provenance, provenance, "prepare reattaches provenance only after validation");
+
+  const tampered = cloneEntries(entries);
+  const tamperedPayload = parseJson(tampered.get(ARCHIVE_PATHS.provenance));
+  tamperedPayload.claims[0].statement = "rehashed but internally forged statement";
+  replaceJsonAndRefreshManifest(tampered, ARCHIVE_PATHS.provenance, tamperedPayload);
+  await rejectsCode(
+    "MEDIA_ARCHIVE_FEATURE_INVALID",
+    () => prepare(repack(tampered), "reject-schema16-provenance-inner-hash"),
+    "rehashed provenance bytes still fail the claim and event hash closure"
+  );
+
+  const missing = cloneEntries(entries);
+  const missingManifest = parseJson(missing.get(ARCHIVE_PATHS.manifest));
+  missingManifest.sections = missingManifest.sections.filter((section) => section.name !== "provenance");
+  missingManifest.entries = missingManifest.entries.filter((entry) => entry.path !== ARCHIVE_PATHS.provenance);
+  missingManifest.entryCount = missingManifest.entries.length;
+  missing.delete(ARCHIVE_PATHS.provenance);
+  missing.set(ARCHIVE_PATHS.manifest, jsonBuffer(missingManifest));
+  await rejectsCode(
+    "MEDIA_ARCHIVE_REQUIRED_SECTION_MISSING",
+    () => prepare(repack(missing), "reject-schema16-missing-provenance"),
+    "schema 16 reader cannot silently downgrade a missing provenance section"
+  );
+
+  const reserved = cloneEntries(entries);
+  const reservedPath = "provenance/future.json";
+  const reservedBytes = jsonBuffer({ future: true });
+  reserved.set(reservedPath, reservedBytes);
+  const reservedManifest = parseJson(reserved.get(ARCHIVE_PATHS.manifest));
+  reservedManifest.sections.push({ name: "future-provenance", path: reservedPath, count: 1, required: false, version: 1 });
+  reservedManifest.entries.push({ path: reservedPath, sha256: sha256(reservedBytes), bytes: reservedBytes.length, mime: "application/json" });
+  reservedManifest.entries.sort((left, right) => left.path.localeCompare(right.path, "en"));
+  reservedManifest.entryCount = reservedManifest.entries.length;
+  reserved.set(ARCHIVE_PATHS.manifest, jsonBuffer(reservedManifest));
+  await rejectsCode(
+    "MEDIA_ARCHIVE_SECTIONS_INVALID",
+    () => prepare(repack(reserved), "reject-schema16-reserved-provenance-prefix"),
+    "unknown optional sections cannot occupy the reserved provenance prefix"
+  );
+
+  const redactedProvenance = {
+    mode: "redacted-summary",
+    claimCount: 1,
+    draftCount: 1,
+    confirmedCount: 0,
+    needsReviewCount: 0,
+    withdrawnCount: 0,
+    sourceCount: 2,
+    note: PROVENANCE_REDACTED_NOTE
+  };
+  const redactedArchive = buildMediaArchive({
+    collection: {
+      ...sourceCollection,
+      version: "11.1.0",
+      schemaVersion: 16,
+      mode: "redacted",
+      provenance: redactedProvenance
+    },
+    appVersion: "11.1.0",
+    schemaVersion: 16
+  });
+  const redactedEntries = await readArchiveEntries(
+    redactedArchive,
+    path.join(temporaryRoot, "unpack-redacted-schema16-provenance")
+  );
+  const redactedText = redactedEntries.get(ARCHIVE_PATHS.provenance).toString("utf8");
+  deepEqual(Object.keys(JSON.parse(redactedText)).sort(), [
+    "claimCount", "confirmedCount", "draftCount", "mode", "needsReviewCount", "note", "sourceCount", "withdrawnCount"
+  ], "redacted provenance keeps only fixed counts and the privacy note");
+  for (const canary of [
+    "provenance-archive-canary-statement", "provenance-archive-canary-excerpt", "startOffset",
+    "memory-one", "provenance-claim-one", "sourceKey", "anchorKey", "Sha256"
+  ]) {
+    check(!redactedText.includes(canary), `redacted provenance physically excludes ${canary}`);
+  }
+  const redactedPrepared = await prepareMediaArchive(redactedArchive, {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-redacted-schema16-provenance"),
+    supportedSchemaVersion: 16
+  });
+  deepEqual(redactedPrepared.provenance, redactedProvenance,
+    "redacted provenance counts round-trip without private restore handlers");
+}
+
+async function checkCoMemoryArchiveSection(temporaryRoot, fixture, sourceCollection) {
+  const coMemoryResponses = await coMemoryBackupFixture("memory-one");
+  const collection = {
+    ...schema16CollectionFixture(sourceCollection, provenanceBackupFixture("memory-one")),
+    version: "12.0.0",
+    schemaVersion: 18,
+    coMemoryResponses
+  };
+  const validators = {
+    ...fixture.store,
+    validateVoiceBackup: () => true,
+    validateTimeCalibrationBackup: () => true,
+    validateOralHistoryBackup: () => true,
+    validateCuratorAgentBackup: () => true,
+    validateMemoryInboxBackup: () => true,
+    validateProvenanceBackup: () => true,
+    validateCoMemoryResponseBackup: (payload, memoryIds) => {
+      validateCoMemoryResponseBackupPayload(payload, { memoryIds });
+      return true;
+    }
+  };
+  const voiceStorage = { resolveStorageKey: () => path.join(temporaryRoot, "unused-schema18-voice") };
+  const build = (value) => buildMediaArchive({
+    collection: value,
+    store: validators,
+    storage: fixture.storage,
+    voiceStorage,
+    appVersion: "12.0.0",
+    schemaVersion: value.schemaVersion
+  });
+  const prepare = (archive, name) => prepareMediaArchive(archive, {
+    stagingRoot: path.join(temporaryRoot, name),
+    supportedSchemaVersion: 18,
+    validateVoiceBackup: () => true,
+    validateTimeCalibrationBackup: () => true,
+    validateOralHistoryBackup: () => true,
+    validateCuratorAgentBackup: () => true,
+    validateMemoryInboxBackup: () => true,
+    validateProvenanceBackup: () => true,
+    validateCoMemoryResponseBackup: validators.validateCoMemoryResponseBackup
+  });
+
+  const { coMemoryResponses: _removedCoMemory, ...withoutCoMemory } = collection;
+  throwsCode(
+    "MEDIA_ARCHIVE_REQUIRED_SECTION_MISSING",
+    () => build(withoutCoMemory),
+    "schema 18 full archive requires an explicit co-memory response section"
+  );
+  throwsCode(
+    "MEDIA_ARCHIVE_FEATURE_SCHEMA_INVALID",
+    () => build({ ...collection, schemaVersion: 16 }),
+    "schema 16 archive cannot declare schema 17 co-memory responses"
+  );
+  const outside = await coMemoryBackupFixture("memory-outside");
+  throwsCode(
+    "MEDIA_ARCHIVE_FEATURE_INVALID",
+    () => build({ ...collection, coMemoryResponses: outside }),
+    "co-memory responses cannot cross the exported memory boundary"
+  );
+
+  const archive = build(collection);
+  const entries = await readArchiveEntries(archive, path.join(temporaryRoot, "unpack-schema18-co-memory"));
+  const manifest = parseJson(entries.get(ARCHIVE_PATHS.manifest));
+  deepEqual(
+    manifest.sections.find((section) => section.name === "co-memory-responses"),
+    { name: "co-memory-responses", path: ARCHIVE_PATHS.coMemoryResponses, count: 1, required: true, version: 1 },
+    "schema 18 full archive declares one required co-memory response"
+  );
+  deepEqual(parseJson(entries.get(ARCHIVE_PATHS.coMemoryResponses)), coMemoryResponses,
+    "full co-memory request, answer and immutable hashes are preserved losslessly");
+  check(!Object.hasOwn(parseJson(entries.get(ARCHIVE_PATHS.collection)), "coMemoryResponses"),
+    "co-memory state is not duplicated in collection.json");
+  const prepared = await prepare(archive, "roundtrip-schema18-co-memory");
+  deepEqual(prepared.coMemoryResponses, coMemoryResponses, "prepare exposes strictly verified co-memory state");
+  deepEqual(prepared.collection.coMemoryResponses, coMemoryResponses,
+    "prepare reattaches co-memory responses only after validation");
+
+  const tampered = cloneEntries(entries);
+  const tamperedPayload = parseJson(tampered.get(ARCHIVE_PATHS.coMemoryResponses));
+  tamperedPayload.responses[0].response.answer += " tampered";
+  replaceJsonAndRefreshManifest(tampered, ARCHIVE_PATHS.coMemoryResponses, tamperedPayload);
+  await rejectsCode(
+    "MEDIA_ARCHIVE_FEATURE_INVALID",
+    () => prepare(repack(tampered), "reject-schema18-co-memory-inner-hash"),
+    "rehashed archive bytes still fail the request/response/source hash closure"
+  );
+
+  const reserved = cloneEntries(entries);
+  const reservedPath = "co-memory/future.json";
+  const reservedBytes = jsonBuffer({ future: true });
+  reserved.set(reservedPath, reservedBytes);
+  const reservedManifest = parseJson(reserved.get(ARCHIVE_PATHS.manifest));
+  reservedManifest.sections.push({ name: "future-co-memory", path: reservedPath, count: 1, required: false, version: 1 });
+  reservedManifest.entries.push({ path: reservedPath, sha256: sha256(reservedBytes), bytes: reservedBytes.length, mime: "application/json" });
+  reservedManifest.entries.sort((left, right) => left.path.localeCompare(right.path, "en"));
+  reservedManifest.entryCount = reservedManifest.entries.length;
+  reserved.set(ARCHIVE_PATHS.manifest, jsonBuffer(reservedManifest));
+  await rejectsCode(
+    "MEDIA_ARCHIVE_SECTIONS_INVALID",
+    () => prepare(repack(reserved), "reject-schema18-reserved-co-memory-prefix"),
+    "unknown optional sections cannot occupy the reserved co-memory prefix"
+  );
+
+  const redactedCoMemory = buildCoMemoryResponseBackup(coMemoryResponses.responses, "redacted", ["memory-one"]);
+  const redactedArchive = buildMediaArchive({
+    collection: {
+      ...sourceCollection,
+      version: "12.0.0",
+      schemaVersion: 18,
+      mode: "redacted",
+      coMemoryResponses: redactedCoMemory
+    },
+    appVersion: "12.0.0",
+    schemaVersion: 18
+  });
+  const redactedEntries = await readArchiveEntries(
+    redactedArchive,
+    path.join(temporaryRoot, "unpack-redacted-schema18-co-memory")
+  );
+  const redactedText = redactedEntries.get(ARCHIVE_PATHS.coMemoryResponses).toString("utf8");
+  deepEqual(Object.keys(JSON.parse(redactedText)).sort(), [
+    "encryptedTransportCount", "mode", "note", "responseCount", "unsignedCount", "unverifiedIdentityCount"
+  ], "redacted co-memory section keeps only fixed counts and its privacy note");
+  equal(JSON.parse(redactedText).note, CO_MEMORY_RESPONSE_REDACTED_NOTE,
+    "redacted co-memory section uses the fixed privacy explanation");
+  for (const canary of [
+    "co-memory-archive-canary-answer", "co-memory-archive-canary-question", "memory-one",
+    "letter_archive_000001", "response_archive_0001", "requestSha256", "sourceKey", "anchorKey"
+  ]) {
+    check(!redactedText.includes(canary), `redacted co-memory section physically excludes ${canary}`);
+  }
+  const redactedPrepared = await prepareMediaArchive(redactedArchive, {
+    stagingRoot: path.join(temporaryRoot, "roundtrip-redacted-schema18-co-memory"),
+    supportedSchemaVersion: 18
+  });
+  deepEqual(redactedPrepared.coMemoryResponses, redactedCoMemory,
+    "redacted co-memory counts round-trip without private restore handlers");
+}
+
+async function coMemoryBackupFixture(memoryId) {
+  const request = coMemoryCrypto.validateRequestPayload({
+    format: coMemoryCrypto.REQUEST_FORMAT,
+    version: coMemoryCrypto.VERSION,
+    letterId: "letter_archive_000001",
+    question: "co-memory-archive-canary-question",
+    context: {
+      title: "",
+      note: `[time-isle-memory-anchor:v1:${memoryId}]`,
+      evidence: [{ key: "evidence-1", kind: "quote", text: "minimal shared excerpt" }]
+    },
+    boundary: coMemoryCrypto.REQUEST_BOUNDARY
+  });
+  const requestSha256 = await coMemoryCrypto.digestRequestPayload(request);
+  const response = coMemoryCrypto.validateResponsePayload({
+    format: coMemoryCrypto.RESPONSE_FORMAT,
+    version: coMemoryCrypto.VERSION,
+    letterId: request.letterId,
+    responseId: "response_archive_0001",
+    requestSha256,
+    identity: {
+      label: "Self-asserted respondent",
+      assurance: coMemoryCrypto.IDENTITY_ASSURANCE,
+      verified: false
+    },
+    answer: "co-memory-archive-canary-answer",
+    boundary: coMemoryCrypto.RESPONSE_BOUNDARY
+  });
+  const normalized = await validateCoMemoryResponseConfirmation({
+    confirm: true,
+    memoryId,
+    requestSha256,
+    request,
+    response,
+    source: {
+      kind: "co_memory_response",
+      relationKind: "supplements",
+      label: response.identity.label,
+      excerpt: response.answer,
+      identityAssurance: coMemoryCrypto.IDENTITY_ASSURANCE,
+      identityVerified: false,
+      encrypted: true,
+      signed: false
+    }
+  });
+  return buildCoMemoryResponseBackup([{
+    ...normalized,
+    id: "co-memory-response-archive-one",
+    createdAt: "2026-07-19T17:00:00.000Z"
+  }], "full", [memoryId]);
+}
+
+function schema16CollectionFixture(sourceCollection, provenance) {
+  return {
+    ...sourceCollection,
+    version: "11.1.0",
+    schemaVersion: 16,
+    exhibitions: { mode: "full", schemaVersion: 5, exhibitions: [] },
+    revisits: { mode: "full", schemaVersion: 6, states: [] },
+    entities: { mode: "full", schemaVersion: 7, entities: [] },
+    voices: { mode: "full", schemaVersion: 8, assets: [], memoryLinks: [], transcripts: [] },
+    capsules: { mode: "full", schemaVersion: 9, capsules: [] },
+    revisions: { mode: "full", schemaVersion: 10, revisions: [] },
+    revisitIntents: { mode: "full", schemaVersion: 11, intents: [] },
+    timeCalibrations: { mode: "full", schemaVersion: 12, calibrations: [] },
+    oralHistories: { mode: "full", schemaVersion: 13, questions: [], answers: [] },
+    curatorAgent: { mode: "full", schemaVersion: 14, runs: [] },
+    memoryInbox: { mode: "full", schemaVersion: 15, sources: [], items: [] },
+    provenance
+  };
+}
+
+function provenanceBackupFixture(memoryId) {
+  const excerpt = "provenance-archive-canary-excerpt";
+  const createdAt = "2026-07-19T00:00:00.000Z";
+  const draft = normalizeClaimDraftInput({
+    memoryId,
+    statement: "provenance-archive-canary-statement",
+    sources: [{
+      relationKind: "supports",
+      sourceKind: "memory_text",
+      sourceKey: `memory-text-source:${sha256(excerpt)}`,
+      originRef: { memoryId },
+      locator: { offsetUnit: OFFSET_UNIT, startOffset: 0, endOffset: excerpt.length },
+      sourceSha256: sha256(excerpt),
+      excerpt,
+      metadata: { label: "archive canary" },
+      sensitive: false
+    }]
+  });
+  const claim = {
+    id: "provenance-claim-one",
+    memoryId,
+    statement: draft.statement,
+    sourceSetSha256: draft.sourceSetSha256,
+    claimSha256: draft.claimSha256,
+    createdAt
+  };
+  const source = draft.sources[0];
+  const event = {
+    id: "provenance-event-one",
+    claimId: claim.id,
+    sequence: 0,
+    action: "created",
+    sourceSetSha256: claim.sourceSetSha256,
+    previousEventSha256: "",
+    eventSha256: buildEventSha256({
+      claimSha256: claim.claimSha256,
+      sequence: 0,
+      action: "created",
+      sourceSetSha256: claim.sourceSetSha256,
+      previousEventSha256: "",
+      createdAt
+    }),
+    createdAt
+  };
+  const backup = {
+    mode: "full",
+    schemaVersion: 16,
+    claims: [claim],
+    sources: [{
+      id: "provenance-source-one",
+      claimId: claim.id,
+      position: 0,
+      relationKind: source.relationKind,
+      sourceKind: source.sourceKind,
+      sourceKey: source.sourceKey,
+      anchorKey: source.anchorKey,
+      originRef: source.originRef,
+      locator: source.locator,
+      snapshot: source.snapshot,
+      snapshotSha256: source.snapshotSha256,
+      sensitive: source.sensitive,
+      createdAt
+    }],
+    events: [event]
+  };
+  validateProvenanceBackupPayload(backup, { memoryIds: [memoryId] });
+  return backup;
+}
+
 async function checkFeatureSections(temporaryRoot, fixture, sourceCollection) {
   deepEqual(
     FEATURE_ARCHIVE_SECTIONS.map(({ name, path: sectionPath, sinceSchemaVersion }) => ({ name, path: sectionPath, sinceSchemaVersion })),
@@ -392,9 +835,12 @@ async function checkFeatureSections(temporaryRoot, fixture, sourceCollection) {
       { name: "revisit-intents", path: ARCHIVE_PATHS.revisitIntents, sinceSchemaVersion: 11 },
       { name: "time-calibrations", path: ARCHIVE_PATHS.timeCalibrations, sinceSchemaVersion: 12 },
       { name: "oral-history", path: ARCHIVE_PATHS.oralHistories, sinceSchemaVersion: 13 },
-      { name: "curator-agent", path: ARCHIVE_PATHS.curatorAgent, sinceSchemaVersion: 14 }
+      { name: "curator-agent", path: ARCHIVE_PATHS.curatorAgent, sinceSchemaVersion: 14 },
+      { name: "memory-inbox", path: ARCHIVE_PATHS.memoryInbox, sinceSchemaVersion: 15 },
+      { name: "provenance", path: ARCHIVE_PATHS.provenance, sinceSchemaVersion: 16 },
+      { name: "co-memory-responses", path: ARCHIVE_PATHS.coMemoryResponses, sinceSchemaVersion: 17 }
     ],
-    "功能 section 注册表应按 schema 顺序声明至 schema 13 口述史"
+    "功能 section 注册表应按 schema 顺序声明至 schema 17 共忆回信"
   );
 
   const exhibitions = { mode: "full", schemaVersion: 5, exhibitions: [] };

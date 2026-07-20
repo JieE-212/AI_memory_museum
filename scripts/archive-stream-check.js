@@ -106,6 +106,10 @@ async function checkTwoPassExtraction(root) {
   equal(consumed, chunks.length, "不可重放输入只消费一次并安全落盘供两遍扫描");
   equal(result.entries.length, 2, "两遍流式恢复保留全部条目");
   equal(fs.readFileSync(path.join(stagingRoot, "second.txt"), "utf8"), "second", "第二遍写入正确文件内容");
+  check(
+    !fs.readdirSync(root).some((name) => name.startsWith(`${path.basename(stagingRoot)}-input-`)),
+    "流式回放副本位于调用者暂存边界并在成功后清理"
+  );
   deepEqual(temporaryExtractDirectories(), before, "成功恢复清理压缩输入临时目录");
 
   const flatRoot = path.join(root, "two-pass-flat");

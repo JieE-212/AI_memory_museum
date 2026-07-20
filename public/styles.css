@@ -1035,6 +1035,13 @@ form label textarea {
   pointer-events: none;
 }
 
+.file-button:has(+ .sr-only[type="file"]:focus-visible),
+label:has(+ .sr-only[type="file"]:focus-visible),
+.sr-only[type="file"]:focus-visible + .file-button {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
 .compatibility-backup {
   margin-top: 14px;
   border-top: 1px solid var(--line);

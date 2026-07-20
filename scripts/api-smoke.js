@@ -17,6 +17,7 @@ main().catch((error) => {
 
 async function main() {
   await runLocalFlow();
+  await runMuseumLockAndLensFlow();
   await runArchiveMediaFlow();
   await runDemoSafetyFlow();
   console.log(`API smoke checks passed (${assertionCount} assertions).`);
@@ -227,7 +228,7 @@ async function runArchiveMediaFlow() {
         body: archive
       });
       const inspection = await inspectionResponse.json();
-      assert("备份验真只读返回可恢复边界并清理暂存", inspectionResponse.ok && inspection.inspection.restorable === true && inspection.inspection.schemaVersion === 14 && inspection.inspection.counts.memories === 2 && inspection.inspection.counts.mediaAssets === 2 && inspection.inspection.counts.voices === 1 && inspection.inspection.counts.revisions === 2 && inspection.inspection.counts.revisitIntents === 1 && inspection.inspection.counts.timeCalibrations === 0 && inspection.inspection.counts.oralHistoryQuestions === 0 && inspection.inspection.counts.oralHistoryAnswers === 0 && inspection.inspection.counts.curatorAgentRuns === 0 && inspection.inspection.counts.curatorAgentProposals === 0 && inspection.inspection.counts.curatorAgentDecisions === 0 && (await getJson(`${baseUrl}/api/memories`)).payload.memories.length === 2 && !fs.existsSync(path.join(mediaRoot, ".inspect")));
+      assert("备份验真只读返回可恢复边界并清理暂存", inspectionResponse.ok && inspection.inspection.restorable === true && inspection.inspection.schemaVersion === 19 && inspection.inspection.counts.memories === 2 && inspection.inspection.counts.mediaAssets === 2 && inspection.inspection.counts.voices === 1 && inspection.inspection.counts.revisions === 2 && inspection.inspection.counts.revisitIntents === 1 && inspection.inspection.counts.timeCalibrations === 0 && inspection.inspection.counts.oralHistoryQuestions === 0 && inspection.inspection.counts.oralHistoryAnswers === 0 && inspection.inspection.counts.curatorAgentRuns === 0 && inspection.inspection.counts.curatorAgentProposals === 0 && inspection.inspection.counts.curatorAgentDecisions === 0 && (await getJson(`${baseUrl}/api/memories`)).payload.memories.length === 2 && !fs.existsSync(path.join(mediaRoot, ".inspect")));
       const archiveCollection = await getJson(`${baseUrl}/api/memories/export`);
       const archivedEntityCount = archiveCollection.payload.entities.entities.length;
       const archivedEntityId = archiveCollection.payload.entities.entities[0].id;
@@ -297,6 +298,232 @@ async function runArchiveMediaFlow() {
   }
 }
 
+async function runMuseumLockAndLensFlow() {
+  const dbPath = path.join(os.tmpdir(), `ai-memory-museum-v14-smoke-${Date.now()}.sqlite`);
+  const mediaRoot = `${dbPath}.media`;
+  const passphrase = "v14-smoke-recovery-passphrase";
+  const memoryIds = ["v14-lens-left", "v14-lens-right"];
+  try {
+    await withServer({ DB_PATH: dbPath, MEDIA_ROOT: mediaRoot, INTERVIEW_DEMO: "false" }, async (baseUrl) => {
+      const created = [];
+      for (const [index, memoryId] of memoryIds.entries()) {
+        created.push(await postJson(`${baseUrl}/api/memories`, {
+          id: memoryId,
+          title: `镜片来源 ${index + 1}`,
+          hall: "daily",
+          sourceType: "文字记录",
+          rawContent: index === 0 ? "这段已保存正文明确写着海边。" : "这段已保存正文只写到校门。",
+          exhibitText: `第 ${index + 1} 件镜片测试展品`,
+          date: `2026-07-${String(index + 1).padStart(2, "0")}`,
+          people: [],
+          tags: []
+        }));
+      }
+      assert("V13 镜片场景保存两件明确来源展品", created.every((item) => item.response.status === 201));
+
+      const lensParams = new URLSearchParams([
+        ["lens", "clue"],
+        ["memoryId", memoryIds[0]],
+        ["memoryId", memoryIds[1]],
+        ["query", "海边"]
+      ]);
+      const lensUrl = `${baseUrl}/api/memory-lens/preview?${lensParams}`;
+      const lensStatsBefore = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+      const firstLens = await getJson(lensUrl);
+      const lensStatsAfter = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+      const firstLeftItem = firstLens.payload.preview?.items?.find((item) => item.memoryId === memoryIds[0]);
+      assert(
+        "设备内镜片只按明确 ID 返回确定性零模型、零工具、零保存预览",
+        firstLens.response.ok &&
+          firstLens.payload.execution?.source === "server-read-saved-memories" &&
+          firstLens.payload.execution?.deterministic === true &&
+          firstLens.payload.execution?.externalModel === false &&
+          firstLens.payload.execution?.modelCalls === 0 &&
+          firstLens.payload.execution?.toolCalls === 0 &&
+          firstLens.payload.execution?.persisted === false &&
+          firstLens.payload.preview?.engine?.externalModel === false &&
+          firstLens.payload.preview?.engine?.toolCalls === 0 &&
+          firstLens.payload.preview?.engine?.persisted === false &&
+          firstLens.payload.preview?.sourceRefs?.map((item) => item.memoryId).join(",") === memoryIds.join(",") &&
+          firstLeftItem?.evidence?.some((item) => item.value === "海边") &&
+          JSON.stringify(lensStatsAfter) === JSON.stringify(lensStatsBefore)
+      );
+
+      const revised = await putJson(`${baseUrl}/api/memories/${memoryIds[0]}`, {
+        rawContent: "这段已保存正文已经改为只写图书馆。",
+        expectedUpdatedAt: created[0].payload.memory.updatedAt
+      });
+      const secondLensStatsBefore = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+      const secondLens = await getJson(lensUrl);
+      const rejectedLensPost = await postJson(`${baseUrl}/api/memory-lens/preview`, {
+        lens: "clue",
+        memoryIds,
+        query: "海边"
+      });
+      const secondLensStatsAfter = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+      const secondLeftItem = secondLens.payload.preview?.items?.find((item) => item.memoryId === memoryIds[0]);
+      const revisedRef = secondLens.payload.preview?.sourceRefs?.find((item) => item.memoryId === memoryIds[0]);
+      assert(
+        "镜片服务端每次按 ID 重读最新馆藏正文而不是接受客户端正文快照",
+        revised.response.ok &&
+          secondLens.response.ok &&
+          secondLeftItem?.evidence?.length === 0 &&
+          revisedRef?.updatedAt === revised.payload.memory.updatedAt &&
+          secondLens.payload.preview?.sourceSnapshotSha256 !== firstLens.payload.preview?.sourceSnapshotSha256
+      );
+      assert(
+        "镜片接口严格 GET-only，拒绝 POST 且不产生持久化副作用",
+        rejectedLensPost.response.status === 405 &&
+          rejectedLensPost.payload.code === "MEMORY_LENS_METHOD_NOT_ALLOWED" &&
+          JSON.stringify(secondLensStatsAfter) === JSON.stringify(secondLensStatsBefore)
+      );
+
+      const initialLock = await getJson(`${baseUrl}/api/museum-lock`);
+      assert(
+        "锁馆公开状态不泄露 verifier、salt 或 digest",
+        initialLock.response.ok &&
+          initialLock.response.headers.get("cache-control") === "no-store" &&
+          initialLock.payload.state?.status === "unlocked" &&
+          initialLock.payload.state?.revision === 0 &&
+          initialLock.payload.diskEncryptionProvided === false &&
+          !containsMuseumLockSecretMaterial(initialLock.payload)
+      );
+
+      const locked = await postJson(`${baseUrl}/api/museum-lock/lock`, {
+        confirmation: "LOCK_MUSEUM_WRITES",
+        expectedRevision: initialLock.payload.state.revision,
+        operationId: "v14-smoke-lock",
+        passphrase
+      });
+      assert(
+        "显式口令和 revision CAS 可以启用应用层锁馆",
+        locked.response.ok &&
+          locked.payload.state?.status === "locked" &&
+          locked.payload.state?.revision === 1 &&
+          locked.payload.state?.verifierConfigured === true &&
+          locked.payload.transition?.changed === true &&
+          locked.payload.diskEncryptionProvided === false &&
+          !containsMuseumLockSecretMaterial(locked.payload)
+      );
+
+      const blockedWrongTypeResponse = await fetch(`${baseUrl}/api/memories`, {
+        method: "POST",
+        headers: writeHeaders(`${baseUrl}/api/memories`, { "Content-Type": "text/plain" }),
+        body: "正文不应被读取"
+      });
+      const blockedWrongType = await blockedWrongTypeResponse.json();
+      const blockedInvalidJsonResponse = await fetch(`${baseUrl}/api/memories`, {
+        method: "POST",
+        headers: writeHeaders(`${baseUrl}/api/memories`, { "Content-Type": "application/json" }),
+        body: "{正文同样不应被解析"
+      });
+      const blockedInvalidJson = await blockedInvalidJsonResponse.json();
+      assert(
+        "锁馆在 Content-Type 校验和正文读取前统一以 423 拒绝 mutation",
+        [
+          [blockedWrongTypeResponse, blockedWrongType],
+          [blockedInvalidJsonResponse, blockedInvalidJson]
+        ].every(([response, payload]) => (
+          response.status === 423 &&
+          payload.code === "MUSEUM_LOCKED" &&
+          payload.bodyBytesRead === 0 &&
+          payload.boundary?.includes("not disk or database encryption")
+        ))
+      );
+
+      const lockedHealth = await getJson(`${baseUrl}/api/health`);
+      const lockedCollection = await getJson(`${baseUrl}/api/memories`);
+      const lockedJsonExport = await getJson(`${baseUrl}/api/memories/export`);
+      const archiveResponse = await fetch(`${baseUrl}/api/archive/export`);
+      const archive = Buffer.from(await archiveResponse.arrayBuffer());
+      assert(
+        "锁馆期间 GET、馆藏浏览和两类导出仍保持只读可用",
+        lockedHealth.response.ok &&
+          lockedCollection.response.ok &&
+          lockedCollection.payload.memories.length === 2 &&
+          lockedJsonExport.response.ok &&
+          lockedJsonExport.payload.schemaVersion === 19 &&
+          archiveResponse.ok &&
+          archive.subarray(0, 2).equals(Buffer.from([0x1f, 0x8b]))
+      );
+      const archiveText = zlib.gunzipSync(archive).toString("utf8");
+      assert(
+        "普通 JSON 与 .time-isle 物理排除锁状态和恢复 verifier 材料",
+        !containsMuseumLockStateOrSecretMaterial(lockedJsonExport.payload) &&
+          !containsMuseumLockStateOrSecretMaterial(archiveText)
+      );
+
+      const inspectionResponse = await fetch(`${baseUrl}/api/archive/inspect`, {
+        method: "POST",
+        headers: writeHeaders(`${baseUrl}/api/archive/inspect`, { "Content-Type": "application/vnd.time-isle" }),
+        body: archive
+      });
+      const inspection = await inspectionResponse.json();
+      const drillResponse = await fetch(`${baseUrl}/api/recovery-drills/structural`, {
+        method: "POST",
+        headers: writeHeaders(`${baseUrl}/api/recovery-drills/structural`, { "Content-Type": "application/vnd.time-isle" }),
+        body: archive
+      });
+      const drill = await drillResponse.json();
+      const stateAfterReadOnlyOperations = await getJson(`${baseUrl}/api/museum-lock`);
+      assert(
+        "锁馆期间归档验真和结构恢复演练可用且不会写当前馆藏",
+        inspectionResponse.ok &&
+          inspection.inspection?.restorable === true &&
+          drillResponse.ok &&
+          drill.verification?.kind === "structural-verification" &&
+          drill.verification?.safety?.currentCollectionWrites === 0 &&
+          drill.verification?.safety?.currentMediaWrites === 0 &&
+          drill.verification?.limitations?.actualRestorePerformed === false &&
+          drill.verification?.limitations?.isolatedRestorePerformed === false &&
+          drill.verification?.limitations?.disasterRecoveryProven === false &&
+          drill.verification?.limitations?.diskEncryptionProvided === false &&
+          stateAfterReadOnlyOperations.payload.state?.status === "locked" &&
+          stateAfterReadOnlyOperations.payload.state?.revision === locked.payload.state.revision &&
+          (await getJson(`${baseUrl}/api/memories`)).payload.memories.length === 2
+      );
+
+      const wrongUnlock = await postJson(`${baseUrl}/api/museum-lock/unlock`, {
+        confirmation: "UNLOCK_MUSEUM_WRITES",
+        expectedRevision: locked.payload.state.revision,
+        operationId: "v14-smoke-wrong-unlock",
+        passphrase: "v14-smoke-wrong-passphrase"
+      });
+      const stateAfterWrongUnlock = await getJson(`${baseUrl}/api/museum-lock`);
+      assert(
+        "错误解锁口令不改变锁状态或 revision",
+        wrongUnlock.response.status === 401 &&
+          wrongUnlock.payload.code === "MUSEUM_LOCK_VERIFIER_MISMATCH" &&
+          stateAfterWrongUnlock.payload.state?.status === "locked" &&
+          stateAfterWrongUnlock.payload.state?.revision === locked.payload.state.revision
+      );
+
+      const unlocked = await postJson(`${baseUrl}/api/museum-lock/unlock`, {
+        confirmation: "UNLOCK_MUSEUM_WRITES",
+        expectedRevision: stateAfterWrongUnlock.payload.state.revision,
+        operationId: "v14-smoke-unlock",
+        passphrase
+      });
+      const createdAfterUnlock = await postJson(`${baseUrl}/api/memories`, {
+        id: "v14-write-restored",
+        title: "解锁后写入恢复",
+        rawContent: "仅用于确认应用层门禁已重新放行。",
+        exhibitText: "解锁后可保存"
+      });
+      assert(
+        "正确解锁递增 revision 并恢复普通写入",
+        unlocked.response.ok &&
+          unlocked.payload.state?.status === "unlocked" &&
+          unlocked.payload.state?.revision === locked.payload.state.revision + 1 &&
+          createdAfterUnlock.response.status === 201
+      );
+    });
+  } finally {
+    removeDatabase(dbPath);
+    removeDirectory(mediaRoot);
+  }
+}
+
 async function runLocalFlow() {
   const dbPath = path.join(os.tmpdir(), `ai-memory-museum-smoke-${Date.now()}.sqlite`);
   const mediaRoot = `${dbPath}.media`;
@@ -323,7 +550,7 @@ async function runLocalFlow() {
     assert("离线页明确不缓存或展示私人馆藏", offlineResponse.ok && offlineText.includes("不会展示馆藏、照片、声音或导出内容") && !offlineText.includes("<script"));
 
     const health = await getJson(`${baseUrl}/api/health`);
-    assert("健康检查返回时屿 V10 与 schema 14", health.response.ok && health.response.headers.get("cache-control") === "no-store" && health.payload.ok && health.payload.version === "10.0.0" && health.payload.schemaVersion === 14 && health.payload.name === "时屿" && health.payload.englishName === "TIME ISLE" && health.payload.tagline === "AI 私人记忆策展工具" && health.payload.stats.capsules === 0 && health.payload.stats.timeCalibrations === 0 && health.payload.stats.oralHistoryQuestions === 0 && health.payload.stats.oralHistoryAnswers === 0 && health.payload.stats.curatorAgentRuns === 0 && health.payload.stats.curatorAgentCompletedRuns === 0 && health.payload.stats.curatorAgentInterruptedRuns === 0 && health.payload.stats.curatorAgentProposals === 0 && health.payload.stats.curatorAgentDecisions === 0);
+    assert("健康检查返回时屿 V14 与 schema 19", health.response.ok && health.response.headers.get("cache-control") === "no-store" && health.payload.ok && health.payload.version === "14.0.0" && health.payload.schemaVersion === 19 && health.payload.name === "时屿" && health.payload.englishName === "TIME ISLE" && health.payload.tagline === "AI 私人记忆策展工具" && health.payload.stats.capsules === 0 && health.payload.stats.timeCalibrations === 0 && health.payload.stats.oralHistoryQuestions === 0 && health.payload.stats.oralHistoryAnswers === 0 && health.payload.stats.curatorAgentRuns === 0 && health.payload.stats.curatorAgentCompletedRuns === 0 && health.payload.stats.curatorAgentInterruptedRuns === 0 && health.payload.stats.curatorAgentProposals === 0 && health.payload.stats.curatorAgentDecisions === 0);
     assert("本地模式使用 SQLite", health.payload.mode === "local" && health.payload.storage === "local-sqlite");
     assert("健康检查声明本地语义线索检索与短词回退", health.payload.search?.engine === "fts5-trigram" && health.payload.search?.shortQueryFallback === "parameterized-like" && health.payload.search?.externalModelRequired === false);
 
@@ -348,7 +575,7 @@ async function runLocalFlow() {
     assert("写请求以 403 拒绝恶意 Origin", maliciousOrigin === 403);
 
     const version = await getJson(`${baseUrl}/api/version`);
-    assert("版本接口描述 V10 核心产品流程与人工边界", version.response.ok && version.payload.version === "10.0.0" && version.payload.productFlow.join(",") === "记录,AI 整理,照片与声音归档,语义线索检索与讲解,主题策展,受限策展提案与逐项决定,记忆回访,时光胶囊与加密分享,记忆考古,口述史回答与时间来源,历史恢复,安全导出" && version.payload.v7.offlineSharing.includes("AES-256-GCM") && version.payload.v7.pwa.includes("不缓存私人馆藏") && version.payload.v72.concurrency.includes("If-Match") && version.payload.v73.sharePrivacy.includes("浏览器内") && version.payload.v73.revisitIntent.includes("明确选择") && version.payload.v8.uncertainTimeline.includes("不会回写展品日期") && version.payload.v8.provenanceReview.includes("待复核") && version.payload.v9.oralHistory.includes("一个问题") && version.payload.v9.humanBoundary.includes("不自动转写") && version.payload.v9.provenance.includes("草稿") && version.payload.v10.boundedAgent.includes("固定四项") && version.payload.v10.humanDecisions.includes("分别需要") && version.payload.v10.replayableEvaluation.includes("不重新读取") && version.payload.v10.restoreBoundary.includes("待复核只读历史"));
+    assert("版本接口描述 V14 核心产品流程与人工边界", version.response.ok && version.payload.version === "14.0.0" && ["共忆见证", "设备内可解释镜片", "锁馆与结构验真"].every((item) => version.payload.productFlow.includes(item)) && version.payload.v7.offlineSharing.includes("AES-256-GCM") && version.payload.v7.pwa.includes("不缓存私人馆藏") && version.payload.v72.concurrency.includes("If-Match") && version.payload.v73.sharePrivacy.includes("浏览器内") && version.payload.v73.revisitIntent.includes("明确选择") && version.payload.v8.uncertainTimeline.includes("不会回写展品日期") && version.payload.v8.provenanceReview.includes("待复核") && version.payload.v9.oralHistory.includes("一个问题") && version.payload.v9.humanBoundary.includes("不自动转写") && version.payload.v9.provenance.includes("草稿") && version.payload.v10.boundedAgent.includes("固定四项") && version.payload.v10.humanDecisions.includes("分别需要") && version.payload.v10.replayableEvaluation.includes("不重新读取") && version.payload.v10.restoreBoundary.includes("待复核只读历史") && version.payload.v12.coMemoryLetters.includes("AES-256-GCM") && version.payload.v13.localBoundary.includes("零外部模型") && version.payload.v14.museumLock.includes("423") && version.payload.v14.recoveryDrill.includes("不能证明"));
 
     const demo = await getJson(`${baseUrl}/api/demo/status`);
     assert("本地模式未伪装成公开 Demo", demo.response.ok && demo.payload.interviewDemo === false);
@@ -678,7 +905,7 @@ async function runLocalFlow() {
     assert("馆藏备份包含已确认主题展览", fullExport.payload.exhibitions.exhibitions.some((item) => item.id === exhibitionId));
     assert("馆藏备份包含回访与当日隐藏状态", fullExport.payload.revisits.mode === "full" && fullExport.payload.revisits.states.length === 2 && fullExport.payload.revisits.states.some((state) => state.memoryId === memoryId && state.viewCount === 1) && fullExport.payload.revisits.states.some((state) => state.memoryId === relatedId && state.dismissedLocalDate === "2026-05-20"));
     assert("馆藏完整备份包含非空 later 回访意愿", fullExport.payload.revisitIntents.mode === "full" && fullExport.payload.revisitIntents.schemaVersion === 11 && fullExport.payload.revisitIntents.intents.length === 1 && fullExport.payload.revisitIntents.intents[0].memoryId === relatedId && fullExport.payload.revisitIntents.intents[0].intent === "later" && fullExport.payload.revisitIntents.intents[0].notBeforeLocalDate === "2027-05-20" && fullExport.payload.revisitIntents.intents[0].notBeforeTimezone === "Asia/Shanghai");
-    assert("schema 14 馆藏备份包含实体、声音、胶囊、修订、回访意愿、时间校准、口述史与受限策展边界", fullExport.payload.schemaVersion === 14 && fullExport.payload.entities.mode === "full" && fullExport.payload.entities.entities.some((entity) => entity.aliases.some((alias) => alias.alias === "老友")) && fullExport.payload.voices.mode === "full" && fullExport.payload.capsules.mode === "full" && fullExport.payload.revisions.mode === "full" && fullExport.payload.revisitIntents.mode === "full" && fullExport.payload.timeCalibrations.mode === "full" && fullExport.payload.timeCalibrations.calibrations.length === 1 && fullExport.payload.oralHistories.mode === "full" && fullExport.payload.oralHistories.questions.length === 0 && fullExport.payload.oralHistories.answers.length === 0 && fullExport.payload.curatorAgent.mode === "full" && fullExport.payload.curatorAgent.schemaVersion === 14 && fullExport.payload.curatorAgent.runs.length === 0);
+    assert("schema 19 馆藏备份保留既有子模块契约", fullExport.payload.schemaVersion === 19 && fullExport.payload.entities.mode === "full" && fullExport.payload.entities.entities.some((entity) => entity.aliases.some((alias) => alias.alias === "老友")) && fullExport.payload.voices.mode === "full" && fullExport.payload.capsules.mode === "full" && fullExport.payload.revisions.mode === "full" && fullExport.payload.revisitIntents.mode === "full" && fullExport.payload.timeCalibrations.mode === "full" && fullExport.payload.timeCalibrations.calibrations.length === 1 && fullExport.payload.oralHistories.mode === "full" && fullExport.payload.oralHistories.questions.length === 0 && fullExport.payload.oralHistories.answers.length === 0 && fullExport.payload.curatorAgent.mode === "full" && fullExport.payload.curatorAgent.schemaVersion === 14 && fullExport.payload.curatorAgent.runs.length === 0);
 
     await putJson(`${baseUrl}/api/memories/${memoryId}`, { rawContent: "这段原文已被重新整理，不再包含此前的日期、人物或地点线索。", expectedUpdatedAt: updated.payload.memory.updatedAt });
     const revalidatedExport = await getJson(`${baseUrl}/api/memories/export`);
@@ -1120,9 +1347,9 @@ async function runLocalCuratorAgentFlow(baseUrl) {
   const fullCurator = fullExport.payload.curatorAgent;
   const archivedRun = fullCurator.runs.find((entry) => entry.run.id === runId);
   assert(
-    "schema 14 完整 JSON 保留一份可重放的受限策展审计工作区",
+    "schema 19 完整 JSON 内嵌 schema 14 可重放策展审计工作区",
     fullExport.response.ok &&
-      fullExport.payload.schemaVersion === 14 &&
+      fullExport.payload.schemaVersion === 19 &&
       fullCurator.mode === "full" &&
       fullCurator.schemaVersion === 14 &&
       archivedRun.steps.length === 4 &&
@@ -2059,6 +2286,35 @@ async function runDemoSafetyFlow() {
       body: Buffer.from([0x1f, 0x8b])
     });
     assert("公开 Demo 禁止完整归档恢复", blockedArchiveRestore.status === 403);
+
+    const demoLockBefore = await getJson(`${baseUrl}/api/museum-lock`);
+    const demoV14StatsBefore = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+    const blockedDemoLockResponse = await fetch(`${baseUrl}/api/museum-lock/lock`, {
+      method: "POST",
+      headers: writeHeaders(`${baseUrl}/api/museum-lock/lock`, { "Content-Type": "text/plain" }),
+      body: "Demo 不应读取锁馆口令正文"
+    });
+    const blockedDemoLock = await blockedDemoLockResponse.json();
+    const blockedDemoDrillResponse = await fetch(`${baseUrl}/api/recovery-drills/structural`, {
+      method: "POST",
+      headers: writeHeaders(`${baseUrl}/api/recovery-drills/structural`, { "Content-Type": "text/plain" }),
+      body: Buffer.alloc(2048, 0x41)
+    });
+    const blockedDemoDrill = await blockedDemoDrillResponse.json();
+    const demoLockAfter = await getJson(`${baseUrl}/api/museum-lock`);
+    const demoV14StatsAfter = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+    assert(
+      "公开 Demo 在解析 Content-Type 和正文前以 403 阻止锁馆与结构演练上传",
+      [
+        [blockedDemoLockResponse, blockedDemoLock],
+        [blockedDemoDrillResponse, blockedDemoDrill]
+      ].every(([response, payload]) => response.status === 403 && payload.interviewDemo === true && payload.bodyBytesRead === 0) &&
+        demoLockAfter.payload.state?.status === demoLockBefore.payload.state?.status &&
+        demoLockAfter.payload.state?.revision === demoLockBefore.payload.state?.revision &&
+        JSON.stringify(demoV14StatsAfter) === JSON.stringify(demoV14StatsBefore) &&
+        !fs.existsSync(path.join(mediaRoot, ".drill"))
+    );
+
     const blockedHealthScan = await postJson(`${baseUrl}/api/collection-health/scans`, { scope: "full" });
     const blockedArchiveInspect = await fetch(`${baseUrl}/api/archive/inspect`, {
       method: "POST",
@@ -2234,12 +2490,19 @@ async function assertDemoVoiceWritesBlocked(baseUrl, memoryId, mediaRoot) {
 async function withServer(extraEnv, callback) {
   const port = await getFreePort();
   const logs = [];
+  const isolatedVoiceRoot = extraEnv.VOICE_ROOT || (extraEnv.MEDIA_ROOT
+    ? path.join(extraEnv.MEDIA_ROOT, "voice")
+    : "");
   const child = spawn(process.execPath, [path.join(root, "server.js")], {
     cwd: root,
     env: {
       ...process.env,
       PORT: String(port),
       AI_API_KEY: "",
+      VERCEL: "",
+      DEMO_MODE: "false",
+      INTERVIEW_DEMO: "false",
+      VOICE_ROOT: isolatedVoiceRoot,
       ...extraEnv
     },
     stdio: ["ignore", "pipe", "pipe"]
@@ -2413,6 +2676,19 @@ function writeHeaders(url, additional = {}) {
     "Sec-Fetch-Site": "same-origin",
     ...additional
   };
+}
+
+function containsMuseumLockSecretMaterial(value) {
+  const serialized = typeof value === "string" ? value : JSON.stringify(value);
+  return /time-isle\.recovery-verifier/iu.test(serialized) ||
+    /["'](?:recoveryVerifier|recovery_verifier|verifier|salt|digest)["']\s*:/u.test(serialized);
+}
+
+function containsMuseumLockStateOrSecretMaterial(value) {
+  const serialized = typeof value === "string" ? value : JSON.stringify(value);
+  return containsMuseumLockSecretMaterial(serialized) ||
+    /time-isle\.museum-write-lock/iu.test(serialized) ||
+    /["'](?:museumLock|museumLockState|museum_lock|museum_lock_state)["']\s*:/u.test(serialized);
 }
 
 function assert(name, condition) {

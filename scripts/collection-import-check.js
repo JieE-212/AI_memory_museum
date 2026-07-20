@@ -8,6 +8,7 @@ const {
   CURATOR_AGENT_REDACTED_NOTE,
   buildCuratorRequestSha256
 } = require("../lib/curator-agent-backup");
+const { CO_MEMORY_RESPONSE_REDACTED_NOTE } = require("../lib/co-memory-response-backup");
 
 let assertionCount = 0;
 
@@ -16,6 +17,7 @@ function run() {
   checkSchema12Export();
   checkSchema13Export();
   checkSchema14Export();
+  checkSchema18Export();
   checkPrimitiveBodies();
   checkHardImportLimit();
   checkSchemaEnvelope();
@@ -26,6 +28,7 @@ function run() {
   checkTimeCalibrationImportModes();
   checkOralHistoryImportModes();
   checkCuratorAgentImportModes();
+  checkSchema18ImportModes();
   checkDuplicateReferenceIds();
   checkFeaturePrevalidation();
   checkConflictMapping();
@@ -139,6 +142,100 @@ function checkSchema14Export() {
   delete missing.buildCuratorAgentBackup;
   const broken = createCollectionExporter({ store: missing, appVersion: "10.0.0", schemaVersion: 14, buildArchaeologyBackup: () => ({ mode: "full", events: [] }) });
   assert.throws(() => broken([], "full"), /curator-agent backup support/u, "schema 14 导出缺少受限策展处理器时 fail closed");
+  assertionCount += 1;
+}
+
+function checkSchema18Export() {
+  const calls = [];
+  const privateResponse = {
+    id: "co-memory-record-private",
+    memoryId: "schema18-export",
+    question: "只有完整归档可以看到的问题",
+    answer: "只有完整归档可以看到的回答",
+    requestSha256: "a".repeat(64)
+  };
+  const store = {
+    buildExhibitionBackup: (mode) => ({ mode: mode === "redacted" ? "redacted-summary" : "full", schemaVersion: 5, exhibitions: [] }),
+    buildRevisitBackup: (mode) => ({ mode: mode === "redacted" ? "redacted-summary" : "full", states: [] }),
+    buildClueBackup: (mode) => ({ mode: mode === "redacted" ? "redacted-summary" : "full", entities: [] }),
+    buildVoiceBackup: (mode) => mode === "redacted"
+      ? { mode: "redacted-summary", assetCount: 0 }
+      : { mode: "full", schemaVersion: 8, assets: [], memoryLinks: [], transcripts: [] },
+    buildCapsuleBackup: (mode) => mode === "redacted"
+      ? { mode: "redacted-summary", capsuleCount: 0 }
+      : { mode: "full", schemaVersion: 9, capsules: [] },
+    buildRevisionBackup: (mode) => mode === "redacted"
+      ? { mode: "redacted-summary", revisionCount: 0 }
+      : { mode: "full", schemaVersion: 10, revisions: [] },
+    buildRevisitIntentBackup: (mode) => mode === "redacted"
+      ? { mode: "redacted-summary", intentCount: 0 }
+      : { mode: "full", schemaVersion: 11, intents: [] },
+    buildTimeCalibrationBackup: (mode) => mode === "redacted"
+      ? { mode: "redacted-summary", calibrationCount: 0 }
+      : { mode: "full", schemaVersion: 12, calibrations: [] },
+    buildOralHistoryBackup: (mode) => mode === "redacted"
+      ? { mode: "redacted-summary", questionCount: 0, answerCount: 0, confirmedAnswerCount: 0, note: ORAL_HISTORY_REDACTED_NOTE }
+      : { mode: "full", schemaVersion: 13, questions: [], answers: [] },
+    buildCuratorAgentBackup: (mode) => mode === "redacted" ? curatorRedacted() : { mode: "full", schemaVersion: 14, runs: [] },
+    buildMemoryInboxBackup: (mode) => mode === "redacted"
+      ? { mode: "redacted-summary", sourceCount: 0, itemCount: 0 }
+      : { mode: "full", schemaVersion: 15, sources: [], items: [] },
+    buildProvenanceBackup: (mode) => mode === "redacted"
+      ? { mode: "redacted-summary", claimCount: 0, sourceCount: 0, eventCount: 0 }
+      : { mode: "full", schemaVersion: 16, claims: [], sources: [], events: [] },
+    buildCoMemoryResponseBackup(mode, memoryIds) {
+      calls.push({ mode, memoryIds });
+      return mode === "redacted"
+        ? {
+            mode: "redacted-summary",
+            responseCount: 1,
+            unverifiedIdentityCount: 1,
+            encryptedTransportCount: 1,
+            unsignedCount: 1,
+            note: CO_MEMORY_RESPONSE_REDACTED_NOTE
+          }
+        : { mode: "full", schemaVersion: 17, kind: "co_memory_response", responses: [privateResponse] };
+    }
+  };
+  const build = createCollectionExporter({
+    store,
+    appVersion: "12.0.0",
+    schemaVersion: 18,
+    buildArchaeologyBackup: (_store, _memories, mode) => mode === "redacted"
+      ? { mode: "redacted-summary" }
+      : { mode: "full", events: [], claims: [], pairDecisions: [], questions: [] }
+  });
+
+  const full = build([memory("schema18-export")], "full");
+  same(full.coMemoryResponses, {
+    mode: "full",
+    schemaVersion: 17,
+    kind: "co_memory_response",
+    responses: [privateResponse]
+  }, "schema 18 full JSON 显式携带完整共忆回信 section");
+  same(calls[0], { mode: "full", memoryIds: ["schema18-export"] }, "完整共忆回信严格限制在本次展品边界");
+
+  const redacted = build([memory("schema18-export")], "redacted");
+  same(Object.keys(redacted.coMemoryResponses).sort(), [
+    "encryptedTransportCount", "mode", "note", "responseCount", "unsignedCount", "unverifiedIdentityCount"
+  ], "schema 18 脱敏 JSON 只保留四项固定安全计数与说明");
+  same(calls[1], { mode: "redacted", memoryIds: ["schema18-export"] }, "脱敏共忆回信复用同一展品边界");
+  const serialized = JSON.stringify(redacted.coMemoryResponses);
+  ok(!serialized.includes(privateResponse.id) && !serialized.includes(privateResponse.question) &&
+    !serialized.includes(privateResponse.answer) && !serialized.includes(privateResponse.requestSha256) &&
+    !serialized.includes("memoryId") && !serialized.includes("letterId"),
+  "脱敏共忆回信物理排除问答、标识符与哈希");
+
+  const missing = { ...store };
+  delete missing.buildCoMemoryResponseBackup;
+  const broken = createCollectionExporter({
+    store: missing,
+    appVersion: "12.0.0",
+    schemaVersion: 18,
+    buildArchaeologyBackup: () => ({ mode: "full", events: [] })
+  });
+  assert.throws(() => broken([], "full"), /co-memory response backup support/u,
+    "schema 18 导出缺少共忆回信处理器时 fail closed");
   assertionCount += 1;
 }
 
@@ -317,6 +414,113 @@ function checkCuratorAgentImportModes() {
   }));
   ok(failure?.statusCode === 400 && failure.message.includes("未保留不完整数据"), "curatorAgent 恢复失败取消整次 JSON 导入");
   ok(failed.state.memories.size === 0 && failed.state.curatorAgent.length === 0, "curatorAgent 失败与馆藏写入在同一事务回滚");
+}
+
+function checkSchema18ImportModes() {
+  const sourceMemoryId = "source-schema18";
+  const fullPayload = {
+    schemaVersion: 18,
+    mode: "full",
+    memories: [memory(sourceMemoryId)],
+    ...schema18Required(sourceMemoryId)
+  };
+
+  const missing = createFixture({ schemaVersion: 18 });
+  const missingPayload = clone(fullPayload);
+  delete missingPayload.coMemoryResponses;
+  const missingError = captureError(() => missing.importCollection(missingPayload));
+  ok(missingError?.statusCode === 400 && missingError.message.includes("coMemoryResponses"),
+    "schema 18 full 即使零封回信也必须显式声明 coMemoryResponses");
+  ok(missing.calls.normalizes === 0 && missing.calls.transactions === 0,
+    "缺少共忆回信 section 在规范化和事务前拒绝");
+
+  const full = createFixture({ schemaVersion: 18 });
+  const fullResult = full.importCollection(fullPayload);
+  ok(full.calls.validations.memoryInbox === 1 && full.calls.validations.provenance === 1 &&
+    full.calls.validations.coMemoryResponses === 1 &&
+    full.calls.events.indexOf("validate-co-memory-responses") < full.calls.events.indexOf("normalize"),
+  "schema 18 收件箱、来源护照与共忆回信均在展品规范化前验真");
+  ok(full.calls.restores.memoryInbox === 1 && full.calls.restores.coMemoryResponses === 1 &&
+    full.calls.restores.provenance === 1,
+  "schema 18 三项来源记录在同一事务完整恢复");
+  ok(full.calls.events.indexOf("restore-co-memory-responses") < full.calls.events.indexOf("restore-provenance"),
+    "共忆回信固定先于可引用它的来源护照恢复");
+  same(mapObject(full.calls.restoreMaps.coMemoryResponses), { [sourceMemoryId]: sourceMemoryId },
+    "未冲突展品 ID 在共忆回信恢复中保持稳定");
+  same(fullResult.coMemoryResponses.idMap.responses, { "co-memory-response-one": "co-memory-response-one" },
+    "完整 JSON 恢复保持共忆回信记录 ID 不变");
+  same(full.state.coMemoryResponses, ["co-memory-response-one"],
+    "完整 JSON 将共忆回信作为独立来源记录写入一次");
+
+  const redacted = createFixture({ schemaVersion: 18 });
+  const redactedResult = redacted.importCollection({
+    schemaVersion: 18,
+    mode: "redacted",
+    memories: [memory("source-schema18-redacted")],
+    ...schema18RedactedRequired()
+  });
+  ok(redacted.calls.validations.coMemoryResponses === 1 && redacted.calls.restores.coMemoryResponses === 0 &&
+    redacted.state.coMemoryResponses.length === 0,
+  "脱敏共忆回信摘要只验真且保持共忆内容零写入");
+  ok(redactedResult.coMemoryResponses.summarized === true && redactedResult.coMemoryResponses.responses === 0,
+    "脱敏导入只返回共忆安全计数边界而不恢复回答");
+
+  const conflict = createFixture({
+    schemaVersion: 18,
+    existingMemories: [memory(sourceMemoryId)],
+    generatedIds: ["memory-conflict-copy"]
+  });
+  const conflictError = captureError(() => conflict.importCollection(fullPayload));
+  ok(conflictError?.statusCode === 400 && conflictError.message.includes("未保留不完整数据"),
+    "共忆回信禁止 memoryId 冲突时静默重绑整包");
+  same(mapObject(conflict.calls.restoreMaps.coMemoryResponses), { [sourceMemoryId]: "memory-conflict-copy" },
+    "冲突恢复明确观测到非恒等映射并 fail closed");
+  ok(conflict.state.memories.size === 1 && conflict.state.memories.has(sourceMemoryId) &&
+    !conflict.state.memories.has("memory-conflict-copy") && conflict.state.memoryInbox.length === 0 &&
+    conflict.state.coMemoryResponses.length === 0 && conflict.state.provenance.length === 0,
+  "memoryId 冲突回滚展品及已经开始的来源模块写入");
+  ok(conflict.calls.restores.provenance === 0,
+    "共忆回信重绑失败会在来源护照恢复前终止");
+
+  const invalid = createFixture({ schemaVersion: 18, validationFailure: "coMemoryResponses" });
+  const invalidError = captureError(() => invalid.importCollection(fullPayload));
+  ok(invalidError?.statusCode === 400 && invalidError.message.includes("共忆回信"),
+    "非法共忆回信 payload 转换为可读的 400");
+  ok(invalid.calls.normalizes === 0 && invalid.calls.transactions === 0 && invalid.calls.imports === 0,
+    "非法共忆回信在任何馆藏写入前被拒绝");
+
+  const legacy = createFixture({ schemaVersion: 18 });
+  const legacyError = captureError(() => legacy.importCollection({
+    schemaVersion: 16,
+    mode: "full",
+    memories: [],
+    coMemoryResponses: { mode: "full", schemaVersion: 17, kind: "co_memory_response", responses: [] }
+  }));
+  ok(legacyError?.statusCode === 400 && legacyError.message.includes("coMemoryResponses") &&
+    legacy.calls.normalizes === 0 && legacy.calls.transactions === 0,
+  "schema 16 越级声明共忆回信时在写入前拒绝");
+
+  const future = createFixture({ schemaVersion: 18 });
+  const futureError = captureError(() => future.importCollection({
+    schemaVersion: 19,
+    mode: "full",
+    memories: []
+  }));
+  ok(futureError?.statusCode === 400 && futureError.message.includes("高于当前支持") &&
+    Object.values(future.calls.validations).every((count) => count === 0) && future.calls.transactions === 0,
+  "未来 schema 在所有共忆 validator 与写入前拒绝");
+
+  const oralPreflight = createFixture({ schemaVersion: 18 });
+  const oralPayload = clone(fullPayload);
+  oralPayload.oralHistories = { mode: "full", schemaVersion: 13, questions: [{ id: "question-one" }], answers: [] };
+  const preflightResult = oralPreflight.importCollection(oralPayload);
+  ok(oralPreflight.calls.validations.coMemoryResponses === 1 && oralPreflight.calls.transactions === 0 &&
+    Object.values(oralPreflight.calls.restores).every((count) => count === 0),
+  "口述史触发 .time-isle preflight 时共忆回信只验真且不半恢复");
+  ok(preflightResult.coMemoryResponses.skipped === 1 &&
+    preflightResult.coMemoryResponses.requiresTimeIsle === true &&
+    oralPreflight.state.coMemoryResponses.length === 0,
+  "整包 preflight 明确报告一封共忆回信等待 .time-isle 恢复");
 }
 
 function checkSchema12Export() {
@@ -940,7 +1144,10 @@ function createFixture(options = {}) {
     revisits: [],
     entities: [],
     timeCalibrations: [],
-    curatorAgent: []
+    curatorAgent: [],
+    memoryInbox: [],
+    provenance: [],
+    coMemoryResponses: []
   };
   const calls = {
     normalizes: 0,
@@ -951,9 +1158,14 @@ function createFixture(options = {}) {
     validations: {
       archaeology: 0, exhibitions: 0, revisits: 0, entities: 0,
       voices: 0, capsules: 0, revisions: 0, revisitIntents: 0,
-      timeCalibrations: 0, oralHistories: 0, curatorAgent: 0
+      timeCalibrations: 0, oralHistories: 0, curatorAgent: 0,
+      memoryInbox: 0, provenance: 0, coMemoryResponses: 0
     },
-    restores: { archaeology: 0, exhibitions: 0, revisits: 0, entities: 0, revisions: 0, revisitIntents: 0, timeCalibrations: 0, curatorAgent: 0 },
+    restores: {
+      archaeology: 0, exhibitions: 0, revisits: 0, entities: 0, revisions: 0,
+      revisitIntents: 0, timeCalibrations: 0, curatorAgent: 0,
+      memoryInbox: 0, provenance: 0, coMemoryResponses: 0
+    },
     restoreMaps: {},
     oralBoundaries: null,
     events: []
@@ -1100,6 +1312,45 @@ function createFixture(options = {}) {
         exhibitionIdMap: new Map(restoreOptions.exhibitionIdMap || [])
       };
       return callRestoreHandler("curatorAgent", { backup, ...restoreOptions });
+    },
+    validateMemoryInboxBackup(backup, sourceIds) {
+      calls.validations.memoryInbox += 1;
+      calls.events.push("validate-memory-inbox");
+      calls.memoryInboxSourceIds = [...(sourceIds || [])];
+      if (options.validationFailure === "memoryInbox") throw new Error("invalid memory inbox");
+      return Boolean(backup && Array.isArray(sourceIds));
+    },
+    restoreMemoryInboxBackup(backup, restoreOptions = {}) {
+      calls.restores.memoryInbox += 1;
+      calls.events.push("restore-memory-inbox");
+      calls.restoreMaps.memoryInbox = new Map(restoreOptions.memoryIdMap || []);
+      return callRestoreHandler("memoryInbox", { backup, ...restoreOptions });
+    },
+    validateProvenanceBackup(backup, sourceIds) {
+      calls.validations.provenance += 1;
+      calls.events.push("validate-provenance");
+      calls.provenanceSourceIds = [...(sourceIds || [])];
+      if (options.validationFailure === "provenance") throw new Error("invalid provenance");
+      return Boolean(backup && Array.isArray(sourceIds));
+    },
+    restoreProvenanceBackup(backup, restoreOptions = {}) {
+      calls.restores.provenance += 1;
+      calls.events.push("restore-provenance");
+      calls.restoreMaps.provenance = new Map(restoreOptions.memoryIdMap || []);
+      return callRestoreHandler("provenance", { backup, ...restoreOptions });
+    },
+    validateCoMemoryResponseBackup(backup, sourceIds) {
+      calls.validations.coMemoryResponses += 1;
+      calls.events.push("validate-co-memory-responses");
+      calls.coMemorySourceIds = [...(sourceIds || [])];
+      if (options.validationFailure === "coMemoryResponses") throw new Error("invalid co-memory responses");
+      return Boolean(backup && Array.isArray(sourceIds));
+    },
+    restoreCoMemoryResponseBackup(backup, restoreOptions = {}) {
+      calls.restores.coMemoryResponses += 1;
+      calls.events.push("restore-co-memory-responses");
+      calls.restoreMaps.coMemoryResponses = new Map(restoreOptions.memoryIdMap || []);
+      return callRestoreHandler("coMemoryResponses", { backup, ...restoreOptions });
     }
   };
 
@@ -1147,6 +1398,39 @@ function createFixture(options = {}) {
         restoredRuns: Object.keys(runIds).length,
         runIdMap: runIds,
         idMap: { runs: runIds, steps: {}, proposals: {}, decisions: {} }
+      };
+    }
+    if (feature === "memoryInbox") {
+      const items = Array.isArray(context.backup?.items) ? context.backup.items : [];
+      state.memoryInbox.push(...items.map((item) => item.id));
+      return { sources: 0, items: items.length, reused: 0, skipped: 0, summarized: false, idMap: { sources: {}, items: {} } };
+    }
+    if (feature === "coMemoryResponses") {
+      const records = Array.isArray(context.backup?.responses) ? context.backup.responses : [];
+      for (const record of records) {
+        if (context.memoryIdMap?.get(record.memoryId) !== record.memoryId) {
+          throw new Error("Encrypted co-memory responses cannot be rebound to another memory ID.");
+        }
+      }
+      state.coMemoryResponses.push(...records.map((record) => record.id));
+      return {
+        responses: records.length,
+        reused: 0,
+        skipped: 0,
+        summarized: false,
+        idMap: { responses: Object.fromEntries(records.map((record) => [record.id, record.id])) }
+      };
+    }
+    if (feature === "provenance") {
+      const claims = Array.isArray(context.backup?.claims) ? context.backup.claims : [];
+      state.provenance.push(...claims.map((claim) => claim.id));
+      return {
+        claims: claims.length,
+        sources: Array.isArray(context.backup?.sources) ? context.backup.sources.length : 0,
+        events: Array.isArray(context.backup?.events) ? context.backup.events.length : 0,
+        skipped: 0,
+        summarized: false,
+        idMap: { claims: {}, sources: {}, events: {} }
       };
     }
     return { states: 0, skipped: 0, idMap: {} };
@@ -1275,6 +1559,66 @@ function schema14RedactedRequired() {
   };
 }
 
+function schema18Required(memoryId) {
+  return {
+    ...schema14Required(),
+    curatorAgent: { mode: "full", schemaVersion: 14, runs: [] },
+    memoryInbox: {
+      mode: "full",
+      schemaVersion: 15,
+      sources: [{ id: "memory-inbox-source-one" }],
+      items: [{ id: "memory-inbox-item-one", memoryId }]
+    },
+    provenance: {
+      mode: "full",
+      schemaVersion: 16,
+      claims: [{ id: "provenance-claim-one", memoryId }],
+      sources: [{ id: "provenance-source-one", claimId: "provenance-claim-one", referenceId: "co-memory-response-one" }],
+      events: []
+    },
+    coMemoryResponses: {
+      mode: "full",
+      schemaVersion: 17,
+      kind: "co_memory_response",
+      responses: [{ id: "co-memory-response-one", memoryId }]
+    }
+  };
+}
+
+function schema18RedactedRequired() {
+  return {
+    ...schema14RedactedRequired(),
+    curatorAgent: curatorRedacted(),
+    memoryInbox: {
+      mode: "redacted-summary",
+      sourceCount: 1,
+      itemCount: 1,
+      pendingCount: 1,
+      dismissedCount: 0,
+      acceptedCount: 0,
+      orphanedCount: 0,
+      note: "fixed"
+    },
+    provenance: {
+      mode: "redacted-summary",
+      claimCount: 1,
+      sourceCount: 1,
+      eventCount: 1,
+      confirmedCount: 0,
+      needsReviewCount: 0,
+      note: "fixed"
+    },
+    coMemoryResponses: {
+      mode: "redacted-summary",
+      responseCount: 1,
+      unverifiedIdentityCount: 1,
+      encryptedTransportCount: 1,
+      unsignedCount: 1,
+      note: CO_MEMORY_RESPONSE_REDACTED_NOTE
+    }
+  };
+}
+
 function sanitizeId(value) {
   const id = String(value || "").trim();
   return /^[a-zA-Z0-9_-]{1,120}$/.test(id) ? id : "";
@@ -1307,7 +1651,10 @@ function cloneState(state) {
     revisits: clone(state.revisits),
     entities: clone(state.entities),
     timeCalibrations: clone(state.timeCalibrations),
-    curatorAgent: clone(state.curatorAgent)
+    curatorAgent: clone(state.curatorAgent),
+    memoryInbox: clone(state.memoryInbox),
+    provenance: clone(state.provenance),
+    coMemoryResponses: clone(state.coMemoryResponses)
   };
 }
 
@@ -1319,6 +1666,9 @@ function restoreState(target, snapshot) {
   target.entities = snapshot.entities;
   target.timeCalibrations = snapshot.timeCalibrations;
   target.curatorAgent = snapshot.curatorAgent;
+  target.memoryInbox = snapshot.memoryInbox;
+  target.provenance = snapshot.provenance;
+  target.coMemoryResponses = snapshot.coMemoryResponses;
 }
 
 function stateSnapshot(state) {
@@ -1329,7 +1679,10 @@ function stateSnapshot(state) {
     revisits: state.revisits,
     entities: state.entities,
     timeCalibrations: state.timeCalibrations,
-    curatorAgent: state.curatorAgent
+    curatorAgent: state.curatorAgent,
+    memoryInbox: state.memoryInbox,
+    provenance: state.provenance,
+    coMemoryResponses: state.coMemoryResponses
   };
 }
 

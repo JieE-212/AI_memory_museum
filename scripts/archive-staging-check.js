@@ -16,7 +16,9 @@ try {
   const stale = [
     path.join(root, ".exports", "time-isle-export-ABC123"),
     path.join(root, ".restore", "restore-00000000-0000-4000-8000-000000000000"),
-    path.join(root, ".inspect", "inspect-00000000-0000-4000-8000-000000000000")
+    path.join(root, ".restore", "restore-00000000-0000-4000-8000-000000000000-input-ABC123"),
+    path.join(root, ".inspect", "inspect-00000000-0000-4000-8000-000000000000"),
+    path.join(root, ".drill", "drill-00000000-0000-4000-8000-000000000000")
   ];
   const freshDirectory = path.join(root, ".exports", "time-isle-export-FRESH1");
   const unrelated = path.join(root, ".restore", "user-folder");
@@ -29,7 +31,7 @@ try {
   fs.utimesSync(unrelated, old, old);
 
   const result = cleanupArchiveStaging({ mediaRoot: root, minimumAgeMs: 60 * 60 * 1000, now });
-  check(result.removed.length === 3, "三类过期归档暂存目录都会被清理");
+  check(result.removed.length === 5, "四类过期归档暂存及崩溃遗留的流式回放目录都会被清理");
   check(stale.every((directory) => !fs.existsSync(directory)), "过期暂存中的合成明文不会残留");
   check(fs.existsSync(freshDirectory), "仍在安全年龄窗口内的暂存不会被误删");
   check(fs.existsSync(unrelated), "名称不属于归档暂存契约的目录不会被清理");

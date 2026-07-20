@@ -10,29 +10,34 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="时屿" />
     <title>时屿｜AI 私人记忆策展工具</title>
-    <link rel="manifest" href="/manifest.webmanifest?v=10.0.0" />
+    <link rel="manifest" href="/manifest.webmanifest?v=14.0.0" />
     <link rel="icon" href="/assets/time-isle-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/assets/time-isle-apple-touch.png" />
     <link rel="stylesheet" href="/styles.css?v=7.2.0-touch5" />
-    <link rel="stylesheet" href="/pwa.css?v=10.0.0" />
+    <link rel="stylesheet" href="/pwa.css?v=14.0.0" />
     <link rel="stylesheet" href="/archaeology.css" />
     <link rel="stylesheet" href="/exhibitions.css?v=7.2.0" />
-    <link rel="stylesheet" href="/curator-agent.css?v=10.0.0" />
-    <link rel="stylesheet" href="/capsules.css?v=10.0.0" />
-    <link rel="stylesheet" href="/share-privacy.css?v=10.0.0" />
-    <link rel="stylesheet" href="/revisits.css?v=10.0.0" />
-    <link rel="stylesheet" href="/revisit-intents.css?v=10.0.0" />
-    <link rel="stylesheet" href="/time-calibrations.css?v=10.0.0" />
+    <link rel="stylesheet" href="/curator-agent.css?v=14.0.0" />
+    <link rel="stylesheet" href="/capsules.css?v=14.0.0" />
+    <link rel="stylesheet" href="/share-privacy.css?v=14.0.0" />
+    <link rel="stylesheet" href="/revisits.css?v=14.0.0" />
+    <link rel="stylesheet" href="/revisit-intents.css?v=14.0.0" />
+    <link rel="stylesheet" href="/time-calibrations.css?v=14.0.0" />
     <link rel="stylesheet" href="/revisions.css?v=7.2.0-a11y2" />
     <link rel="stylesheet" href="/clues.css?v=7.2.0" />
     <link rel="stylesheet" href="/collection-health.css?v=7.2.0-a11y2" />
     <link rel="stylesheet" href="/media.css" />
     <link rel="stylesheet" href="/voice.css?v=7.2.0-align1" />
-    <link rel="stylesheet" href="/oral-histories.css?v=10.0.0" />
+    <link rel="stylesheet" href="/oral-histories.css?v=14.0.0" />
     <link rel="stylesheet" href="/media-evidence.css" />
     <link rel="stylesheet" href="/media-compare.css" />
     <link rel="stylesheet" href="/media-ocr.css" />
     <link rel="stylesheet" href="/media-lab.css" />
+    <link rel="stylesheet" href="/memory-inbox.css?v=14.0.0-mobile1" />
+    <link rel="stylesheet" href="/provenance.css?v=14.0.0" />
+    <link rel="stylesheet" href="/co-memory-letter.css?v=14.0.0" />
+    <link rel="stylesheet" href="/memory-lens.css?v=14.0.0" />
+    <link rel="stylesheet" href="/museum-lock.css?v=14.0.0" />
   </head>
   <body>
     <a class="skip-link" href="#mainContent">跳到主要内容</a>
@@ -148,6 +153,16 @@
               </div>
             </div>
             <form id="memoryForm">
+              <details class="memory-inbox-entry" id="memoryInboxEntry">
+                <summary>
+                  <span><strong>从文档整理</strong><small id="memoryInboxSummary">逐段确认后才入馆</small></span>
+                  <span class="memory-inbox-badge" id="memoryInboxBadge" hidden>0</span>
+                </summary>
+                <div class="memory-inbox-entry-body">
+                  <p>读取本机 TXT / Markdown，整份文件只在浏览器停留；馆内仅保留你确认的片段锚点。</p>
+                  <button type="button" class="button secondary compact" id="memoryInboxOpenButton">打开记忆收件箱</button>
+                </div>
+              </details>
               <label for="rawContent">记忆正文</label>
               <textarea id="rawContent" maxlength="4000" required placeholder="例如：毕业那天傍晚，我们在操场尽头站了很久……"></textarea>
               <div class="field-meta"><span>原文会保留，AI 建议可以继续修改。</span><span id="charCount">0 / 4000</span></div>
@@ -366,6 +381,7 @@
                 <button type="button" class="button secondary compact" id="capsuleStudioButton">胶囊与分享</button>
               </div>
             </div>
+            <div id="memoryLensMount" class="memory-lens-mount"></div>
             <div class="insight-tabs" role="tablist" aria-label="回顾方式">
               <button type="button" class="is-active" id="insightTabTimeline" role="tab" aria-selected="true" aria-controls="timelinePanel" tabindex="0" data-insight-tab="timeline">时间线</button>
               <button type="button" id="insightTabThemes" role="tab" aria-selected="false" aria-controls="themesPanel" tabindex="-1" data-insight-tab="themes">主题</button>
@@ -398,6 +414,31 @@
               </div>
             </div>
             <div class="data-location-list" id="dataLocationList"></div>
+            <details class="museum-lock-panel" id="museumLockPanel">
+              <summary>
+                <span><strong>锁馆与恢复演练</strong><small>应用级写保护 · 结构验真不写入当前馆藏</small></span>
+                <span class="museum-lock-state" id="museumLockState" role="status" aria-live="polite">读取中</span>
+              </summary>
+              <div class="museum-lock-body">
+                <p class="museum-lock-boundary">锁馆只会在服务器读取请求正文前阻止写操作；它不是 SQLite 或磁盘静态加密，也不会加密普通备份。忘记口令后无法由项目替你找回。</p>
+                <form class="museum-lock-form" id="museumLockForm" novalidate>
+                  <label for="museumLockPassphrase">锁馆口令
+                    <input id="museumLockPassphrase" type="password" minlength="8" maxlength="1024" autocomplete="current-password" required disabled />
+                  </label>
+                  <label id="museumLockConfirmField" for="museumLockPassphraseConfirm">再次输入口令
+                    <input id="museumLockPassphraseConfirm" type="password" minlength="8" maxlength="1024" autocomplete="new-password" disabled />
+                  </label>
+                  <button type="submit" class="button secondary" id="museumLockAction" disabled>读取锁馆状态</button>
+                  <p class="museum-lock-status" id="museumLockStatus" role="status" aria-live="polite">口令只用于本次派生校验，不写入浏览器存储、日志或普通归档。</p>
+                </form>
+                <section class="structural-recovery" aria-labelledby="structuralRecoveryTitle">
+                  <div><strong id="structuralRecoveryTitle">完整备份结构演练</strong><small>核对 manifest、哈希与引用；不会执行真实恢复，也不能证明具备灾难恢复能力</small></div>
+                  <input id="structuralRecoveryFile" class="sr-only" type="file" accept="application/vnd.time-isle,.time-isle" disabled />
+                  <label class="button text-button compact file-button" for="structuralRecoveryFile">选择 .time-isle 开始演练</label>
+                  <p id="structuralRecoveryStatus" role="status" aria-live="polite">仅接受完整备份；完成或失败后都会清理隔离暂存。</p>
+                </section>
+              </div>
+            </details>
             <details class="collection-health-panel" id="collectionHealthDetails">
               <summary>
                 <span><strong>馆藏体检</strong><small id="collectionHealthDescription">只读核对数据库、图片、声音与待复核事项</small></span>
@@ -952,35 +993,82 @@
       </div>
     </dialog>
 
+    <dialog class="memory-inbox-dialog" id="memoryInboxDialog" aria-labelledby="memoryInboxTitle">
+      <div class="memory-inbox-dialog-shell">
+        <header class="memory-inbox-dialog-header">
+          <div>
+            <p class="eyebrow">Verifiable inbox</p>
+            <h2 id="memoryInboxTitle" tabindex="-1">记忆收件箱</h2>
+          </div>
+          <button type="button" class="icon-button" data-memory-inbox-close aria-label="关闭记忆收件箱">×</button>
+        </header>
+        <div class="memory-inbox-dialog-body">
+          <p class="memory-inbox-boundary"><strong>先核对，再入馆。</strong> 文件名、原文件哈希、UTF-16 区间和逐字片段组成来源回执；系统不从文档推断日期、人物、关系、说话人或情绪。</p>
+          <p class="memory-inbox-demo-note" id="memoryInboxDemoNote" hidden>公开 Demo 只展示合成样例，文件选择和收件箱写入均已关闭。</p>
+          <p id="memoryInboxLocalNote">首版只支持 512 KiB 内的 UTF-8 TXT / Markdown；整份源文件不会写入 SQLite、localStorage 或 IndexedDB。</p>
+          <div class="memory-inbox-controls">
+            <label class="button secondary compact" id="memoryInboxFileLabel" for="memoryInboxFile">选择文本文件</label>
+            <input class="sr-only" id="memoryInboxFile" type="file" accept=".txt,.md,.markdown,text/plain,text/markdown" />
+            <button type="button" class="button text-button compact" id="memoryInboxSampleButton">查看合成样例</button>
+          </div>
+          <p class="memory-inbox-file-meta" id="memoryInboxFileMeta">尚未选择文件。</p>
+
+          <section class="memory-inbox-section" aria-labelledby="memoryInboxCandidateTitle">
+            <div class="memory-inbox-section-heading">
+              <div><h3 id="memoryInboxCandidateTitle">原样片段</h3><p>按空行分段；每一段都要由你亲手加入。</p></div>
+            </div>
+            <div class="memory-inbox-candidates" id="memoryInboxCandidates"></div>
+          </section>
+
+          <section class="memory-inbox-section" aria-labelledby="memoryInboxItemsTitle">
+            <div class="memory-inbox-section-heading">
+              <div><h3 id="memoryInboxItemsTitle">待确认</h3><p>这里的片段还不是展品，也不会自动触发 AI。</p></div>
+              <button type="button" class="button text-button compact" id="memoryInboxRefreshButton">刷新</button>
+            </div>
+            <div class="memory-inbox-items" id="memoryInboxItems" aria-live="polite"></div>
+          </section>
+          <p class="memory-inbox-status" id="memoryInboxStatus" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+    </dialog>
+
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
     <footer class="site-footer">
       <span>时屿 · 让记忆可整理，也让 AI 的依据可回看。</span>
-      <span id="footerVersion">v10.0.0</span>
+      <span id="footerVersion">v14.0.0</span>
     </footer>
 
     <script src="/assets/portability.js"></script>
     <script src="/assets/media-intelligence.js"></script>
     <script src="/assets/media.js"></script>
-    <script src="/assets/voice-capture.js?v=10.0.0"></script>
+    <script src="/assets/voice-capture.js?v=14.0.0"></script>
     <script src="/assets/voice.js?v=7.2.0"></script>
     <script src="/assets/media-evidence.js"></script>
     <script src="/assets/media-compare.js"></script>
     <script src="/assets/media-ocr.js"></script>
     <script src="/assets/media-lab.js"></script>
     <script src="/assets/exhibitions.js?v=7.2.0"></script>
-    <script src="/assets/curator-agent.js?v=10.0.0"></script>
-    <script src="/assets/capsule-crypto.js?v=10.0.0"></script>
-    <script src="/assets/share-privacy.js?v=10.0.0"></script>
-    <script src="/assets/capsules.js?v=10.0.0"></script>
-    <script src="/assets/revisit-intents.js?v=10.0.0"></script>
-    <script src="/assets/revisits.js?v=10.0.0"></script>
-    <script src="/assets/time-calibrations.js?v=10.0.0"></script>
-    <script src="/assets/oral-histories.js?v=10.0.0"></script>
+    <script src="/assets/curator-agent.js?v=14.0.0"></script>
+    <script src="/assets/memory-lens.js?v=14.0.0"></script>
+    <script src="/assets/memory-lens-host.js?v=14.0.0"></script>
+    <script src="/assets/museum-lock.js?v=14.0.0"></script>
+    <script src="/assets/capsule-crypto.js?v=14.0.0"></script>
+    <script src="/assets/share-privacy.js?v=14.0.0"></script>
+    <script src="/assets/capsules.js?v=14.0.0"></script>
+    <script src="/assets/revisit-intents.js?v=14.0.0"></script>
+    <script src="/assets/revisits.js?v=14.0.0"></script>
+    <script src="/assets/time-calibrations.js?v=14.0.0"></script>
+    <script src="/assets/oral-histories.js?v=14.0.0"></script>
     <script src="/assets/revisions.js?v=7.2.0-a11y2"></script>
     <script src="/assets/clues.js?v=7.2.0"></script>
     <script src="/assets/collection-health.js?v=7.2.0-a11y2"></script>
-    <script src="/assets/pwa.js?v=10.0.0"></script>
-    <script src="/assets/app.js?v=10.0.0"></script>
+    <script src="/assets/memory-inbox.js?v=14.0.0"></script>
+    <script src="/assets/co-memory-crypto.js?v=14.0.0"></script>
+    <script src="/assets/co-memory-letter.js?v=14.0.0"></script>
+    <script src="/assets/co-memory-host.js?v=14.0.0"></script>
+    <script src="/assets/provenance.js?v=14.0.0"></script>
+    <script src="/assets/pwa.js?v=14.0.0"></script>
+    <script src="/assets/app.js?v=14.0.0"></script>
   </body>
 </html>

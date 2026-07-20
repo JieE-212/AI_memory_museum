@@ -1,6 +1,6 @@
 {
   "name": "ai-memory-museum",
-  "version": "10.0.0",
+  "version": "14.0.0",
   "private": true,
   "description": "时屿（TIME ISLE）：本地优先的 AI 私人记忆策展工具",
   "engines": {
@@ -11,6 +11,7 @@
     "dev": "node server.js",
     "build": "node scripts/check-all.js --without-smoke",
     "archaeology": "node scripts/archaeology-check.js",
+    "test:browser": "npm --prefix tests/browser test",
     "smoke": "node scripts/api-smoke.js",
     "check": "node scripts/check-all.js",
     "test": "npm run check"

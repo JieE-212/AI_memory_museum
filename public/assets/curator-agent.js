@@ -110,6 +110,34 @@
       else setStatus("填写主题即可开始；限定来源是可选项。助手只会先生成提案。", false);
     }
 
+    async function preselectSources(handoff, trigger) {
+      if (destroyed) return;
+      if (demo) throw new Error("公开 Demo 不接收本地镜片简报。");
+      const memoryIds = Array.isArray(handoff?.memoryIds)
+        ? [...new Set(handoff.memoryIds.map((value) => safeId(value)).filter(Boolean))]
+        : [];
+      if (memoryIds.length < MIN_SELECTED_SOURCES || memoryIds.length > MAX_SELECTED_SOURCES) {
+        throw new Error(`镜片简报必须明确包含 ${MIN_SELECTED_SOURCES}–${MAX_SELECTED_SOURCES} 件展品。`);
+      }
+      await open(trigger || elements.entryButton);
+      if (!memoriesLoaded) await loadMemories();
+      const available = new Set(memories.map((memory) => memory.id));
+      if (memoryIds.some((memoryId) => !available.has(memoryId))) {
+        throw new Error("镜片简报中的展品已经变化，请重新生成镜片后再带入策展。");
+      }
+      elements.sourceList.querySelectorAll('input[name="curatorAgentSource"]').forEach((input) => {
+        input.checked = memoryIds.includes(input.value);
+      });
+      elements.sourcePicker.open = true;
+      updateSourceStatus();
+      if (!String(elements.theme.value || "").trim()) {
+        const label = String(handoff?.lens?.label || "镜片").trim().slice(0, 24);
+        elements.theme.value = `${label}里的记忆线索`.slice(0, 60);
+      }
+      setStatus(`已带入 ${memoryIds.length} 件明确选择的展品；简报仍未保存，也不会自动运行。`, false, true);
+      elements.theme.focus({ preventScroll: true });
+    }
+
     async function loadSample() {
       const run = startSession();
       setBusy(true);
@@ -779,7 +807,7 @@
       if (elements.dialog.open) elements.dialog.close();
     }
 
-    return Object.freeze({ open, setDemo, destroy });
+    return Object.freeze({ open, preselectSources, setDemo, destroy });
   }
 
   function normalizeWorkspace(value) {

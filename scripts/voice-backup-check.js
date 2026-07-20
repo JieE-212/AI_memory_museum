@@ -157,7 +157,8 @@ async function checkStrictRejections(root, source, pristine) {
 
   const falseMime = cloneEntries(pristine);
   const falseMimeManifest = parseJson(falseMime.get(ARCHIVE_PATHS.manifest));
-  falseMimeManifest.entries.find((entry) => entry.path === audioPath).mime = "audio/mp4";
+  const falseMimeEntry = falseMimeManifest.entries.find((entry) => entry.path === audioPath);
+  falseMimeEntry.mime = falseMimeEntry.mime === "audio/webm" ? "audio/mp4" : "audio/webm";
   falseMime.set(ARCHIVE_PATHS.manifest, jsonBuffer(falseMimeManifest));
   await rejectsCode("MEDIA_ARCHIVE_MIME_INVALID", () => prepare(source, root, "false-mime", falseMime), "manifest MIME 不能覆盖真字节类型");
 

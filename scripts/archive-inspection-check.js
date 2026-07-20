@@ -20,12 +20,60 @@ async function main() {
     await checkSchema12ForwardingAndCleanup(root);
     await checkSchema13OralHistoryForwarding(root);
     await checkSchema14CuratorAgentForwarding(root);
+    await checkSchema18SourceForwarding(root);
     checkDependencyBoundary(root);
     checkSafeCounts();
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
   console.log(`Archive inspection checks passed: ${assertions} assertions.`);
+}
+
+async function checkSchema18SourceForwarding(root) {
+  const memoryInboxValidator = () => true;
+  const provenanceValidator = () => true;
+  const coMemoryValidator = () => true;
+  let forwarded = null;
+  const api = createArchiveInspectionApi({
+    mediaRoot: root,
+    supportedSchemaVersion: 18,
+    validateVoiceBackup: () => true,
+    validateTimeCalibrationBackup: () => true,
+    validateOralHistoryBackup: () => true,
+    validateCuratorAgentBackup: () => true,
+    validateMemoryInboxBackup: memoryInboxValidator,
+    validateProvenanceBackup: provenanceValidator,
+    validateCoMemoryResponseBackup: coMemoryValidator,
+    prepareMediaArchive: async (_source, options) => {
+      forwarded = options;
+      return preparedFixture({
+        schemaVersion: 18,
+        memoryInboxItemCount: 2,
+        provenanceClaimCount: 3,
+        coMemoryResponseCount: 4
+      });
+    },
+    sendJson(_response, status, payload) { return { status, payload }; },
+    httpError(statusCode, message) { return Object.assign(new Error(message), { statusCode }); }
+  });
+  const result = await api.handle(requestFixture(), responseFixture(), { pathname: "/api/archive/inspect" });
+  equal(result.status, 200, "schema 18 来源模块归档只读验真成功");
+  equal(forwarded.validateMemoryInboxBackup, memoryInboxValidator,
+    "记忆收件箱 validator 转发到正式 prepare 链");
+  equal(forwarded.validateProvenanceBackup, provenanceValidator,
+    "来源护照 validator 转发到正式 prepare 链");
+  equal(forwarded.validateCoMemoryResponseBackup, coMemoryValidator,
+    "共忆回信 validator 转发到正式 prepare 链");
+  equal(forwarded.supportedSchemaVersion, 18, "schema 18 验真继续执行未来 schema 上限");
+  equal(result.payload.inspection.counts.memoryInboxItems, 2, "验真摘要公开收件箱条目安全计数");
+  equal(result.payload.inspection.counts.provenanceClaims, 3, "验真摘要公开来源主张安全计数");
+  equal(result.payload.inspection.counts.coMemoryResponses, 4, "验真摘要公开共忆回信安全计数");
+  const serialized = JSON.stringify(result.payload.inspection);
+  equal(/(?:private-inbox-excerpt|private-claim-statement|private-co-memory-question|private-co-memory-answer)/u.test(serialized), false,
+    "schema 18 验真摘要物理排除收件箱摘录、主张正文与共忆问答");
+  equal(/(?:co-memory-response-private|[a-f0-9]{64})/u.test(serialized), false,
+    "schema 18 验真摘要不泄露共忆内部 ID 或哈希");
+  equal(fs.existsSync(path.join(root, ".inspect")), false, "schema 18 验真后清理私有 staging 目录");
 }
 
 async function checkSchema14CuratorAgentForwarding(root) {
@@ -178,6 +226,33 @@ function checkDependencyBoundary(root) {
     TypeError,
     "schema 14 inspection fails at construction when the curator-agent validator is missing"
   );
+  const throughCurator = {
+    ...base,
+    validateTimeCalibrationBackup: () => true,
+    validateOralHistoryBackup: () => true,
+    validateCuratorAgentBackup: () => true
+  };
+  throws(
+    () => createArchiveInspectionApi({ ...throughCurator, supportedSchemaVersion: 15 }),
+    TypeError,
+    "schema 15 验真缺少记忆收件箱 validator 时构造即失败"
+  );
+  const throughInbox = { ...throughCurator, validateMemoryInboxBackup: () => true };
+  throws(
+    () => createArchiveInspectionApi({ ...throughInbox, supportedSchemaVersion: 16 }),
+    TypeError,
+    "schema 16 验真缺少来源护照 validator 时构造即失败"
+  );
+  const throughProvenance = { ...throughInbox, validateProvenanceBackup: () => true };
+  throws(
+    () => createArchiveInspectionApi({ ...throughProvenance, supportedSchemaVersion: 17 }),
+    TypeError,
+    "schema 17 验真缺少共忆回信 validator 时构造即失败"
+  );
+  ok(
+    createArchiveInspectionApi({ ...throughProvenance, supportedSchemaVersion: 16 }),
+    "schema 16 兼容验真不虚构 schema 17 共忆回信依赖"
+  );
   ok(
     createArchiveInspectionApi({
       ...base,
@@ -227,6 +302,32 @@ function checkSafeCounts() {
     false,
     "full and redacted inspection summaries never expose curator private content"
   );
+
+  const fullSources = summarize(preparedFixture({
+    mode: "full",
+    schemaVersion: 18,
+    memoryInboxItemCount: 5,
+    provenanceClaimCount: 6,
+    coMemoryResponseCount: 7
+  }));
+  equal(fullSources.counts.memoryInboxItems, 5, "完整归档验真只公开收件箱条目数");
+  equal(fullSources.counts.provenanceClaims, 6, "完整归档验真只公开来源主张数");
+  equal(fullSources.counts.coMemoryResponses, 7, "完整归档验真只公开共忆回信数");
+  const redactedSources = summarize(preparedFixture({
+    mode: "redacted",
+    schemaVersion: 18,
+    memoryInboxItemCount: 8,
+    provenanceClaimCount: 9,
+    coMemoryResponseCount: 10
+  }));
+  equal(redactedSources.counts.memoryInboxItems, 8, "脱敏归档验真从固定摘要读取收件箱条目数");
+  equal(redactedSources.counts.provenanceClaims, 9, "脱敏归档验真从固定摘要读取来源主张数");
+  equal(redactedSources.counts.coMemoryResponses, 10, "脱敏归档验真从固定摘要读取共忆回信数");
+  const serializedSources = JSON.stringify({ fullSources, redactedSources });
+  equal(/(?:private-inbox-excerpt|private-claim-statement|private-co-memory-question|private-co-memory-answer)/u.test(serializedSources), false,
+    "完整与脱敏验真摘要都不携带来源模块私人内容");
+  equal(/(?:sourceKey|anchorKey|requestSha256|responseSha256|memoryId|letterId)/u.test(serializedSources), false,
+    "完整与脱敏验真摘要都不携带来源定位字段或哈希字段名");
 }
 
 function preparedFixture(options = {}) {
@@ -270,6 +371,52 @@ function preparedFixture(options = {}) {
             : []
         }))
       };
+  const memoryInboxItemCount = options.memoryInboxItemCount || 0;
+  const provenanceClaimCount = options.provenanceClaimCount || 0;
+  const coMemoryResponseCount = options.coMemoryResponseCount || 0;
+  const memoryInbox = mode === "redacted"
+    ? { mode: "redacted-summary", itemCount: memoryInboxItemCount, sourceCount: memoryInboxItemCount, note: "fixed" }
+    : {
+        mode: "full",
+        schemaVersion: 15,
+        sources: [],
+        items: Array.from({ length: memoryInboxItemCount }, (_, index) => ({
+          id: `memory-inbox-item-${index + 1}`,
+          excerpt: "private-inbox-excerpt"
+        }))
+      };
+  const provenance = mode === "redacted"
+    ? { mode: "redacted-summary", claimCount: provenanceClaimCount, sourceCount: 0, eventCount: 0, note: "fixed" }
+    : {
+        mode: "full",
+        schemaVersion: 16,
+        claims: Array.from({ length: provenanceClaimCount }, (_, index) => ({
+          id: `provenance-claim-${index + 1}`,
+          statement: "private-claim-statement"
+        })),
+        sources: [],
+        events: []
+      };
+  const coMemoryResponses = mode === "redacted"
+    ? {
+        mode: "redacted-summary",
+        responseCount: coMemoryResponseCount,
+        unverifiedIdentityCount: coMemoryResponseCount,
+        encryptedTransportCount: coMemoryResponseCount,
+        unsignedCount: coMemoryResponseCount,
+        note: "fixed"
+      }
+    : {
+        mode: "full",
+        schemaVersion: 17,
+        kind: "co_memory_response",
+        responses: Array.from({ length: coMemoryResponseCount }, (_, index) => ({
+          id: `co-memory-response-private-${index + 1}`,
+          question: "private-co-memory-question",
+          answer: "private-co-memory-answer",
+          requestSha256: "a".repeat(64)
+        }))
+      };
   return {
     verified: true,
     manifest: {
@@ -301,7 +448,10 @@ function preparedFixture(options = {}) {
               }))
             }
       } : {}),
-      ...(schemaVersion >= 14 ? { curatorAgent } : {})
+      ...(schemaVersion >= 14 ? { curatorAgent } : {}),
+      ...(schemaVersion >= 15 ? { memoryInbox } : {}),
+      ...(schemaVersion >= 16 ? { provenance } : {}),
+      ...(schemaVersion >= 17 ? { coMemoryResponses } : {})
     },
     assets: []
   };

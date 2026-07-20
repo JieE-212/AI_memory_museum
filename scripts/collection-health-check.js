@@ -15,12 +15,75 @@ async function main() {
   await checkTimeCalibrationReviewClassification();
   await checkOralHistoryReviewClassification();
   await checkCuratorAgentClassification();
+  await checkCoMemoryResponseClassification();
   await checkIssueSanitizationAndTruncation();
   await checkSingleTaskAndCancellation();
   await checkFailurePrivacy();
   await checkRetentionAndIsolation();
   checkDependencyAndInputBoundaries();
   console.log(`Collection health checks passed: ${assertions} assertions.`);
+}
+
+async function checkCoMemoryResponseClassification() {
+  const privateQuestion = "只用于馆藏体检注入的私人问题";
+  const privateAnswer = "只用于馆藏体检注入的私人回答";
+  const privateHash = "d".repeat(64);
+  const counts = {
+    coMemoryResponses: 2,
+    coMemoryUnverifiedIdentity: 2,
+    coMemoryEncryptedTransport: 2,
+    coMemoryUnsigned: 2,
+    coMemoryVerifiedIdentity: 99,
+    coMemoryQuestionCount: 99
+  };
+  const healthyService = createCollectionHealthService({
+    getDatabaseHealthSnapshot: async () => ({
+      ok: true,
+      checks: [{ code: "DATABASE_CO_MEMORY_RESPONSE_STRUCTURE", ok: true }],
+      counts,
+      issues: [],
+      question: privateQuestion,
+      answer: privateAnswer,
+      responseSha256: privateHash
+    }),
+    media: { listAssets: async () => [], verifyVariant: async () => true },
+    voice: { listAssets: async () => [], verifyAsset: async () => true },
+    createId: () => "health-co-memory-safe"
+  });
+  const healthy = await healthyService.wait(healthyService.start().id);
+  equal(healthy.summary.status, "healthy", "结构正常的共忆回信安全计数不会制造待处理问题");
+  equal(healthy.summary.database.status, "pass", "共忆回信边界验真通过时数据库区域保持 pass");
+  deepEqual(healthy.summary.database.records, {
+    coMemoryResponses: 2,
+    coMemoryUnverifiedIdentity: 2,
+    coMemoryEncryptedTransport: 2,
+    coMemoryUnsigned: 2
+  }, "馆藏体检只投影共忆回信的四项固定安全计数");
+  const serialized = JSON.stringify(healthy);
+  equal(serialized.includes(privateQuestion) || serialized.includes(privateAnswer) || serialized.includes(privateHash), false,
+    "馆藏体检不泄露共忆问题、回答或哈希");
+  equal(serialized.includes("coMemoryVerifiedIdentity") || serialized.includes("coMemoryQuestionCount"), false,
+    "未列入合同的共忆计数不能穿透安全白名单");
+  healthyService.destroy();
+
+  const blockerService = createCollectionHealthService({
+    getDatabaseHealthSnapshot: async () => ({
+      ok: false,
+      checks: [{ code: "DATABASE_CO_MEMORY_RESPONSE_STRUCTURE", ok: false }],
+      counts,
+      issues: []
+    }),
+    media: { listAssets: async () => [], verifyVariant: async () => true },
+    voice: { listAssets: async () => [], verifyAsset: async () => true },
+    createId: () => "health-co-memory-blocker"
+  });
+  const blocker = await blockerService.wait(blockerService.start().id);
+  equal(blocker.summary.status, "blocker", "共忆回信结构损坏会阻止健康结论");
+  equal(blocker.issues[0]?.code, "DATABASE_CO_MEMORY_RESPONSE_STRUCTURE",
+    "共忆结构问题保持固定且非敏感的错误码");
+  equal(blocker.issues[0]?.message, "共忆回信的加密绑定、未核验身份边界或独立来源结构需要核对。",
+    "共忆结构问题只返回固定安全文案");
+  blockerService.destroy();
 }
 
 async function checkCuratorAgentClassification() {

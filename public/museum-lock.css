@@ -1,0 +1,174 @@
+.museum-lock-panel {
+  border-top: 1px solid var(--line);
+}
+
+.museum-lock-panel > summary {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  list-style: none;
+}
+
+.museum-lock-panel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.museum-lock-panel > summary > span:first-child,
+.structural-recovery > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.museum-lock-panel summary small,
+.structural-recovery small {
+  color: var(--ink-soft);
+  font-size: 0.74rem;
+  font-weight: 500;
+}
+
+.museum-lock-state {
+  flex: 0 0 auto;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-soft);
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
+.museum-lock-state[data-state="locked"] {
+  border-color: var(--warm);
+  color: var(--warm);
+}
+
+.museum-lock-state[data-state="unlocked"] {
+  border-color: var(--accent);
+  color: var(--accent-dark);
+}
+
+.museum-lock-body,
+.museum-lock-form,
+.structural-recovery {
+  display: grid;
+  gap: 12px;
+}
+
+.museum-lock-body {
+  padding: 4px 0 20px;
+}
+
+.museum-lock-boundary {
+  margin: 0;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: var(--surface-muted);
+  color: var(--ink-soft);
+  font-size: 0.77rem;
+}
+
+.museum-lock-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+}
+
+.museum-lock-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.museum-lock-form input {
+  min-width: 0;
+  min-height: 46px;
+}
+
+.museum-lock-form .button {
+  min-height: 46px;
+}
+
+.museum-lock-status {
+  grid-column: 1 / -1;
+  min-width: 0;
+  min-height: 20px;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.museum-lock-status.is-error,
+#structuralRecoveryStatus.is-error {
+  color: var(--danger);
+}
+
+.museum-lock-status.is-success,
+#structuralRecoveryStatus.is-success {
+  color: var(--accent-dark);
+}
+
+.structural-recovery {
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.structural-recovery .button {
+  width: fit-content;
+  min-height: 44px;
+  margin: 0;
+}
+
+#structuralRecoveryStatus {
+  min-width: 0;
+  min-height: 20px;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.museum-lock-panel :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+@media (max-width: 650px), (max-width: 950px) and (max-height: 520px) and (pointer: coarse) {
+  .museum-lock-form {
+    grid-template-columns: 1fr;
+  }
+
+  .museum-lock-form .button,
+  .structural-recovery .button {
+    width: 100%;
+  }
+
+  .museum-lock-body {
+    padding-right: max(0px, env(safe-area-inset-right));
+    padding-left: max(0px, env(safe-area-inset-left));
+  }
+}
+
+@media (max-width: 390px) {
+  .museum-lock-panel > summary {
+    align-items: flex-start;
+    flex-direction: column;
+    padding-block: 9px;
+  }
+}
+
+@media (max-width: 320px) {
+  .museum-lock-boundary {
+    padding-inline: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .museum-lock-panel * {
+    transition-duration: 0.01ms !important;
+  }
+}

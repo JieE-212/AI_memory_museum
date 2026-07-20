@@ -39,6 +39,14 @@ const { createArchiveInspectionApi } = require("./lib/archive-inspection-api");
 const { createTimeCalibrationApi } = require("./lib/time-calibration-api");
 const { createOralHistoryApi } = require("./lib/oral-history-api");
 const { createCuratorAgentApi } = require("./lib/curator-agent-api");
+const { createMemoryInboxApi } = require("./lib/memory-inbox-api");
+const { createProvenanceApi } = require("./lib/provenance-api");
+const { createCoMemoryResponseApi } = require("./lib/co-memory-response-api");
+const { createMemoryLensApi } = require("./lib/memory-lens-api");
+const { createMuseumLockApi } = require("./lib/museum-lock-api");
+const { createStructuralRecoveryApi } = require("./lib/structural-recovery-api");
+const { createStructuralRecoveryRuntime } = require("./lib/structural-recovery-runtime");
+const { createMuseumWriteRuntime } = require("./lib/museum-write-runtime");
 
 const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
@@ -55,8 +63,8 @@ const MEDIA_ROOT = process.env.MEDIA_ROOT || (INTERVIEW_DEMO
   ? path.join(os.tmpdir(), "ai-memory-museum-interview-demo-media")
   : path.join(path.dirname(DB_PATH), "media"));
 const VOICE_ROOT = INTERVIEW_DEMO ? path.join(MEDIA_ROOT, "voice") : (process.env.VOICE_ROOT || path.join(MEDIA_ROOT, "voice"));
-const APP_VERSION = "10.0.0";
-const SCHEMA_VERSION = 14;
+const APP_VERSION = "14.0.0";
+const SCHEMA_VERSION = 19;
 const MAX_RAW_LENGTH = 4000;
 const MAX_BODY_LENGTH = 2 * 1024 * 1024;
 const MAX_IMPORT_BODY_LENGTH = 64 * 1024 * 1024;
@@ -72,7 +80,7 @@ const halls = [
   { id: "daily", name: "日常展厅", description: "普通日子里值得留下的小事。" }
 ];
 const emotions = ["怀念", "快乐", "温暖", "感动", "兴奋", "紧张", "平静", "释然", "期待", "遗憾", "孤独", "委屈", "害怕", "迷茫"];
-const sourceTypes = ["日记", "聊天片段", "照片描述", "旅行片段", "梦境", "物品", "语音转写", "其他"];
+const sourceTypes = ["日记", "聊天片段", "文档摘录", "照片描述", "旅行片段", "梦境", "物品", "语音转写", "其他"];
 const importanceLabels = ["普通记录", "值得回看", "重要记忆", "珍贵记忆", "镇馆记忆"];
 const hallIds = new Set(halls.map((hall) => hall.id));
 
@@ -93,6 +101,29 @@ const revisionApi = createRevisionApi({ store, sendJson, readJsonBody, httpError
 const timeCalibrationApi = createTimeCalibrationApi({ store, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
 const oralHistoryApi = createOralHistoryApi({ store, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
 const curatorAgentApi = createCuratorAgentApi({ store, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
+const memoryInboxApi = createMemoryInboxApi({ store, normalizeMemory, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
+const provenanceApi = createProvenanceApi({ store, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
+const coMemoryResponseApi = createCoMemoryResponseApi({ store, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
+const memoryLensApi = createMemoryLensApi({ store, decorateMemory: decorateMemoryForLens, sendJson, httpError });
+const museumLockApi = createMuseumLockApi({ store, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
+const structuralRecoveryApi = createStructuralRecoveryApi({
+  drill: createStructuralRecoveryRuntime({
+    mediaRoot: MEDIA_ROOT,
+    prepareMediaArchive,
+    validateVoiceBackup: store.validateVoiceBackup,
+    validateTimeCalibrationBackup: store.validateTimeCalibrationBackup,
+    validateOralHistoryBackup: store.validateOralHistoryBackup,
+    validateCuratorAgentBackup: store.validateCuratorAgentBackup,
+    validateMemoryInboxBackup: store.validateMemoryInboxBackup,
+    validateProvenanceBackup: store.validateProvenanceBackup,
+    validateCoMemoryResponseBackup: store.validateCoMemoryResponseBackup,
+    supportedSchemaVersion: SCHEMA_VERSION
+  }),
+  interviewDemo: INTERVIEW_DEMO,
+  sendJson,
+  httpError
+});
+const museumWriteRuntime = createMuseumWriteRuntime({ store });
 const collectionHealthApi = createCollectionHealthApi({ store, mediaStorage, voiceStorage, mediaApi, voiceApi, sendJson, readJsonBody, httpError });
 const archiveInspectionApi = createArchiveInspectionApi({
   mediaRoot: MEDIA_ROOT,
@@ -101,6 +132,9 @@ const archiveInspectionApi = createArchiveInspectionApi({
   validateTimeCalibrationBackup: store.validateTimeCalibrationBackup,
   validateOralHistoryBackup: store.validateOralHistoryBackup,
   validateCuratorAgentBackup: store.validateCuratorAgentBackup,
+  validateMemoryInboxBackup: store.validateMemoryInboxBackup,
+  validateProvenanceBackup: store.validateProvenanceBackup,
+  validateCoMemoryResponseBackup: store.validateCoMemoryResponseBackup,
   supportedSchemaVersion: SCHEMA_VERSION,
   sendJson,
   httpError
@@ -120,6 +154,10 @@ const buildPrivacySummary = createPrivacySummary({
   interviewDemo: INTERVIEW_DEMO,
   aiEnabled: AI_ENABLED,
   featureLocations: [
+    { name: "共忆信笺与未核验回信", location: "馆外邀请和回信文件由浏览器用 PBKDF2-SHA-256 与 AES-GCM 加解密；只有馆主验真、预览并独立确认后，解密问答才会作为未核验来源进入本机 SQLite。这不是数字签名或数据库静态加密" },
+    { name: "设备内可解释镜片", location: "只按明确展品 ID 在本机服务中重读已保存字段和已确认来源，以确定性规则生成未保存预览；零外部模型、零工具调用、零持久化" },
+    { name: "锁馆与结构恢复演练", location: "锁状态和派生 verifier 只保存在本机 SQLite，明文口令不保存且认证材料不进入普通归档；锁馆不是 SQLite/媒体/磁盘静态加密，结构演练不执行恢复也不证明灾难恢复能力" },
+    { name: "可验证记忆收件箱", location: "只保存用户明确选择的 TXT/Markdown 原样片段、原文件哈希与 UTF-16 区间；整份源文件只在当前浏览器读取，不写入 SQLite、localStorage 或 IndexedDB" },
     { name: "受限策展助手与人工决定", location: "运行请求、四项只读工具回执、来源快照、提案与决定回执只保存在本机 SQLite；默认使用确定性本地规则，不访问网络、文件、任意 SQL 或外部模型" },
     { name: "记忆年轮与并发保护", location: "正文历史以可校验快照保存在本机 SQLite；每次恢复都会生成新的 head，不覆盖旧版本" },
     { name: "时光胶囊与加密离线展览", location: "胶囊外壳与安全快照分表保存在本机 SQLite；分享口令只在浏览器内用于加密，不发送给服务端，也不写入导出文件" },
@@ -129,7 +167,7 @@ const buildPrivacySummary = createPrivacySummary({
     { name: "实体线索、别名与检索索引", location: "仅保存于本机 SQLite；同名默认只是线索，只有明确确认后才会新增别名或合并档案" },
     { name: "声音片段与人工文字稿", location: "声音文件仅保存在本机内容寻址目录；只有人工确认的文字稿会进入本地检索，不发送给外部模型" }
   ],
-  featureControls: ["策展助手只生成绑定来源快照的提案；保存草稿、确认关联与发布必须逐项决定，分享只交接隐私编辑台且不能批量批准", "编辑与历史恢复必须匹配当前展品版本，冲突时不会覆盖较新的内容", "时间校准只接受用户明确确认；来源集合变化后旧判断转为待复核且不改写原日期", "口述史草稿和‘仍不确定’不会生成日期来源；重答与撤回答案保留为只读历史", "回访意愿只接受用户明确确认；恢复自然回访会删除对应长期意愿记录", "实体别名与合并必须先预览，再由用户明确确认", "声音文字稿只有人工确认后才会公开展示并进入检索"]
+  featureControls: ["共忆回信先在浏览器验真和预览，再独立确认入馆；身份始终是 self-asserted-unverified，不会自动合并、改写原记忆或生成日期、人物和关系", "设备内镜片只生成确定性、可解释的未保存投影；共同出现、证据数量与线索命中不代表关系、质量或事实，也不会自动运行策展", "锁馆只阻止经应用发起的新写入，verifier 不是明文口令但仍属敏感认证材料；结构演练只验 manifest、哈希和引用，不显示恢复成功或容灾证明", "文档片段必须逐段加入收件箱并再次确认入馆；系统不从文件自动生成日期、人物、关系、说话人或情绪", "策展助手只生成绑定来源快照的提案；保存草稿、确认关联与发布必须逐项决定，分享只交接隐私编辑台且不能批量批准", "编辑与历史恢复必须匹配当前展品版本，冲突时不会覆盖较新的内容", "时间校准只接受用户明确确认；来源集合变化后旧判断转为待复核且不改写原日期", "口述史草稿和‘仍不确定’不会生成日期来源；重答与撤回答案保留为只读历史", "回访意愿只接受用户明确确认；恢复自然回访会删除对应长期意愿记录", "实体别名与合并必须先预览，再由用户明确确认", "声音文字稿只有人工确认后才会公开展示并进入检索"]
 });
 seedInterviewDemoData({
   enabled: INTERVIEW_DEMO,
@@ -142,7 +180,7 @@ const startupMaintenance = runMediaMaintenance().catch((error) => console.error(
 
 function runMediaMaintenance(minimumAgeMs = 0) {
   if (mediaMaintenancePromise) return mediaMaintenancePromise;
-  mediaMaintenancePromise = performMediaMaintenance(minimumAgeMs).finally(() => { mediaMaintenancePromise = null; });
+  mediaMaintenancePromise = museumWriteRuntime.runMaintenance(() => performMediaMaintenance(minimumAgeMs)).finally(() => { mediaMaintenancePromise = null; });
   return mediaMaintenancePromise;
 }
 
@@ -162,10 +200,32 @@ async function performMediaMaintenance(minimumAgeMs = 0) {
 
 async function handleRequest(request, response) {
   setSecurityHeaders(response);
+  let settleWriteRequest = null;
   try {
     const requestContext = requestSecurity.validate(request);
     await startupMaintenance;
     const url = new URL(request.url, requestContext.origin);
+    if (isInterviewDemoBlockedMutation(request, url)) {
+      return sendJson(response, 403, {
+        error: "公开 Demo 已阻止这项会影响示例稳定性的操作。",
+        code: "MUSEUM_LOCK_DEMO_READ_ONLY",
+        interviewDemo: true,
+        blockedAction: `${request.method} ${url.pathname}`,
+        bodyBytesRead: 0
+      });
+    }
+    const writeDecision = await museumWriteRuntime.enterHttpRequest(request, response, url);
+    settleWriteRequest = typeof writeDecision.settle === "function" ? writeDecision.settle : null;
+    if (!writeDecision.allowed) {
+      return sendJson(response, writeDecision.statusCode, {
+        error: writeDecision.code === "MUSEUM_LOCKED"
+          ? "馆藏当前已锁馆；本次请求未读取正文，也没有写入任何内容。"
+          : "锁馆状态正在切换；本次请求未读取正文，请稍后重试。",
+        code: writeDecision.code,
+        bodyBytesRead: 0,
+        boundary: writeDecision.boundary
+      });
+    }
     if (
       url.pathname.startsWith("/api/") &&
       ["POST", "PUT"].includes(request.method) &&
@@ -206,13 +266,19 @@ async function handleRequest(request, response) {
       return sendJson(response, 200, runtimeMetadata.demoStatus());
     }
 
-    if (isInterviewDemoBlockedMutation(request, url)) {
-      return sendJson(response, 403, {
-        error: "公开 Demo 已阻止这项会影响示例稳定性的操作。",
-        interviewDemo: true,
-        blockedAction: `${request.method} ${url.pathname}`
-      });
-    }
+    const museumLockHandled = await museumLockApi.handle(request, response, url);
+    if (museumLockHandled !== false) return museumLockHandled;
+    const structuralRecoveryHandled = await structuralRecoveryApi.handle(request, response, url);
+    if (structuralRecoveryHandled !== false) return structuralRecoveryHandled;
+
+    const memoryInboxHandled = await memoryInboxApi.handle(request, response, url);
+    if (memoryInboxHandled !== false) return memoryInboxHandled;
+    const provenanceHandled = await provenanceApi.handle(request, response, url);
+    if (provenanceHandled !== false) return provenanceHandled;
+    const coMemoryResponseHandled = await coMemoryResponseApi.handle(request, response, url);
+    if (coMemoryResponseHandled !== false) return coMemoryResponseHandled;
+    const memoryLensHandled = await memoryLensApi.handle(request, response, url);
+    if (memoryLensHandled !== false) return memoryLensHandled;
 
     const mediaHandled = await mediaApi.handle(request, response, url);
     if (mediaHandled !== false) return mediaHandled;
@@ -265,6 +331,9 @@ async function handleRequest(request, response) {
             validateTimeCalibrationBackup: store.validateTimeCalibrationBackup,
             validateOralHistoryBackup: store.validateOralHistoryBackup,
             validateCuratorAgentBackup: store.validateCuratorAgentBackup,
+            validateMemoryInboxBackup: store.validateMemoryInboxBackup,
+            validateProvenanceBackup: store.validateProvenanceBackup,
+            validateCoMemoryResponseBackup: store.validateCoMemoryResponseBackup,
             supportedSchemaVersion: SCHEMA_VERSION,
             signal
           });
@@ -288,6 +357,12 @@ async function handleRequest(request, response) {
               restoreOralHistoryBackup: store.restoreOralHistoryBackup,
               validateCuratorAgentBackup: store.validateCuratorAgentBackup,
               restoreCuratorAgentBackup: store.restoreCuratorAgentBackup,
+              validateMemoryInboxBackup: store.validateMemoryInboxBackup,
+              restoreMemoryInboxBackup: store.restoreMemoryInboxBackup,
+              validateProvenanceBackup: store.validateProvenanceBackup,
+              restoreProvenanceBackup: store.restoreProvenanceBackup,
+              validateCoMemoryResponseBackup: store.validateCoMemoryResponseBackup,
+              restoreCoMemoryResponseBackup: store.restoreCoMemoryResponseBackup,
               createId
             });
           }));
@@ -585,6 +660,8 @@ async function handleRequest(request, response) {
     return serveStatic(url.pathname, response);
   } catch (error) {
     return sendError(response, error);
+  } finally {
+    settleWriteRequest?.();
   }
 }
 
@@ -826,6 +903,17 @@ function withMemoryMedia(memory) {
       coverThumbnailUrl: cover?.urls?.thumb || ""
     }
   };
+}
+
+function decorateMemoryForLens(memory) {
+  const decorated = withMemoryMedia(memory);
+  const projection = typeof store.listConfirmedProvenanceForAgent === "function"
+    ? store.listConfirmedProvenanceForAgent([decorated.id])?.[decorated.id]
+    : null;
+  const confirmedQuotes = [...new Set((projection?.claims || []).flatMap((claim) => (
+    (claim.sources || []).map((source) => String(source.excerpt || "").trim()).filter(Boolean)
+  )))].slice(0, 24);
+  return { ...decorated, confirmedQuotes };
 }
 
 function buildPuzzleClaims(puzzle, memoryIds) {
@@ -1138,6 +1226,9 @@ function parseAiJson(content) {
 
 function isInterviewDemoBlockedMutation(request, url) {
   if (!INTERVIEW_DEMO) return false;
+  if (!['GET', 'HEAD'].includes(request.method) && (url.pathname.startsWith("/api/museum-lock") || url.pathname.startsWith("/api/recovery-drills/"))) return true;
+  if (!["GET", "HEAD"].includes(request.method) && url.pathname.startsWith("/api/memory-inbox")) return true;
+  if (!["GET", "HEAD"].includes(request.method) && url.pathname.startsWith("/api/co-memory-responses")) return true;
   if (url.pathname.startsWith("/api/oral-histories/")) return false;
   if (request.method === "DELETE" || url.pathname === "/api/memories/purge" || url.pathname === "/api/memories/import" || url.pathname === "/api/archive/restore") return true;
   if (request.method === "POST" && /^\/api\/memories\/[a-zA-Z0-9_-]+\/revisions\/[a-zA-Z0-9_-]+\/restore$/.test(url.pathname)) return true;
@@ -1148,7 +1239,7 @@ function isInterviewDemoBlockedMutation(request, url) {
 }
 
 function isArchiveBinaryRequest(request, url) {
-  return request.method === "POST" && ["/api/archive/restore", "/api/archive/inspect"].includes(url.pathname);
+  return request.method === "POST" && ["/api/archive/restore", "/api/archive/inspect", "/api/recovery-drills/structural"].includes(url.pathname);
 }
 
 function assertArchiveContentType(request) {

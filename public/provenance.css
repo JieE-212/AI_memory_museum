@@ -1,0 +1,298 @@
+.provenance-passport {
+  margin: 22px 0 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.provenance-passport > summary,
+.provenance-composer > summary {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 2px;
+  list-style: none;
+}
+
+.provenance-passport > summary::-webkit-details-marker,
+.provenance-composer > summary::-webkit-details-marker {
+  display: none;
+}
+
+.provenance-passport > summary > span:first-child,
+.provenance-composer > summary > span:first-child {
+  display: grid;
+  min-width: 0;
+}
+
+.provenance-passport > summary strong,
+.provenance-composer > summary strong {
+  color: var(--ink);
+  font-family: "Noto Serif SC", "Songti SC", Georgia, serif;
+}
+
+.provenance-passport > summary small,
+.provenance-composer > summary small,
+.provenance-passport > summary > span:last-child,
+.provenance-composer > summary > span:last-child {
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+}
+
+.provenance-passport[open] > summary > span:last-child,
+.provenance-composer[open] > summary > span:last-child {
+  transform: rotate(45deg);
+}
+
+.provenance-passport > summary:focus-visible,
+.provenance-composer > summary:focus-visible,
+.provenance-passport button:focus-visible,
+.provenance-passport input:focus-visible,
+.provenance-passport select:focus-visible,
+.provenance-passport textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.provenance-passport-body {
+  padding: 2px 0 22px;
+}
+
+.provenance-boundary,
+.provenance-demo-note,
+.provenance-review-note {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+}
+
+.provenance-review-note {
+  border-left-color: var(--warm);
+  background: var(--warm-soft);
+}
+
+.provenance-claim-list {
+  display: grid;
+  gap: 10px;
+}
+
+.provenance-claim {
+  min-width: 0; padding: 13px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.provenance-claim-heading {
+  display: flex; min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.provenance-claim-heading > strong,
+.provenance-source > strong,
+.provenance-source span { min-width: 0; overflow-wrap: anywhere; }
+
+.provenance-state {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--ink-soft);
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.provenance-state.is-confirmed {
+  border-color: var(--accent);
+  color: var(--accent-dark);
+}
+
+.provenance-state.is-withdrawn,
+.provenance-state.is-needs-review {
+  border-color: var(--warm);
+  color: var(--warm);
+}
+
+.provenance-source-list,
+.provenance-selected ul {
+  display: grid;
+  gap: 7px;
+  margin: 11px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.provenance-source { display: grid; min-width: 0;
+  gap: 2px;
+  padding-left: 11px;
+  border-left: 2px solid var(--line-strong);
+}
+
+.provenance-source span,
+.provenance-source small,
+.provenance-empty,
+.provenance-status,
+.provenance-selected {
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+}
+
+.provenance-source small {
+  overflow-wrap: anywhere;
+}
+
+.provenance-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.provenance-composer {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.provenance-form {
+  display: grid;
+  gap: 14px;
+  padding-top: 4px;
+}
+
+.provenance-form label,
+.provenance-form fieldset {
+  min-width: 0;
+}
+
+.provenance-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.provenance-form textarea,
+.provenance-form input,
+.provenance-form select {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.provenance-form textarea,
+.provenance-form input {
+  padding: 9px 10px;
+}
+
+.provenance-form textarea {
+  min-height: 86px;
+  resize: vertical;
+}
+
+.provenance-text-picker,
+.provenance-source-picker {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+}
+
+.provenance-text-picker legend,
+.provenance-source-picker legend {
+  padding: 0 5px;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.provenance-text-picker > textarea {
+  min-height: 112px;
+  background: var(--surface-muted);
+}
+
+.provenance-offsets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.provenance-source-choice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(148px, 0.45fr);
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.provenance-source-choice:last-child {
+  border-bottom: 0;
+}
+
+.provenance-source-choice label {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: flex-start;
+}
+
+.provenance-source-choice input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+}
+
+.provenance-status {
+  min-height: 1.6em;
+  margin: 12px 0 0;
+}
+
+.provenance-status.is-error {
+  color: var(--danger);
+}
+
+@media (max-width: 650px) {
+  .provenance-passport > summary,
+  .provenance-composer > summary,
+  .provenance-passport button,
+  .provenance-passport input,
+  .provenance-passport select {
+    min-height: 44px;
+  }
+
+  .provenance-source-choice {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 390px) {
+  .provenance-claim-heading,
+  .provenance-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .provenance-state {
+    width: fit-content;
+  }
+}
+
+@media (max-width: 320px) {
+  .provenance-offsets {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .provenance-passport > summary > span:last-child,
+  .provenance-composer > summary > span:last-child {
+    transition: none;
+  }
+}

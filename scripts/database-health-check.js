@@ -8,10 +8,26 @@ const { ORAL_HISTORY_MIGRATION } = require("../lib/oral-history-database");
 const { buildQuestionKey } = require("../lib/oral-history-service");
 const { CURATOR_AGENT_MIGRATION } = require("../lib/curator-agent-database");
 const {
+  CO_MEMORY_RESPONSE_MIGRATION,
+  initializeCoMemoryResponseDatabase
+} = require("../lib/co-memory-response-database");
+const {
+  buildCoMemoryResponseSnapshotSha256,
+  sha256,
+  stableStringify,
+  validateStoredCoMemoryResponse
+} = require("../lib/co-memory-response-service");
+const coMemoryCrypto = require("../public/assets/co-memory-crypto.js");
+const {
   CURATOR_AGENT_SCHEMA_VERSION,
   FIXED_BUDGETS,
   buildCuratorRequestSha256
 } = require("../lib/curator-agent-backup");
+const { initializeMuseumLockDatabase } = require("../lib/museum-lock-database");
+const {
+  LOCK_CONFIRMATION,
+  RECOVERY_VERIFIER_FORMAT
+} = require("../lib/museum-lock-service");
 
 let assertions = 0;
 const db = new DatabaseSync(":memory:");
@@ -83,6 +99,8 @@ try {
   checkTimeCalibrationHealth();
   checkOralHistoryHealth();
   checkCuratorAgentHealth();
+  checkCoMemoryResponseHealth();
+  checkMuseumLockHealth();
   console.log(`Database health checks passed: ${assertions} assertions.`);
 } finally {
   db.close();
@@ -339,6 +357,263 @@ function checkOralHistoryHealth() {
   } finally {
     oralDb.close();
   }
+}
+
+function checkCoMemoryResponseHealth() {
+  const coMemoryDb = new DatabaseSync(":memory:");
+  try {
+    coMemoryDb.exec(`
+      PRAGMA foreign_keys = ON;
+      PRAGMA user_version = 18;
+      CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY);
+      INSERT INTO schema_migrations VALUES (18);
+      CREATE TABLE memories (id TEXT PRIMARY KEY);
+      CREATE TABLE memory_search_documents (id INTEGER PRIMARY KEY, memory_id TEXT UNIQUE);
+      CREATE TABLE memory_search_fts_docsize (id INTEGER PRIMARY KEY);
+      INSERT INTO memories VALUES ('memory-co-health');
+      INSERT INTO memory_search_documents VALUES (1, 'memory-co-health');
+      INSERT INTO memory_search_fts_docsize VALUES (1);
+    `);
+    CO_MEMORY_RESPONSE_MIGRATION.up(coMemoryDb);
+    const coMemoryStore = initializeCoMemoryResponseDatabase({
+      db: coMemoryDb,
+      schemaVersion: 18,
+      applyMigrations: false,
+      now: () => "2026-07-20T02:00:00.000Z",
+      createId: () => "co-memory-health-record"
+    });
+    const record = coMemoryHealthRecord();
+    coMemoryStore.restoreCoMemoryResponseBackup({
+      mode: "full",
+      schemaVersion: 17,
+      kind: "co_memory_response",
+      responses: [record]
+    }, { memoryIdMap: new Map([["memory-co-health", "memory-co-health"]]) });
+
+    const reader = createDatabaseHealthReader({
+      db: coMemoryDb,
+      schemaVersion: 18,
+      getCoMemoryResponseBackup: coMemoryStore.buildCoMemoryResponseBackup,
+      getCoMemoryResponseHealthSnapshot: () => ({
+        ...coMemoryStore.getCoMemoryResponseStats(),
+        question: record.request.question,
+        answer: record.response.answer,
+        responseSha256: record.responseSha256
+      })
+    });
+    const healthy = reader.snapshot();
+    check(healthy.checks.find((item) => item.code === "DATABASE_CO_MEMORY_RESPONSE_STRUCTURE")?.ok === true,
+      "schema 18 共忆回信表、外键、固定身份边界与 canonical full backup 通过统一验真");
+    check(JSON.stringify(Object.keys(healthy.counts).filter((key) => key.startsWith("coMemory")).sort()) === JSON.stringify([
+      "coMemoryEncryptedTransport", "coMemoryResponses", "coMemoryUnsigned", "coMemoryUnverifiedIdentity"
+    ]), "共忆回信健康快照只公开四项安全计数");
+    check(healthy.counts.coMemoryResponses === 1 && healthy.counts.coMemoryUnverifiedIdentity === 1 &&
+      healthy.counts.coMemoryEncryptedTransport === 1 && healthy.counts.coMemoryUnsigned === 1,
+    "一封回信固定投影为未核验身份、加密传输与未签名计数");
+    const serialized = JSON.stringify(healthy);
+    check(!serialized.includes(record.request.question) && !serialized.includes(record.response.answer) &&
+      !serialized.includes(record.id) && !serialized.includes(record.requestSha256) &&
+      !serialized.includes(record.responseSha256),
+    "数据库健康输出不泄露问答、内部 ID 或哈希");
+
+    coMemoryDb.exec(`
+      DROP TRIGGER co_memory_response_immutable;
+      PRAGMA ignore_check_constraints = ON;
+      UPDATE co_memory_responses SET identity_verified = 1;
+    `);
+    const corrupt = reader.snapshot();
+    check(corrupt.checks.find((item) => item.code === "DATABASE_CO_MEMORY_RESPONSE_STRUCTURE")?.ok === false,
+      "数据库行夸大身份核验状态时 canonical backup 验真 fail closed");
+    check(corrupt.counts.coMemoryResponses === 0 && corrupt.counts.coMemoryUnverifiedIdentity === 0 &&
+      corrupt.counts.coMemoryEncryptedTransport === 0 && corrupt.counts.coMemoryUnsigned === 0,
+    "结构损坏时不再输出可能误导的共忆安全计数");
+  } finally {
+    coMemoryDb.close();
+  }
+}
+
+function checkMuseumLockHealth() {
+  const healthyFixture = createMuseumLockHealthFixture();
+  try {
+    healthyFixture.clock.value = "2026-07-20T04:01:00.000Z";
+    healthyFixture.store.transitionMuseumLock({
+      action: "lock",
+      confirmation: LOCK_CONFIRMATION,
+      expectedRevision: 0,
+      operationId: "health-lock-0001",
+      verifier: museumLockHealthVerifier()
+    });
+    const internalState = healthyFixture.store.getMuseumLockState();
+    const healthy = createDatabaseHealthReader({
+      db: healthyFixture.db,
+      schemaVersion: 19,
+      getMuseumLockState: healthyFixture.store.getMuseumLockState
+    }).snapshot();
+    check(healthy.checks.find((item) => item.code === "DATABASE_SCHEMA")?.ok === true,
+      "schema 19 锁馆体检 fixture 的 PRAGMA 与迁移账本保持一致");
+    check(healthy.checks.find((item) => item.code === "DATABASE_MUSEUM_LOCK_STRUCTURE")?.ok === true,
+      "schema 19 锁馆单例、固定枚举、校验和与公开投影通过统一验真");
+    const serialized = JSON.stringify(healthy);
+    check(!serialized.includes(internalState.stateId) &&
+      !serialized.includes(internalState.recoveryVerifier.salt) &&
+      !serialized.includes(internalState.recoveryVerifier.digest) &&
+      !serialized.includes("recoveryVerifier"),
+    "数据库健康输出不泄露锁馆单例 ID、salt、digest 或 verifier 对象");
+
+    const sensitiveProjection = createDatabaseHealthReader({
+      db: healthyFixture.db,
+      schemaVersion: 19,
+      getMuseumLockState: () => ({
+        ...healthyFixture.store.getMuseumLockState(),
+        salt: internalState.recoveryVerifier.salt,
+        digest: internalState.recoveryVerifier.digest
+      })
+    }).snapshot();
+    check(sensitiveProjection.checks.find((item) => item.code === "DATABASE_MUSEUM_LOCK_STRUCTURE")?.ok === false,
+      "带额外敏感字段的锁馆状态投影会 fail closed");
+    check(!JSON.stringify(sensitiveProjection).includes(internalState.recoveryVerifier.salt) &&
+      !JSON.stringify(sensitiveProjection).includes(internalState.recoveryVerifier.digest),
+    "被拒绝的敏感投影不会回显到健康结果");
+  } finally {
+    healthyFixture.db.close();
+  }
+
+  const missingTable = createMuseumLockHealthFixture();
+  try {
+    missingTable.db.exec("DROP TABLE museum_lock_state;");
+    const snapshot = createDatabaseHealthReader({
+      db: missingTable.db,
+      schemaVersion: 19,
+      getMuseumLockState: missingTable.store.getMuseumLockState
+    }).snapshot();
+    check(snapshot.checks.find((item) => item.code === "DATABASE_MUSEUM_LOCK_STRUCTURE")?.ok === false,
+      "schema 19 缺少锁馆表时健康检查 fail closed");
+  } finally {
+    missingTable.db.close();
+  }
+
+  const missingRow = createMuseumLockHealthFixture();
+  try {
+    missingRow.db.exec("DROP TRIGGER museum_lock_state_delete_forbidden; DELETE FROM museum_lock_state;");
+    const snapshot = createDatabaseHealthReader({
+      db: missingRow.db,
+      schemaVersion: 19,
+      getMuseumLockState: missingRow.store.getMuseumLockState
+    }).snapshot();
+    check(snapshot.checks.find((item) => item.code === "DATABASE_MUSEUM_LOCK_STRUCTURE")?.ok === false,
+      "schema 19 锁馆单例缺行时健康检查 fail closed");
+  } finally {
+    missingRow.db.close();
+  }
+
+  const corrupt = createMuseumLockHealthFixture();
+  try {
+    corrupt.db.exec("DROP TRIGGER museum_lock_state_revision_cas;");
+    corrupt.db.prepare("UPDATE museum_lock_state SET state_sha256 = ? WHERE singleton_key = 1").run("f".repeat(64));
+    const snapshot = createDatabaseHealthReader({
+      db: corrupt.db,
+      schemaVersion: 19,
+      getMuseumLockState: corrupt.store.getMuseumLockState
+    }).snapshot();
+    check(snapshot.checks.find((item) => item.code === "DATABASE_MUSEUM_LOCK_STRUCTURE")?.ok === false,
+      "schema 19 锁馆单例校验和损坏时健康检查 fail closed");
+  } finally {
+    corrupt.db.close();
+  }
+}
+
+function createMuseumLockHealthFixture() {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    PRAGMA foreign_keys = ON;
+    CREATE TABLE memories (id TEXT PRIMARY KEY);
+    CREATE TABLE memory_search_documents (id INTEGER PRIMARY KEY, memory_id TEXT UNIQUE);
+    CREATE TABLE memory_search_fts_docsize (id INTEGER PRIMARY KEY);
+  `);
+  const clock = { value: "2026-07-20T04:00:00.000Z" };
+  const store = initializeMuseumLockDatabase({
+    db,
+    schemaVersion: 19,
+    now: () => clock.value,
+    randomBytes: (length) => Buffer.alloc(length, 12)
+  });
+  return { db, store, clock };
+}
+
+function museumLockHealthVerifier() {
+  return {
+    format: RECOVERY_VERIFIER_FORMAT,
+    version: 1,
+    algorithm: "scrypt-sha256",
+    parameters: { cost: 32768, blockSize: 8, parallelization: 1, keyLength: 32 },
+    salt: Buffer.alloc(16, 13).toString("base64url"),
+    digest: Buffer.alloc(32, 14).toString("base64url")
+  };
+}
+
+function coMemoryHealthRecord() {
+  const memoryId = "memory-co-health";
+  const request = coMemoryCrypto.validateRequestPayload({
+    format: coMemoryCrypto.REQUEST_FORMAT,
+    version: coMemoryCrypto.VERSION,
+    letterId: "letter_co_health_000001",
+    question: "只用于数据库健康检查的私人问题",
+    context: {
+      title: "",
+      note: `[time-isle-memory-anchor:v1:${memoryId}]\n只回答自己亲自记得的部分。`,
+      evidence: [{ key: "evidence-1", kind: "quote", text: "一段最小上下文。" }]
+    },
+    boundary: coMemoryCrypto.REQUEST_BOUNDARY
+  });
+  const requestSha256 = sha256(stableStringify(request));
+  const response = coMemoryCrypto.validateResponsePayload({
+    format: coMemoryCrypto.RESPONSE_FORMAT,
+    version: coMemoryCrypto.VERSION,
+    letterId: request.letterId,
+    responseId: "response_co_health_0001",
+    requestSha256,
+    identity: {
+      label: "一位回信人（自述）",
+      assurance: coMemoryCrypto.IDENTITY_ASSURANCE,
+      verified: false
+    },
+    answer: "只用于数据库健康检查的私人回答",
+    boundary: coMemoryCrypto.RESPONSE_BOUNDARY
+  });
+  const responseSha256 = sha256(stableStringify(response));
+  const sourceCore = {
+    schemaVersion: 17,
+    kind: "co_memory_response",
+    memoryId,
+    letterId: request.letterId,
+    responseId: response.responseId,
+    requestSha256,
+    responseSha256,
+    sourceKey: `co-memory-response-source:${responseSha256}`,
+    anchorKey: `co-memory-response-anchor:${sha256(stableStringify({
+      memoryId,
+      letterId: request.letterId,
+      responseId: response.responseId,
+      requestSha256,
+      responseSha256
+    }))}`,
+    relationKind: "supplements",
+    label: response.identity.label,
+    excerpt: response.answer,
+    identityAssurance: "self-asserted-unverified",
+    identityVerified: false,
+    encrypted: true,
+    signed: false,
+    confirmation: "user_confirmed_unverified",
+    request,
+    response
+  };
+  return validateStoredCoMemoryResponse({
+    ...sourceCore,
+    id: "co-memory-health-record",
+    snapshotSha256: buildCoMemoryResponseSnapshotSha256(sourceCore),
+    createdAt: "2026-07-20T02:00:00.000Z"
+  });
 }
 
 function oralSource(seed, day, memoryId) {

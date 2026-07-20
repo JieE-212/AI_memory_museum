@@ -6,6 +6,7 @@ const state = {
   health: null,
   draft: null,
   workflow: null,
+  inboxItem: null,
   editingMemoryId: "",
   pendingSaveMemoryId: "",
   searchResults: null,
@@ -80,6 +81,7 @@ const elements = {
   themesPanel: document.querySelector("#themesPanel"),
   routesPanel: document.querySelector("#routesPanel"),
   reportPanel: document.querySelector("#reportPanel"),
+  memoryLensMount: document.querySelector("#memoryLensMount"),
   privacySummary: document.querySelector("#privacySummary"),
   dataLocationList: document.querySelector("#dataLocationList"),
   exportButton: document.querySelector("#exportButton"),
@@ -122,7 +124,7 @@ let searchTimer = null;
 let toastTimer = null;
 let mediaController = null, voiceController = null;
 let mediaEvidenceController = null, portabilityController = null, mediaCompareControllers = [], mediaLabController = null;
-let exhibitionsController = null, capsulesController = null, curatorAgentController = null, revisitsController = null, cluesController = null, revisionsController = null, collectionHealthController = null, timeCalibrationController = null, oralHistoriesController = null;
+let exhibitionsController = null, capsulesController = null, curatorAgentController = null, revisitsController = null, cluesController = null, revisionsController = null, collectionHealthController = null, timeCalibrationController = null, oralHistoriesController = null, memoryInboxController = null, provenanceController = null, coMemoryLetterController = null, memoryLensController = null;
 bindEvents();
 initialize();
 
@@ -159,14 +161,23 @@ async function initialize() {
       onOpenMemory: openMemory,
       onOpenShare: (exhibitionId, trigger) => capsulesController?.openForExhibition(exhibitionId, trigger)
     }) || null;
+    memoryLensController = window.TimeIsleMemoryLensHost?.mount?.({ mount: elements.memoryLensMount, demo: demo.interviewDemo, curator: curatorAgentController, onOpenMemory: openMemory }) || null;
     revisitsController = window.TimeIsleRevisits?.createController({ demo: demo.interviewDemo, onOpenMemory: openMemory }) || null;
     cluesController = window.TimeIsleClues?.createEntityDialogController({ demo: demo.interviewDemo, onOpenMemory: openMemory, onDataChanged: reloadMemories }) || null;
     revisionsController = window.TimeIsleRevisions?.createController({ demo: demo.interviewDemo, onOpenMemory: openMemory, onRestored: async (memory) => { await reloadMemories(); await openMemory(memory.id); } }) || null;
     collectionHealthController = window.TimeIsleCollectionHealth?.createController({ demo: demo.interviewDemo }) || null;
+    memoryInboxController = window.TimeIsleMemoryInbox?.createController({
+      demo: demo.interviewDemo,
+      onCompose: composeInboxItem
+    }) || null;
+    provenanceController = window.TimeIsleProvenance?.createController({
+      demo: demo.interviewDemo
+    }) || null;
+    coMemoryLetterController = window.TimeIsleCoMemoryHost?.createController({ demo: demo.interviewDemo, onChanged: () => provenanceController?.refresh?.() }) || null;
     initializeTimeCalibrationController(options.voicePolicy, demo.interviewDemo);
     populateOptions();
     renderApp();
-    elements.footerVersion.textContent = `v${version.version || "10.0.0"}`;
+    elements.footerVersion.textContent = `v${version.version || "14.0.0"}`;
     setRuntimeStatus(demo.interviewDemo ? "Demo 已连接" : "本地馆藏已连接", "ready");
     const initialView = normalizeView(location.hash.replace("#", ""));
     switchView(initialView, { updateHash: false });
@@ -266,7 +277,7 @@ function bindEvents() {
   elements.dialogTraceButton.addEventListener("click", showAgentTrace);
   elements.dialogEditButton.addEventListener("click", editSelectedMemory);
   elements.dialogDeleteButton.addEventListener("click", deleteSelectedMemory);
-  elements.memoryDialog.addEventListener("close", () => { mediaEvidenceController?.close(); mediaLabController?.close(); });
+  elements.memoryDialog.addEventListener("close", () => { mediaEvidenceController?.close(); mediaLabController?.close(); provenanceController?.close(); coMemoryLetterController?.close(); });
   elements.puzzleSaveAnswerButton.addEventListener("click", () => savePuzzleAnswer("answer"));
   elements.puzzleUnknownButton.addEventListener("click", () => savePuzzleAnswer("keep_unknown"));
   elements.puzzleSkipButton.addEventListener("click", () => savePuzzleAnswer("skip"));
@@ -330,6 +341,7 @@ function renderDemoStatus() {
   revisitsController?.setDemo(demo);
   cluesController?.setDemo(demo);
   revisionsController?.setDemo(demo); collectionHealthController?.setDemo(demo);
+  memoryInboxController?.setDemo(demo);
   elements.demoNotice.hidden = !demo;
   elements.purgeButton.disabled = demo;
   elements.purgeButton.title = demo ? "公开 Demo 已禁用清空操作" : "永久清空本地 SQLite 馆藏";
@@ -486,6 +498,8 @@ async function openMemory(id) {
   mediaEvidenceController?.open(memory, elements.dialogBody);
   mediaLabController?.open(memory, elements.dialogBody);
   revisionsController?.open(memory, elements.dialogBody);
+  provenanceController?.open(memory, elements.dialogBody);
+  coMemoryLetterController?.open(memory, elements.dialogBody);
   elements.dialogRouteButton.disabled = state.memories.length < 2;
   elements.dialogRouteButton.title = state.memories.length < 2 ? "至少需要两件展品才能生成航线" : "查看与这件展品有关的记忆";
   elements.dialogTraceButton.disabled = !memory.agentRunId;
@@ -517,7 +531,9 @@ function renderMemoryDetail(memory) {
       <div class="detail-field"><small>情绪强度</small><strong>${escapeHtml(String(memory.emotionIntensity || 3))} / 5</strong></div>
     </div>
     <h3>原始记忆</h3>
-    <div class="detail-raw">${escapeHtml(memory.rawContent || "未保留原文")}</div>`;
+    <div class="detail-raw">${escapeHtml(memory.rawContent || "未保留原文")}</div>
+    ${window.TimeIsleProvenance?.renderPanel(memory) || ""}
+    ${window.TimeIsleCoMemoryLetters?.renderPanel(memory) || ""}`;
 }
 function renderEntityChips(memory, type, fallback, tags = false) {
   const refs = (memory.entityRefs || memory.entities || []).filter((item) => ({ people: "person", location: "place" }[item.type] || item.type) === type && (item.id || item.entityId));
@@ -527,7 +543,31 @@ function renderEntityChips(memory, type, fallback, tags = false) {
   }
   return `<span class="clue-entity-chips clue-detail-entities">${refs.map((item) => `<button type="button" class="clue-entity-chip" data-entity-id="${escapeHtml(item.id || item.entityId)}"><span aria-hidden="true">${type === "person" ? "人" : type === "place" ? "地" : "题"}</span>${escapeHtml(item.label || item.canonicalName || item.name || item.sourceValue || "未命名线索")}</button>`).join("")}</span>`;
 }
+
+function composeInboxItem(item) {
+  if (!memoryInboxController) return;
+  resetComposer();
+  const prepared = memoryInboxController.prepareComposer(item);
+  state.inboxItem = prepared.item;
+  state.draft = prepared.draft;
+  state.workflow = prepared.workflow;
+  populateDraft(state.draft);
+  elements.draftPlaceholder.hidden = true;
+  elements.draftForm.hidden = false;
+  renderWorkflow(state.workflow);
+  updateCharCount();
+  setAnalyzeStatus("这段文字仍在收件箱。填写标题并确认草稿后，才会与来源回执一起成为展品。", false, true);
+  switchView("compose", { focusHeading: true });
+  elements.draftTitleInput.focus();
+}
+
+function leaveInboxComposeMode() {
+  state.inboxItem = null;
+  memoryInboxController?.setComposerLocked(false);
+}
+
 function insertSample() {
+  leaveInboxComposeMode();
   const current = elements.rawContent.value.trim();
   const candidates = sampleMemories.filter((sample) => sample !== current);
   elements.rawContent.value = candidates[Math.floor(Math.random() * candidates.length)] || sampleMemories[0];
@@ -612,16 +652,20 @@ async function saveDraft(event) {
   elements.saveMemoryButton.textContent = "保存中…";
   const editing = Boolean(state.editingMemoryId);
   const targetMemoryId = state.editingMemoryId || state.pendingSaveMemoryId;
+  const inboxAdmission = Boolean(state.inboxItem && !targetMemoryId && !editing);
   let contentSaved = false;
   let attachmentsSaved = Boolean(state.demo?.interviewDemo);
   if (targetMemoryId) { memory.id = targetMemoryId; memory.expectedUpdatedAt = state.draft.updatedAt || ""; }
   try {
     await runAttachmentControllers("waitForReady");
-    const saved = await requestJson(targetMemoryId ? `/api/memories/${encodeURIComponent(targetMemoryId)}` : "/api/memories", {
-      method: targetMemoryId ? "PUT" : "POST",
-      body: JSON.stringify(memory)
-    });
+    const saved = inboxAdmission
+      ? await memoryInboxController.admit(state.inboxItem, memory)
+      : await requestJson(targetMemoryId ? `/api/memories/${encodeURIComponent(targetMemoryId)}` : "/api/memories", {
+          method: targetMemoryId ? "PUT" : "POST",
+          body: JSON.stringify(memory)
+        });
     contentSaved = true;
+    if (inboxAdmission) state.inboxItem = null;
     state.draft = { ...saved.memory }; state.pendingSaveMemoryId = saved.memory.id;
     if (!state.demo?.interviewDemo) {
       await runAttachmentControllers("saveToMemory", saved.memory.id);
@@ -656,9 +700,11 @@ function resetComposer() {
   state.workflow = null;
   state.editingMemoryId = "";
   state.pendingSaveMemoryId = "";
+  state.inboxItem = null;
   mediaController?.reset();
   voiceController?.reset();
   elements.memoryForm.reset();
+  memoryInboxController?.setComposerLocked(false);
   elements.draftForm.reset();
   elements.draftForm.hidden = true;
   elements.draftPlaceholder.hidden = false;
@@ -1241,6 +1287,8 @@ async function showAgentTrace() {
     const run = payload.run;
     mediaEvidenceController?.close();
     mediaLabController?.close();
+    provenanceController?.close();
+    coMemoryLetterController?.close();
     elements.dialogBody.innerHTML = `
       <p class="muted">本次整理模式：${escapeHtml(run.mode)} · ${escapeHtml(formatDateTime(run.createdAt))}</p>
       <div class="agent-run-detail">${(run.steps || []).map((step, index) => `
@@ -1258,6 +1306,7 @@ async function editSelectedMemory() {
   if (!memory) return;
   state.editingMemoryId = memory.id;
   state.pendingSaveMemoryId = "";
+  leaveInboxComposeMode();
   state.draft = { ...memory };
   state.workflow = null;
   mediaController?.loadMemory(memory);
@@ -1316,6 +1365,8 @@ async function reloadMemories() {
   exhibitionsController?.refresh();
   capsulesController?.refresh();
   revisitsController?.invalidate();
+  memoryLensController?.invalidate?.();
+  memoryInboxController?.load();
   renderStats();
   if (elements.searchInput.value.trim()) await performSearch(); else renderCollection();
 }

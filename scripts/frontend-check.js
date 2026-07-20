@@ -22,6 +22,11 @@ const revisionsCss = read("public/revisions.css");
 const cluesCss = read("public/clues.css");
 const collectionHealthCss = read("public/collection-health.css");
 const timeCalibrationCss = read("public/time-calibrations.css");
+const memoryInboxCss = read("public/memory-inbox.css");
+const provenanceCss = read("public/provenance.css");
+const coMemoryLetterCss = read("public/co-memory-letter.css");
+const memoryLensCss = read("public/memory-lens.css");
+const museumLockCss = read("public/museum-lock.css");
 const app = read("public/assets/app.js");
 const pwaApp = read("public/assets/pwa.js");
 const mediaApp = read("public/assets/media.js");
@@ -43,6 +48,17 @@ const revisionsApp = read("public/assets/revisions.js");
 const cluesApp = read("public/assets/clues.js");
 const collectionHealthApp = read("public/assets/collection-health.js");
 const timeCalibrationApp = read("public/assets/time-calibrations.js");
+const memoryInboxApp = read("public/assets/memory-inbox.js");
+const provenanceApp = read("public/assets/provenance.js");
+const coMemoryCryptoApp = read("public/assets/co-memory-crypto.js");
+const coMemoryLetterApp = read("public/assets/co-memory-letter.js");
+const coMemoryHostApp = read("public/assets/co-memory-host.js");
+const memoryLensApp = read("public/assets/memory-lens.js");
+const memoryLensHostApp = read("public/assets/memory-lens-host.js");
+const museumLockApp = read("public/assets/museum-lock.js");
+const memoryLensApi = read("lib/memory-lens-api.js");
+const structuralRecoveryDrill = read("lib/structural-recovery-drill.js");
+const structuralRecoveryApi = read("lib/structural-recovery-api.js");
 const server = read("server.js");
 const archaeology = read("lib/archaeology.js");
 const archaeologyBackup = read("lib/archaeology-backup.js");
@@ -60,7 +76,7 @@ const voiceDetailMarkup = globalThis.TimeIsleVoice.renderDetailVoices({ voices: 
   { assetId: "voice-confirmed", position: 0, label: "窗边的雨", asset: { id: "voice-confirmed", durationMs: 3100, contentUrl: "/api/voice/assets/voice-confirmed/content" }, transcript: { status: "confirmed", text: "这是人工确认的文字。" } },
   { assetId: "voice-draft", position: 1, asset: { id: "voice-draft", contentUrl: "/api/voice/assets/voice-draft/content" }, transcript: { status: "draft", text: "普通详情不能出现的草稿。" } }
 ] });
-const queriedIds = [app, pwaApp, mediaApp, voiceApp, capsuleApp, sharePrivacyApp, mediaEvidenceApp, portabilityApp, exhibitionsApp, curatorAgentApp, revisitsApp, cluesApp].flatMap((source) => [
+const queriedIds = [app, pwaApp, mediaApp, voiceApp, capsuleApp, sharePrivacyApp, mediaEvidenceApp, portabilityApp, exhibitionsApp, curatorAgentApp, revisitsApp, cluesApp, memoryInboxApp, provenanceApp, museumLockApp].flatMap((source) => [
   ...source.matchAll(/(?:querySelector\("#|getElementById\(")([a-zA-Z0-9_-]+)"\)/g)
 ].map((match) => match[1])).concat(
   [...sharePrivacyApp.matchAll(/^\s+\w+: "(share[a-zA-Z0-9_-]+)",?$/gm)].map((match) => match[1]),
@@ -94,9 +110,9 @@ const compactButtonRule = ruleDeclarations(compactMobileCss, ".nav-button");
 
 const checks = [
   ["V7.1 PWA stays inside the four-view information architecture", (html.match(/class="nav-button/g) || []).length === 4 && html.includes('id="pwaInstallPanel" hidden') && html.indexOf('id="pwaInstallPanel"') > html.indexOf('data-view-panel="data"') && !html.includes('data-view="pwa"')],
-  ["PWA resources load in manifest-style-controller-app order", html.includes('/manifest.webmanifest?v=10.0.0') && html.indexOf('/styles.css?v=7.2.0') < html.indexOf('/pwa.css?v=10.0.0') && html.indexOf('/assets/pwa.js?v=10.0.0') < html.indexOf('/assets/app.js?v=10.0.0')],
+  ["PWA resources load in manifest-style-controller-app order", html.includes(`/manifest.webmanifest?v=${pkg.version}`) && html.indexOf('/styles.css?v=7.2.0') < html.indexOf(`/pwa.css?v=${pkg.version}`) && html.indexOf(`/assets/pwa.js?v=${pkg.version}`) < html.indexOf(`/assets/app.js?v=${pkg.version}`)],
   ["PWA install uses progressive disclosure without private persistence", pwaApp.includes('beforeinstallprompt') && pwaApp.includes('appinstalled') && pwaApp.includes('updateViaCache: "none"') && !/localStorage|sessionStorage|indexedDB|\bcaches\b/iu.test(pwaApp) && pwaCss.includes('.pwa-install-panel [hidden]')],
-  ["V7.2 记忆年轮保持四导航并默认按需展开", (html.match(/class="nav-button/g) || []).length === 4 && html.includes('id="revisionTimelineDetails"') && !html.includes('<details class="revision-timeline-card" id="revisionTimelineDetails" open') && !html.includes('data-view="revisions"') && html.indexOf('/assets/revisions.js?v=7.2.0') < html.indexOf('/assets/app.js?v=10.0.0') && app.includes("TimeIsleRevisions?.createController")],
+  ["V7.2 记忆年轮保持四导航并默认按需展开", (html.match(/class="nav-button/g) || []).length === 4 && html.includes('id="revisionTimelineDetails"') && !html.includes('<details class="revision-timeline-card" id="revisionTimelineDetails" open') && !html.includes('data-view="revisions"') && html.indexOf('/assets/revisions.js?v=7.2.0') < html.indexOf(`/assets/app.js?v=${pkg.version}`) && app.includes("TimeIsleRevisions?.createController")],
   ["记忆年轮提供并发保护、二次确认与不覆盖恢复", revisionsApp.includes('"If-Match"') && revisionsApp.includes("data-revision-confirm") && revisionsApp.includes("当前版本不会被删除") && revisionsApp.includes("restoredFromRevisionId") && revisionsApp.includes("error.status === 412") && !/localStorage|sessionStorage|indexedDB/iu.test(revisionsApp)],
   ["记忆年轮移动端克制且不使用渐变", revisionsCss.includes("@media (max-width: 650px)") && revisionsCss.includes("@media (max-width: 360px)") && revisionsCss.includes("min-height: 44px") && !/gradient\s*\(/iu.test(revisionsCss)],
   ["馆藏体检位于归档入口之前且保持只读渐进披露", html.includes('id="collectionHealthDetails"') && html.indexOf('id="collectionHealthDetails"') < html.indexOf('id="exportButton"') && !html.includes('<details class="collection-health-panel" id="collectionHealthDetails" open') && collectionHealthApp.includes("/api/collection-health/scans") && collectionHealthApp.includes("/api/archive/inspect") && collectionHealthApp.includes("不会自动删除或改写") && !/localStorage|sessionStorage|indexedDB/iu.test(collectionHealthApp)],
@@ -121,6 +137,27 @@ const checks = [
   ["脚本查询的 DOM ID 全部存在且页面 ID 不重复", queriedIds.every((id) => htmlIds.includes(id)) && new Set(htmlIds).size === htmlIds.length],
   ["时屿品牌结构完整", html.includes("<strong>时屿</strong>") && html.includes("<small>TIME ISLE</small>") && html.includes("AI 私人记忆策展工具")],
   ["核心记录表单存在", html.includes('id="memoryForm"') && html.includes('id="draftForm"')],
+  ["V11 记忆收件箱保持在记录流程内", html.includes('id="memoryInboxEntry"') && html.includes('id="memoryInboxDialog"') && html.indexOf("memory-inbox.js") < html.indexOf("app.js")],
+  ["V11 文档片段只在人工确认后原子入馆", memoryInboxApp.includes("rawBase64") && memoryInboxApp.includes("Idempotency-Key") && memoryInboxApp.includes("/admit") && app.includes("memoryInboxController.admit")],
+  ["V11 收件箱保持 Demo 零写和来源边界", server.includes('url.pathname.startsWith("/api/memory-inbox")') && memoryInboxApp.includes("elements.file.disabled = demo") && memoryInboxApp.includes("fileState.bytes.fill(0)")],
+  ["V11 收件箱移动端克制且无渐变", memoryInboxCss.includes("height: 100dvh") && memoryInboxCss.includes("min-height: 44px") && !memoryInboxCss.includes("gradient")],
+  ["V11.1 来源护照留在展品详情且默认折叠", html.includes(`/assets/provenance.js?v=${pkg.version}`) && html.indexOf("provenance.js") < html.indexOf("app.js") && app.includes("TimeIsleProvenance?.renderPanel(memory)") && provenanceApp.includes('<details class="provenance-passport"') && !provenanceApp.includes('<details class="provenance-passport" open')],
+  ["V11.1 人工主张分离草稿、确认与撤回", provenanceApp.includes("先存为草稿，之后再单独确认") && provenanceApp.includes("/claims/${encodeURIComponent(claimId)}/${action}") && provenanceApp.includes("不是事实认证、可信度评分或公证") && provenanceApp.includes("不会改写原记忆")],
+  ["V11.1 来源护照保持 Demo 零写和移动端克制", provenanceApp.includes("公开 Demo 只展示合成来源护照") && !/localStorage|sessionStorage|indexedDB/iu.test(provenanceApp) && provenanceCss.includes("min-height: 44px") && provenanceCss.includes("@media (max-width: 390px)") && provenanceCss.includes("@media (max-width: 320px)") && !/gradient\s*\(/iu.test(provenanceCss)],
+  ["V12 共忆信笺留在展品详情并默认折叠", (html.match(/class="nav-button/g) || []).length === 4 && app.includes("TimeIsleCoMemoryLetters?.renderPanel(memory)") && coMemoryLetterApp.includes('<details class="co-memory-letter"') && !coMemoryLetterApp.includes('<details class="co-memory-letter" open') && !html.includes('data-view="co-memory"')],
+  ["V12 共忆资源按 crypto-letter-host-app 顺序接入", html.indexOf('/assets/co-memory-crypto.js') < html.indexOf('/assets/co-memory-letter.js') && html.indexOf('/assets/co-memory-letter.js') < html.indexOf('/assets/co-memory-host.js') && html.indexOf('/assets/co-memory-host.js') < html.indexOf(`/assets/app.js?v=${pkg.version}`) && html.includes(`/co-memory-letter.css?v=${pkg.version}`)],
+  ["V12 回信只在验真预览与独立确认后入馆", coMemoryLetterApp.includes("确认保存为未核验来源") && coMemoryLetterApp.includes("加密保护的是馆外文件") && coMemoryLetterApp.includes("不代表数据库已做静态加密") && coMemoryHostApp.includes('co-memory-confirm:${requestSha256}') && coMemoryHostApp.includes("signal: context?.signal") && app.includes("provenanceController?.refresh?.()")],
+  ["V12 共忆信笺 Demo 零写、会话清理与移动边界完整", coMemoryLetterApp.includes("demo || !confirmResponse") && coMemoryLetterApp.includes("clearSecrets(session, true)") && coMemoryLetterApp.includes("FORBIDDEN_OFFLINE_SOURCE") && app.includes("coMemoryLetterController?.close()") && !/(?:localStorage|sessionStorage)\.(?:setItem|getItem)|indexedDB\.open/iu.test(`${coMemoryCryptoApp}\n${coMemoryLetterApp}\n${coMemoryHostApp}`) && coMemoryLetterCss.includes("@media (max-width: 390px)") && coMemoryLetterCss.includes("@media (max-width: 320px)") && coMemoryLetterCss.includes("min-height: 44px") && !/gradient\s*\(/iu.test(coMemoryLetterCss)],
+  ["V13 设备内镜片留在馆藏回顾并默认折叠", (html.match(/class="nav-button/g) || []).length === 4 && html.includes('id="memoryLensMount"') && memoryLensApp.includes('<details class="memory-lens-workbench" data-memory-lens-root>') && !memoryLensApp.includes('<details class="memory-lens-workbench" data-memory-lens-root open') && !html.includes('data-view="memory-lens"')],
+  ["V13 镜片资源按 UI-host-app 顺序接入", html.includes(`/memory-lens.css?v=${pkg.version}`) && html.indexOf(`/assets/memory-lens.js?v=${pkg.version}`) < html.indexOf(`/assets/memory-lens-host.js?v=${pkg.version}`) && html.indexOf(`/assets/memory-lens-host.js?v=${pkg.version}`) < html.indexOf(`/assets/app.js?v=${pkg.version}`) && app.includes("TimeIsleMemoryLensHost?.mount")],
+  ["V13 镜片只由服务端重读明确 ID 且保持零模型零保存", memoryLensApi.includes('MEMORY_LENS_PREVIEW_PATH = "/api/memory-lens/preview"') && memoryLensApi.includes('request?.method !== "GET"') && memoryLensApi.includes("store.getMemory(memoryId)") && memoryLensHostApp.includes("params.append(\"memoryId\", memoryId)") && !memoryLensHostApp.includes("body: JSON.stringify") && memoryLensApp.includes("0 次模型调用") && memoryLensApp.includes("本次不保存")],
+  ["V13 策展简报要求 2–6 件新鲜来源且不静默截断", memoryLensHostApp.includes("MAX_CURATOR_MEMORIES = 6") && memoryLensHostApp.includes("MEMORY_LENS_CURATOR_RESELECT_REQUIRED") && memoryLensHostApp.includes("MEMORY_LENS_SOURCE_STALE") && memoryLensHostApp.includes("autoRun: false") && curatorAgentApp.includes("async function preselectSources") && curatorAgentApp.includes("简报仍未保存，也不会自动运行")],
+  ["V13 镜片保持移动端触控、无持久化与无渐变", memoryLensCss.includes("@media (max-width: 390px)") && memoryLensCss.includes("@media (max-width: 320px)") && memoryLensCss.includes("min-height: 44px") && !/gradient\s*\(/iu.test(memoryLensCss) && !/localStorage|sessionStorage|indexedDB/iu.test(`${memoryLensApp}\n${memoryLensHostApp}`)],
+  ["V14 锁馆与结构演练留在数据页、默认折叠且不增加导航", (html.match(/class="nav-button/g) || []).length === 4 && html.includes('<details class="museum-lock-panel" id="museumLockPanel">') && !html.includes('<details class="museum-lock-panel" id="museumLockPanel" open') && !html.includes('data-view="museum-lock"') && html.indexOf('id="museumLockPanel"') > html.indexOf('data-view-panel="data"')],
+  ["V14 锁馆资源按样式与控制器接入当前版本", html.includes(`/museum-lock.css?v=${pkg.version}`) && html.includes(`/assets/museum-lock.js?v=${pkg.version}`) && html.indexOf(`/assets/museum-lock.js?v=${pkg.version}`) < html.indexOf(`/assets/app.js?v=${pkg.version}`)],
+  ["V14 口令只在当次请求中使用并在折叠或离页时清理", !/localStorage|sessionStorage|indexedDB/iu.test(museumLockApp) && museumLockApp.includes('elements.panel, "toggle"') && museumLockApp.includes('bind(global, "pagehide", destroy)') && museumLockApp.includes("clearSecrets();") && museumLockApp.includes('body.passphrase = ""') && html.includes("口令只用于本次派生校验，不写入浏览器存储、日志或普通归档")],
+  ["V14 结构演练固定为完整备份只读验真且不声称恢复成功", museumLockApp.includes('endsWith(".time-isle")') && museumLockApp.includes('result?.kind !== "structural-verification"') && structuralRecoveryDrill.includes('mode: "verify-only"') && structuralRecoveryDrill.includes("requireFullArchive: true") && structuralRecoveryDrill.includes("writeCurrentCollection: false") && structuralRecoveryApi.includes("actualRestorePerformed: false") && structuralRecoveryApi.includes("isolatedRestorePerformed: false") && structuralRecoveryApi.includes("disasterRecoveryProven: false") && structuralRecoveryApi.includes("diskEncryptionProvided: false") && !html.includes("恢复成功")],
+  ["V14 锁馆面板保持移动优先、触控安全且无渐变", museumLockCss.includes("@media (max-width: 650px)") && museumLockCss.includes("@media (max-width: 390px)") && museumLockCss.includes("@media (max-width: 320px)") && museumLockCss.includes("min-height: 44px") && museumLockCss.includes("safe-area-inset-right") && museumLockCss.includes("safe-area-inset-left") && !/gradient\s*\(/iu.test(museumLockCss)],
   ["图片记录入口保持在现有记录流程", html.includes('id="photoInput"') && html.includes('id="photoTray"') && !html.includes('data-view="gallery"')],
   ["声音入口保持记录页内的默认折叠渐进披露", /<details class="voice-field">[\s\S]*?<strong>添加声音<\/strong><small>可选 · 最多 3 段，每段 3 分钟<\/small>/.test(html) && html.includes('id="voiceRecordButton"') && html.includes('id="voiceFileInput"') && !html.includes('<details class="voice-field" open') && !html.includes('data-view="voice"')],
   ["声音资源按独立模块接入且不增加主导航", (html.match(/\/voice\.css/g) || []).length === 1 && (html.match(/\/assets\/voice\.js/g) || []).length === 1 && html.indexOf("/media.css") < html.indexOf("/voice.css") && html.indexOf("/assets/media.js") < html.indexOf("/assets/voice.js") && html.indexOf("/assets/voice.js") < html.indexOf("/assets/app.js") && (html.match(/class="nav-button/g) || []).length === 4],
@@ -163,7 +200,7 @@ const checks = [
   ["记忆考古使用局部航线和独立拼图", html.includes('id="routesPanel"') && html.includes('id="puzzleDialog"') && html.includes('id="dialogRouteButton"')],
   ["补一块拼图允许回答或保留不确定", ["puzzleSaveAnswerButton", "puzzleUnknownButton", "puzzleSkipButton"].every((id) => html.includes(`id="${id}"`))],
   ["口述史保持在时光拼图内且不增加导航", (html.match(/class="nav-button/g) || []).length === 4 && html.includes('id="oralHistorySourceRegion"') && html.includes('<details class="oral-history-panel" id="oralHistoryDetails" hidden>') && html.indexOf('id="timeCalibrationDetails"') < html.indexOf('id="oralHistoryDetails"') && !html.includes('data-view="oral-history"')],
-  ["口述史资源以单段采集、口述控制器、主应用顺序载入", html.indexOf('/assets/voice-capture.js?v=10.0.0') < html.indexOf('/assets/oral-histories.js?v=10.0.0') && html.indexOf('/assets/oral-histories.js?v=10.0.0') < html.indexOf('/assets/app.js?v=10.0.0') && html.indexOf('/voice.css') < html.indexOf('/oral-histories.css?v=10.0.0')],
+  ["口述史资源以单段采集、口述控制器、主应用顺序载入", html.indexOf(`/assets/voice-capture.js?v=${pkg.version}`) < html.indexOf(`/assets/oral-histories.js?v=${pkg.version}`) && html.indexOf(`/assets/oral-histories.js?v=${pkg.version}`) < html.indexOf(`/assets/app.js?v=${pkg.version}`) && html.indexOf('/voice.css') < html.indexOf(`/oral-histories.css?v=${pkg.version}`)],
   ["单段声音采集不绑定展品并覆盖权限与孤儿清理", voiceCaptureApp.includes('/api/voice/uploads?filename=') && voiceCaptureApp.includes('/api/voice/assets/${encodeURIComponent(assetId)}') && !voiceCaptureApp.includes('/api/memories/') && voiceCaptureApp.includes('cancelPermissionRequest(true)') && voiceCaptureApp.includes('stopTracks(stream)') && voiceCaptureApp.includes('if (demo) throw new Error')],
   ["口述史四步要求手工选段、文字和时间含义", ["oralHistoryQuestionStep", "oralHistoryAudioStep", "oralHistorySegmentStep", "oralHistoryTranscriptStep", "oralHistoryAcknowledge"].every((id) => html.includes(`id="${id}"`)) && (html.match(/name="oralHistoryResolutionChoice"/g) || []).length === 5 && html.includes('这里不会自动转写') && oralHistoryApp.includes('MIN_SEGMENT_MS = 500')],
   ["口述史保存具备版本、幂等与人工确认边界", oralHistoryApp.includes('"If-Match": state.etag') && oralHistoryApp.includes('questionSetSha256: state.questionSetSha256') && oralHistoryApp.includes('confirmTranscript: true') && oralHistoryApp.includes('submissionId: state.submissionId') && oralHistoryApp.includes('selectedQuestionKey') && oralHistoryApp.includes('questionKey || id') && oralHistoryApp.includes('"superseded", "withdrawn"')],
@@ -177,6 +214,7 @@ const checks = [
   ["馆藏检索失败清空旧卡片并提供明确重试", html.includes('id="searchErrorState" hidden') && html.includes('id="retrySearchButton"') && app.includes('elements.retrySearchButton.addEventListener("click", performSearch)') && app.includes('elements.memoryGrid.innerHTML = "";') && app.includes("if (state.searchError)")],
   ["检索结果计数、零结果与失败通过状态区播报", /id="collectionMeta"[^>]*role="status"[^>]*aria-live="polite"[^>]*aria-atomic="true"/.test(html) && app.includes('`“${query}”找到 ${visible.length} 件展品${filterNote}${') && app.includes("shortQueryFallback") && app.includes('elements.collectionMeta.textContent = "检索失败，请重试。";')],
   ["隐藏照片输入具有可见焦点代理", mediaCss.includes('label[for="photoInput"]:has(+ #photoInput:focus-visible)') && mediaCss.includes("outline: 2px solid var(--accent)")],
+  ["通用隐藏文件输入把键盘焦点代理到可见标签", css.includes('.file-button:has(+ .sr-only[type="file"]:focus-visible)') && css.includes('.sr-only[type="file"]:focus-visible + .file-button')],
   ["添加照片折叠入口和 320px 字段布局保持克制可聚焦", mediaCss.includes(".media-field > summary:focus-visible") && mediaCss.includes(".media-field > summary::-webkit-details-marker") && mediaCss.includes("@media (max-width: 420px)") && mediaCss.includes("flex-direction: column;") && mediaCss.includes(".media-field-heading .media-privacy-field")],
   ["媒体错误文字和窄屏按钮满足可读触控边界", mediaOcrCss.includes('.media-ocr-status[data-state="error"] {\n  color: var(--danger);') && mediaLabCss.includes('.media-lab-status[data-state="error"] {\n  color: var(--danger);') && mediaOcrCss.includes(".media-ocr-panel button {\n    min-height: 44px;") && mediaLabCss.includes(".media-lab button {\n    min-height: 44px;")],
   ["考古概览失败不会拖垮核心馆藏", app.includes('requestJson("/api/archaeology/overview").catch(() => ({ overview: [] }))')],
@@ -184,7 +222,7 @@ const checks = [
   ["页面不再暴露阶段治理术语", !/Phase\s*\d+|Reviewer|插件生态|运行时沙箱|发布审批/.test(html)],
   ["页面没有内联脚本或样式", !/<script(?!\s+src=)/i.test(html) && !/<style/i.test(html) && !/\sstyle="/i.test(html)],
   ["Vercel 静态页面复用完整安全响应头", hasVercelSecurityHeaders(vercel)],
-  ["样式未使用渐变", !/gradient\s*\(/i.test(`${css}\n${pwaCss}\n${archaeologyCss}\n${mediaCss}\n${voiceCss}\n${oralHistoryCss}\n${capsuleCss}\n${sharePrivacyCss}\n${mediaEvidenceCss}\n${mediaCompareCss}\n${mediaOcrCss}\n${mediaLabCss}\n${exhibitionsCss}\n${revisitsCss}\n${cluesCss}`)],
+  ["样式未使用渐变", !/gradient\s*\(/i.test(`${css}\n${pwaCss}\n${archaeologyCss}\n${mediaCss}\n${voiceCss}\n${oralHistoryCss}\n${capsuleCss}\n${sharePrivacyCss}\n${mediaEvidenceCss}\n${mediaCompareCss}\n${mediaOcrCss}\n${mediaLabCss}\n${exhibitionsCss}\n${revisitsCss}\n${cluesCss}\n${provenanceCss}\n${coMemoryLetterCss}\n${memoryLensCss}\n${museumLockCss}`)],
   ["前端覆盖核心 API", ["/api/memories", "/api/analyze", "/api/search", "/api/guide", "/api/insights", "/api/privacy", "/api/archaeology/routes", "/api/archaeology/puzzle"].every((endpoint) => app.includes(endpoint))],
   ["图片前端覆盖安全上传和关联 API", ["/uploads", "/complete", "/api/memories/"].every((endpoint) => mediaApp.includes(endpoint))],
   ["附件关联失败后复用已创建展品而不重复新增", app.includes("const targetMemoryId = state.editingMemoryId || state.pendingSaveMemoryId;") && app.includes('method: targetMemoryId ? "PUT" : "POST"') && app.indexOf("state.pendingSaveMemoryId = saved.memory.id") < app.indexOf('runAttachmentControllers("saveToMemory", saved.memory.id)') && app.includes("不会重复创建展品") && app.includes('return "继续完成保存"') && app.includes('state.pendingSaveMemoryId = "";')],
@@ -200,8 +238,20 @@ const checks = [
   ["完整归档与旧 JSON 工具分层", portabilityApp.includes("/api/archive/export") && portabilityApp.includes("/api/archive/restore") && html.includes("JSON 兼容工具")],
   ["考古结论保留人工确认边界", archaeology.includes('sameEvent: "unassessed"') && archaeology.includes("requiresConfirmation") && archaeology.includes("sourceQuote")],
   ["服务端不再加载旧运维治理模块", !server.includes("createOperationsService") && !server.includes("phase29") && !server.includes("phase30")],
-  ["npm 命令保持精简", Object.keys(pkg.scripts || {}).length <= 7],
-  ["核心文件规模已收敛", lineCount(server) < 1400 && lineCount(app) < 1400 && lineCount(pwaApp) < 250 && lineCount(mediaApp) < 1150 && lineCount(voiceApp) < 900 && lineCount(voiceCaptureApp) < 650 && lineCount(oralHistoryApp) < 1200 && lineCount(capsuleApp) < 1000 && lineCount(sharePrivacyApp) < 600 && lineCount(mediaEvidenceApp) < 850 && lineCount(mediaCompareApp) < 850 && lineCount(mediaOcrApp) < 750 && lineCount(mediaLabApp) < 500 && lineCount(portabilityApp) < 250 && lineCount(exhibitionsApp) < 850 && lineCount(revisitsApp) < 550 && lineCount(revisionsApp) < 400 && lineCount(cluesApp) < 750 && lineCount(collectionHealthApp) < 350 && lineCount(timeCalibrationApp) < 850 && lineCount(css) < 1600 && lineCount(pwaCss) < 250 && lineCount(archaeologyCss) < 400 && lineCount(mediaCss) < 700 && lineCount(voiceCss) < 450 && lineCount(oralHistoryCss) < 600 && lineCount(capsuleCss) < 650 && lineCount(sharePrivacyCss) < 200 && lineCount(mediaEvidenceCss) < 500 && lineCount(exhibitionsCss) < 800 && lineCount(revisitsCss) < 450 && lineCount(revisionsCss) < 350 && lineCount(cluesCss) < 550 && lineCount(collectionHealthCss) < 300 && lineCount(timeCalibrationCss) < 500 && lineCount(archaeology) < 900 && lineCount(archaeologyBackup) < 300]
+  [
+    "npm 命令保持精简且固定",
+    JSON.stringify(Object.keys(pkg.scripts || {}).sort()) === JSON.stringify([
+      "archaeology",
+      "build",
+      "check",
+      "dev",
+      "smoke",
+      "start",
+      "test",
+      "test:browser"
+    ]) && pkg.scripts["test:browser"] === "npm --prefix tests/browser test"
+  ],
+  ["核心文件规模已收敛", lineCount(server) < 1450 && lineCount(app) < 1450 && lineCount(memoryInboxApp) < 550 && lineCount(provenanceApp) < 550 && lineCount(coMemoryLetterApp) < 950 && lineCount(coMemoryHostApp) < 120 && lineCount(memoryLensApp) < 1000 && lineCount(memoryLensHostApp) < 350 && lineCount(museumLockApp) < 350 && lineCount(pwaApp) < 250 && lineCount(mediaApp) < 1150 && lineCount(voiceApp) < 900 && lineCount(voiceCaptureApp) < 650 && lineCount(oralHistoryApp) < 1200 && lineCount(capsuleApp) < 1000 && lineCount(sharePrivacyApp) < 600 && lineCount(mediaEvidenceApp) < 850 && lineCount(mediaCompareApp) < 850 && lineCount(mediaOcrApp) < 750 && lineCount(mediaLabApp) < 500 && lineCount(portabilityApp) < 250 && lineCount(exhibitionsApp) < 850 && lineCount(revisitsApp) < 550 && lineCount(revisionsApp) < 400 && lineCount(cluesApp) < 750 && lineCount(collectionHealthApp) < 350 && lineCount(timeCalibrationApp) < 850 && lineCount(css) < 1600 && lineCount(memoryInboxCss) < 150 && lineCount(provenanceCss) < 300 && lineCount(coMemoryLetterCss) < 400 && lineCount(memoryLensCss) < 550 && lineCount(museumLockCss) < 250 && lineCount(pwaCss) < 250 && lineCount(archaeologyCss) < 400 && lineCount(mediaCss) < 700 && lineCount(voiceCss) < 450 && lineCount(oralHistoryCss) < 600 && lineCount(capsuleCss) < 650 && lineCount(sharePrivacyCss) < 200 && lineCount(mediaEvidenceCss) < 500 && lineCount(exhibitionsCss) < 800 && lineCount(revisitsCss) < 450 && lineCount(revisionsCss) < 350 && lineCount(cluesCss) < 550 && lineCount(collectionHealthCss) < 300 && lineCount(timeCalibrationCss) < 500 && lineCount(archaeology) < 900 && lineCount(archaeologyBackup) < 300]
 ];
 
 let failed = 0;

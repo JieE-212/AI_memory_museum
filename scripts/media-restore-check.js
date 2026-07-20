@@ -17,6 +17,15 @@ const { buildClueBackup, remapClueBackup, validateClueBackup } = require("../lib
 const { memorySnapshotSha256 } = require("../lib/revision-backup");
 const { buildSourceSetSha256, buildTimeCandidates } = require("../lib/time-calibration-service");
 const { buildCuratorRequestSha256 } = require("../lib/curator-agent-backup");
+const { validateProvenanceBackupPayload } = require("../lib/provenance-backup");
+const {
+  OFFSET_UNIT,
+  buildEventSha256,
+  normalizeClaimDraftInput
+} = require("../lib/provenance-service");
+const coMemoryCrypto = require("../public/assets/co-memory-crypto.js");
+const { buildCoMemoryResponseBackup } = require("../lib/co-memory-response-backup");
+const { validateCoMemoryResponseConfirmation } = require("../lib/co-memory-response-service");
 
 let assertions = 0;
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "time-isle-restore-"));
@@ -69,6 +78,7 @@ function deepEqual(actual, expected, message) {
 
 async function main() {
   try {
+    await checkCoMemoryRestoreBoundary(path.join(root, "co-memory-restore"));
     checkOralHistoryRestoreOrdering(path.join(root, "oral-history-order"));
     const source = createFixture(path.join(root, "source"));
     sourceStore = source.store;
@@ -1104,6 +1114,194 @@ async function main() {
   }
 }
 
+async function checkCoMemoryRestoreBoundary(directory) {
+  fs.mkdirSync(directory, { recursive: true });
+  const sourceMemory = { ...normalizeMemory({
+    id: "memory-co-memory-source",
+    title: "共忆恢复展品",
+    rawContent: "原记忆必须保持不变。",
+    exhibitText: "用于验证加密归位码的恢复边界。"
+  }), schemaVersion: 18 };
+  const coMemoryResponses = await coMemoryRestoreBackupFixture(sourceMemory.id);
+  const prepared = {
+    verified: true,
+    stagingRoot: path.join(directory, "staging"),
+    manifest: { mode: "full", schemaVersion: 18, entries: [] },
+    collection: {
+      memories: [sourceMemory],
+      archaeology: { mode: "full", events: [], claims: [], pairDecisions: [], questions: [] },
+      exhibitions: { mode: "full", schemaVersion: 5, exhibitions: [] },
+      revisits: { mode: "full", schemaVersion: 6, states: [] },
+      entities: { mode: "full", schemaVersion: 7, entities: [] },
+      voices: { mode: "full", schemaVersion: 8, assets: [], memoryLinks: [], transcripts: [] },
+      capsules: { mode: "full", schemaVersion: 9, capsules: [] },
+      revisions: { mode: "full", schemaVersion: 10, revisions: [] },
+      revisitIntents: { mode: "full", schemaVersion: 11, intents: [] },
+      timeCalibrations: { mode: "full", schemaVersion: 12, calibrations: [] },
+      oralHistories: { mode: "full", schemaVersion: 13, questions: [], answers: [] },
+      curatorAgent: { mode: "full", schemaVersion: 14, runs: [] },
+      memoryInbox: { mode: "full", schemaVersion: 15, sources: [], items: [] },
+      provenance: { mode: "full", schemaVersion: 16, claims: [], sources: [], events: [] },
+      coMemoryResponses
+    },
+    assets: [],
+    links: [],
+    mediaObservations: [],
+    files: { variants: [], voices: [] }
+  };
+
+  const success = createTarget(path.join(directory, "success"), 18);
+  const successVoiceStorage = createVoiceStorage({ root: path.join(directory, "success-voice") });
+  const order = [];
+  try {
+    const options = coMemoryRestoreOptions(success, successVoiceStorage, prepared, order);
+    const restored = restorePreparedArchive(options);
+    equal(restored.coMemoryResponses.responses, 1,
+      "schema 18 archive restores one independently confirmed co-memory response");
+    equal(restored.idMap.coMemoryResponses[coMemoryResponses.responses[0].id], coMemoryResponses.responses[0].id,
+      "archive restore preserves the response record ID used by provenance references");
+    deepEqual(order, ["co-memory", "provenance"],
+      "co-memory responses restore before provenance claims can resolve those sources");
+    const saved = success.store.getCoMemoryResponse(coMemoryResponses.responses[0].id);
+    equal(saved.memoryId, sourceMemory.id, "restored response remains bound to its encrypted original memory ID");
+    equal(saved.response.answer, coMemoryResponses.responses[0].response.answer,
+      "archive restore does not rewrite the verified response payload");
+  } finally {
+    success.store.close();
+  }
+
+  const conflict = createTarget(path.join(directory, "conflict"), 18);
+  const conflictVoiceStorage = createVoiceStorage({ root: path.join(directory, "conflict-voice") });
+  try {
+    conflict.store.saveMemory(sourceMemory);
+    let restoreCalls = 0;
+    const options = coMemoryRestoreOptions(conflict, conflictVoiceStorage, prepared, []);
+    const restore = options.restoreCoMemoryResponseBackup;
+    options.restoreCoMemoryResponseBackup = (...args) => { restoreCalls += 1; return restore(...args); };
+    assert.throws(() => restorePreparedArchive(options),
+      (error) => error?.code === "MEDIA_RESTORE_CO_MEMORY_REBIND_FORBIDDEN");
+    assertions += 1;
+    equal(restoreCalls, 0, "memory ID conflict is rejected before invoking any co-memory write handler");
+    equal(conflict.store.listMemories().length, 1, "identity conflict leaves the pre-existing memory untouched");
+    equal(conflict.store.listCoMemoryResponses().length, 0, "identity conflict leaves zero partial response rows");
+  } finally {
+    conflict.store.close();
+  }
+
+  const missingHandler = createTarget(path.join(directory, "missing-handler"), 18);
+  const missingVoiceStorage = createVoiceStorage({ root: path.join(directory, "missing-handler-voice") });
+  try {
+    const options = coMemoryRestoreOptions(missingHandler, missingVoiceStorage, prepared, []);
+    options.restoreCoMemoryResponseBackup = undefined;
+    assert.throws(() => restorePreparedArchive(options),
+      (error) => error?.code === "MEDIA_RESTORE_CO_MEMORY_HANDLER_REQUIRED");
+    assertions += 1;
+    equal(missingHandler.store.listMemories().length, 0,
+      "missing co-memory restore handler rejects before importing any memory");
+  } finally {
+    missingHandler.store.close();
+  }
+}
+
+function coMemoryRestoreOptions(target, voiceStorage, prepared, order) {
+  let idCounter = 0;
+  const store = target.store;
+  return {
+    prepared,
+    store,
+    storage: target.storage,
+    voiceStorage,
+    normalizeMemory: (memory) => ({ ...normalizeMemory(memory), schemaVersion: 18 }),
+    validateArchaeologyBackup,
+    restoreArchaeologyBackup,
+    validateExhibitionBackup: store.validateExhibitionBackup,
+    restoreExhibitionBackup: store.restoreExhibitionBackup,
+    validateRevisitBackup: store.validateRevisitBackup,
+    restoreRevisitBackup: store.restoreRevisitBackup,
+    validateRevisitIntentBackup: store.validateRevisitIntentBackup,
+    restoreRevisitIntentBackup: store.restoreRevisitIntentBackup,
+    validateEntityBackup: store.validateClueBackup,
+    restoreEntityBackup: store.restoreClueBackup,
+    validateVoiceBackup: store.validateVoiceBackup,
+    restoreVoiceBackup: store.restoreVoiceBackup,
+    validateCapsuleBackup: store.validateCapsuleBackup,
+    restoreCapsuleBackup: store.restoreCapsuleBackup,
+    validateRevisionBackup: store.validateRevisionBackup,
+    restoreRevisionBackup: store.restoreRevisionBackup,
+    validateTimeCalibrationBackup: store.validateTimeCalibrationBackup,
+    restoreTimeCalibrationBackup: store.restoreTimeCalibrationBackup,
+    validateOralHistoryBackup: store.validateOralHistoryBackup,
+    restoreOralHistoryBackup: store.restoreOralHistoryBackup,
+    validateCuratorAgentBackup: store.validateCuratorAgentBackup,
+    restoreCuratorAgentBackup: store.restoreCuratorAgentBackup,
+    validateMemoryInboxBackup: store.validateMemoryInboxBackup,
+    restoreMemoryInboxBackup: store.restoreMemoryInboxBackup,
+    validateCoMemoryResponseBackup: store.validateCoMemoryResponseBackup,
+    restoreCoMemoryResponseBackup: (...args) => {
+      order.push("co-memory");
+      return store.restoreCoMemoryResponseBackup(...args);
+    },
+    validateProvenanceBackup: store.validateProvenanceBackup,
+    restoreProvenanceBackup: (...args) => {
+      order.push("provenance");
+      return store.restoreProvenanceBackup(...args);
+    },
+    createId: (prefix) => `${prefix}-co-memory-restore-${++idCounter}`
+  };
+}
+
+async function coMemoryRestoreBackupFixture(memoryId) {
+  const request = coMemoryCrypto.validateRequestPayload({
+    format: coMemoryCrypto.REQUEST_FORMAT,
+    version: coMemoryCrypto.VERSION,
+    letterId: "letter_restore_archive_01",
+    question: "你还记得那天的伞吗？",
+    context: {
+      title: "",
+      note: `[time-isle-memory-anchor:v1:${memoryId}]`,
+      evidence: [{ key: "evidence-1", kind: "quote", text: "那天下着雨。" }]
+    },
+    boundary: coMemoryCrypto.REQUEST_BOUNDARY
+  });
+  const requestSha256 = await coMemoryCrypto.digestRequestPayload(request);
+  const response = coMemoryCrypto.validateResponsePayload({
+    format: coMemoryCrypto.RESPONSE_FORMAT,
+    version: coMemoryCrypto.VERSION,
+    letterId: request.letterId,
+    responseId: "response_restore_archive_01",
+    requestSha256,
+    identity: {
+      label: "一位回信人（自述）",
+      assurance: coMemoryCrypto.IDENTITY_ASSURANCE,
+      verified: false
+    },
+    answer: "我记得是蓝色的，但不能确定日期。",
+    boundary: coMemoryCrypto.RESPONSE_BOUNDARY
+  });
+  const normalized = await validateCoMemoryResponseConfirmation({
+    confirm: true,
+    memoryId,
+    requestSha256,
+    request,
+    response,
+    source: {
+      kind: "co_memory_response",
+      relationKind: "supplements",
+      label: response.identity.label,
+      excerpt: response.answer,
+      identityAssurance: coMemoryCrypto.IDENTITY_ASSURANCE,
+      identityVerified: false,
+      encrypted: true,
+      signed: false
+    }
+  });
+  return buildCoMemoryResponseBackup([{
+    ...normalized,
+    id: "co-memory-response-restore-one",
+    createdAt: "2026-07-19T18:00:00.000Z"
+  }], "full", [memoryId]);
+}
+
 function checkOralHistoryRestoreOrdering(directory) {
   fs.mkdirSync(directory, { recursive: true });
   const stagingRoot = path.join(directory, "staging");
@@ -1179,10 +1377,11 @@ function checkOralHistoryRestoreOrdering(directory) {
       decisions: []
     }]
   };
+  const provenance = provenanceRestoreFixture(sourceMemory.id);
   const prepared = {
     verified: true,
     stagingRoot,
-    manifest: { mode: "full", schemaVersion: 14, entries: [] },
+    manifest: { mode: "full", schemaVersion: 16, entries: [] },
     collection: {
       memories: [sourceMemory],
       revisions: { mode: "full", schemaVersion: 10, revisions: [] },
@@ -1196,6 +1395,8 @@ function checkOralHistoryRestoreOrdering(directory) {
       voices: { mode: "full", schemaVersion: 8, assets: [sourceAsset], memoryLinks: [], transcripts: [] },
       oralHistories,
       curatorAgent,
+      memoryInbox: { mode: "full", schemaVersion: 15, sources: [], items: [] },
+      provenance,
       timeCalibrations: { mode: "full", schemaVersion: 12, calibrations: [] },
       exhibitions: { mode: "full", schemaVersion: 5, exhibitions: [{ id: "exhibition-curator-source" }] },
       revisits: { mode: "full", schemaVersion: 6, states: [] },
@@ -1258,6 +1459,12 @@ function checkOralHistoryRestoreOrdering(directory) {
       captured.revisionMemoryMap = new Map(memoryIdMap);
       return { memories: 0, revisions: 0, skipped: 0, idMap: { memories: {}, revisions: {} } };
     },
+    validateMemoryInboxBackup: () => true,
+    restoreMemoryInboxBackup(_backup, options) {
+      order.push("memory-inbox");
+      captured.memoryInboxOptions = options;
+      return { sources: 0, items: 0, reused: 0, skipped: 0, idMap: { sources: {}, items: {} } };
+    },
     validateArchaeologyBackup: () => true,
     restoreArchaeologyBackup(_store, _backup, memoryIdMap) {
       order.push("archaeology");
@@ -1294,6 +1501,27 @@ function checkOralHistoryRestoreOrdering(directory) {
           questionKeys: {
             [`oral-question:${"a".repeat(64)}`]: `oral-question:${"b".repeat(64)}`
           }
+        }
+      };
+    },
+    validateProvenanceBackup(backup, memoryIds) {
+      validateProvenanceBackupPayload(backup, { memoryIds });
+      captured.provenanceValidationMemoryIds = [...memoryIds];
+      return true;
+    },
+    restoreProvenanceBackup(_backup, options) {
+      order.push("provenance");
+      captured.provenanceOptions = options;
+      return {
+        claims: 1,
+        sources: 1,
+        events: 1,
+        skipped: 0,
+        summarized: false,
+        idMap: {
+          claims: { "provenance-claim-source": "provenance-claim-remapped" },
+          sources: { "provenance-source-source": "provenance-source-remapped" },
+          events: { "provenance-event-source": "provenance-event-remapped" }
         }
       };
     },
@@ -1338,9 +1566,9 @@ function checkOralHistoryRestoreOrdering(directory) {
 
   const restored = restorePreparedArchive(base);
   deepEqual(order, [
-    "memories", "revisions", "archaeology", "voices", "oral-history",
+    "memories", "revisions", "memory-inbox", "archaeology", "voices", "oral-history", "provenance",
     "time-calibrations", "exhibitions", "curator-agent", "revisits", "revisit-intents", "entities"
-  ], "完整恢复冻结顺序为 memories/revisions/media → archaeology → voices → oral → time → 其余模块");
+  ], "完整恢复在所有五类来源依赖就绪后写入 provenance，再继续其余模块");
   deepEqual(Object.fromEntries(captured.oralOptions.memoryIdMap), { "memory-oral-source": "memory-oral-remapped" }, "口述恢复收到完整 memoryIdMap 以重写来源身份");
   deepEqual(Object.fromEntries(captured.oralOptions.eventIdMap), { "event-oral-source": "event-oral-remapped" }, "口述恢复收到考古 eventIdMap 以重算 questionKey");
   deepEqual(Object.fromEntries(captured.oralOptions.assetIdMap), { "voice-oral-source": "voice-oral-remapped" }, "口述恢复收到声音 assetIdMap 以重写回答引用");
@@ -1350,6 +1578,23 @@ function checkOralHistoryRestoreOrdering(directory) {
   deepEqual(captured.voiceOptions.additionalAssetIds, [sourceVoiceId], "声音恢复显式允许没有 memory_voice link 的口述资产");
   equal(restored.idMap.oralHistoryQuestions["oral-question-source"], "oral-question-remapped", "恢复结果公开完整问题 ID 映射");
   equal(restored.idMap.oralHistoryAnswers["oral-answer-source"], "oral-answer-remapped", "恢复结果公开完整回答 ID 映射");
+  deepEqual(Object.keys(captured.provenanceOptions), ["memoryIdMap"], "provenance restore receives only the memory ID map");
+  deepEqual(Object.fromEntries(captured.provenanceOptions.memoryIdMap), {
+    "memory-oral-source": "memory-oral-remapped"
+  }, "provenance restore receives the complete memory ID map after source dependencies");
+  deepEqual(captured.provenanceValidationMemoryIds, ["memory-oral-source"],
+    "provenance is strictly validated against the source archive boundary before writes");
+  deepEqual(
+    [restored.provenance.claims, restored.provenance.sources, restored.provenance.events],
+    [1, 1, 1],
+    "restore result exposes complete provenance table counts"
+  );
+  equal(restored.idMap.provenanceClaims["provenance-claim-source"], "provenance-claim-remapped",
+    "top-level result exposes provenance claim ID mappings");
+  equal(restored.idMap.provenanceSources["provenance-source-source"], "provenance-source-remapped",
+    "top-level result exposes provenance source ID mappings");
+  equal(restored.idMap.provenanceEvents["provenance-event-source"], "provenance-event-remapped",
+    "top-level result exposes provenance event ID mappings");
 
   deepEqual(
     Object.fromEntries(captured.curatorOptions.memoryIdMap),
@@ -1393,6 +1638,17 @@ function checkOralHistoryRestoreOrdering(directory) {
   }), (error) => error?.code === "MEDIA_RESTORE_CURATOR_AGENT_HANDLER_REQUIRED");
   assertions += 1;
   equal(listRegularFiles(blockedCuratorRoot).length, 0, "missing curator-agent handler rejects the archive before voice materialization");
+
+  const blockedProvenanceRoot = path.join(directory, "blocked-provenance-voice");
+  const blockedProvenanceVoiceStorage = createVoiceStorage({ root: blockedProvenanceRoot });
+  assert.throws(() => restorePreparedArchive({
+    ...base,
+    voiceStorage: blockedProvenanceVoiceStorage,
+    restoreProvenanceBackup: undefined
+  }), (error) => error?.code === "MEDIA_RESTORE_PROVENANCE_HANDLER_REQUIRED");
+  assertions += 1;
+  equal(listRegularFiles(blockedProvenanceRoot).length, 0,
+    "missing provenance handler rejects the archive before voice materialization");
 
   const rollbackRoot = path.join(directory, "rollback-voice");
   const rollbackVoiceStorage = createVoiceStorage({ root: rollbackRoot });
@@ -1440,6 +1696,88 @@ function checkOralHistoryRestoreOrdering(directory) {
   assertions += 1;
   equal(transactionMemories.length, 0, "curator-agent restore failure rolls back imported memories in the parent transaction");
   equal(listRegularFiles(curatorRollbackRoot).length, 0, "curator-agent restore failure removes newly materialized voice bytes");
+
+  const provenanceRollbackRoot = path.join(directory, "rollback-provenance-voice");
+  const provenanceRollbackVoiceStorage = createVoiceStorage({ root: provenanceRollbackRoot });
+  assert.throws(() => restorePreparedArchive({
+    ...base,
+    store: transactionStore,
+    voiceStorage: provenanceRollbackVoiceStorage,
+    restoreProvenanceBackup() {
+      return { claims: 0, sources: 1, events: 1, skipped: 0, idMap: { claims: {}, sources: {}, events: {} } };
+    }
+  }), (error) => error?.code === "MEDIA_RESTORE_PROVENANCE_INCOMPLETE");
+  assertions += 1;
+  equal(transactionMemories.length, 0,
+    "incomplete provenance restore rolls back imported memories in the parent transaction");
+  equal(listRegularFiles(provenanceRollbackRoot).length, 0,
+    "incomplete provenance restore removes newly materialized voice bytes");
+}
+
+function provenanceRestoreFixture(memoryId) {
+  const excerpt = "provenance restore source";
+  const createdAt = "2026-07-19T00:00:00.000Z";
+  const draft = normalizeClaimDraftInput({
+    memoryId,
+    statement: "A restored claim keeps its evidence ledger.",
+    sources: [{
+      relationKind: "supports",
+      sourceKind: "memory_text",
+      sourceKey: `memory-text-source:${sha256(excerpt)}`,
+      originRef: { memoryId },
+      locator: { offsetUnit: OFFSET_UNIT, startOffset: 0, endOffset: excerpt.length },
+      sourceSha256: sha256(excerpt),
+      excerpt,
+      metadata: { label: "restore source" },
+      sensitive: false
+    }]
+  });
+  const claim = {
+    id: "provenance-claim-source",
+    memoryId,
+    statement: draft.statement,
+    sourceSetSha256: draft.sourceSetSha256,
+    claimSha256: draft.claimSha256,
+    createdAt
+  };
+  const source = draft.sources[0];
+  return {
+    mode: "full",
+    schemaVersion: 16,
+    claims: [claim],
+    sources: [{
+      id: "provenance-source-source",
+      claimId: claim.id,
+      position: 0,
+      relationKind: source.relationKind,
+      sourceKind: source.sourceKind,
+      sourceKey: source.sourceKey,
+      anchorKey: source.anchorKey,
+      originRef: source.originRef,
+      locator: source.locator,
+      snapshot: source.snapshot,
+      snapshotSha256: source.snapshotSha256,
+      sensitive: source.sensitive,
+      createdAt
+    }],
+    events: [{
+      id: "provenance-event-source",
+      claimId: claim.id,
+      sequence: 0,
+      action: "created",
+      sourceSetSha256: claim.sourceSetSha256,
+      previousEventSha256: "",
+      eventSha256: buildEventSha256({
+        claimSha256: claim.claimSha256,
+        sequence: 0,
+        action: "created",
+        sourceSetSha256: claim.sourceSetSha256,
+        previousEventSha256: "",
+        createdAt
+      }),
+      createdAt
+    }]
+  };
 }
 
 function listRegularFiles(directory) {

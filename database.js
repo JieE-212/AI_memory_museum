@@ -12,6 +12,14 @@ const { initializeRevisitIntentDatabase } = require("./lib/revisit-intent-databa
 const { initializeTimeCalibrationDatabase } = require("./lib/time-calibration-database");
 const { initializeOralHistoryDatabase } = require("./lib/oral-history-database");
 const { initializeCuratorAgentDatabase } = require("./lib/curator-agent-database");
+const { initializeMemoryInboxDatabase } = require("./lib/memory-inbox-database");
+const { PROVENANCE_MIGRATION, initializeProvenanceDatabase } = require("./lib/provenance-database");
+const { createProvenanceSourceCatalog } = require("./lib/provenance-sources");
+const { createStoredCatalogSourceResolver } = require("./lib/provenance-runtime");
+const { CO_MEMORY_RESPONSE_MIGRATION, initializeCoMemoryResponseDatabase } = require("./lib/co-memory-response-database");
+const { PROVENANCE_CO_MEMORY_MIGRATION } = require("./lib/provenance-co-memory-migration");
+const { MUSEUM_LOCK_MIGRATION, initializeMuseumLockDatabase } = require("./lib/museum-lock-database");
+const { applyMigrations } = require("./lib/migrations");
 const { createDatabaseHealthReader } = require("./lib/database-health");
 
 function createMemoryStore({ dbPath, halls, schemaVersion }) {
@@ -226,6 +234,11 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
 
   let oralHistoryDatabase = null;
   let curatorAgentDatabase = null;
+  let memoryInboxDatabase = null;
+  let provenanceDatabase = null;
+  let provenanceSourceCatalog = null;
+  let coMemoryResponseDatabase = null;
+  let museumLockDatabase = null;
   const mediaDatabase = initializeMediaDatabase({
     db,
     withTransaction,
@@ -324,7 +337,8 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
           };
         },
         readMemoryEvidence: ({ memoryIds = [] }) => ({
-          memories: memoryIds.map((id) => getMemory(id)).filter(Boolean)
+          memories: memoryIds.map((id) => getMemory(id)).filter(Boolean),
+          provenance: provenanceDatabase?.listConfirmedProvenanceForAgent(memoryIds) || {}
         }),
         readConfirmedRelationships: ({ memoryIds = [] }) => {
           const relationships = [];
@@ -378,12 +392,97 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
         getMemory
       })
     : null;
+  memoryInboxDatabase = Number(schemaVersion) >= 15
+    ? initializeMemoryInboxDatabase({
+        db,
+        withTransaction,
+        schemaVersion,
+        now: () => new Date().toISOString(),
+        createId,
+        saveMemory: (memory, options) => saveMemory(memory, options),
+        getMemory
+      })
+    : null;
+  const postInboxMigrations = [
+    PROVENANCE_MIGRATION,
+    CO_MEMORY_RESPONSE_MIGRATION,
+    PROVENANCE_CO_MEMORY_MIGRATION,
+    MUSEUM_LOCK_MIGRATION
+  ].filter((migration) => migration.version <= Number(schemaVersion));
+  if (postInboxMigrations.length) {
+    applyMigrations({
+      db,
+      baselineVersion: 4,
+      migrations: postInboxMigrations,
+      supportedVersion: Number(schemaVersion),
+      now: () => new Date().toISOString()
+    });
+  }
+  if (Number(schemaVersion) >= 16) {
+    const catalogProxy = {
+      listSources: (memoryId) => provenanceSourceCatalog?.listSources(memoryId) || [],
+      resolveSource: (memoryId, selection) => provenanceSourceCatalog?.resolveSource(memoryId, selection) || {
+        status: "missing",
+        kind: String(selection?.kind || ""),
+        referenceId: String(selection?.referenceId || ""),
+        sourceKey: String(selection?.sourceKey || "")
+      }
+    };
+    provenanceDatabase = initializeProvenanceDatabase({
+      db,
+      withTransaction,
+      schemaVersion,
+      applyMigrations: false,
+      now: () => new Date().toISOString(),
+      createId,
+      sourceResolver: createStoredCatalogSourceResolver({ catalog: catalogProxy })
+    });
+  }
+  coMemoryResponseDatabase = Number(schemaVersion) >= 17
+    ? initializeCoMemoryResponseDatabase({
+        db,
+        withTransaction,
+        schemaVersion,
+        applyMigrations: false,
+        now: () => new Date().toISOString(),
+        createId
+      })
+    : null;
+  museumLockDatabase = Number(schemaVersion) >= 19
+    ? initializeMuseumLockDatabase({
+        db,
+        withTransaction,
+        schemaVersion,
+        applyMigrations: false,
+        now: () => new Date().toISOString()
+      })
+    : null;
+  if (Number(schemaVersion) >= 16) {
+    provenanceSourceCatalog = createProvenanceSourceCatalog({
+      store: {
+        getMemory,
+        getMemoryInboxReceiptForMemory: memoryInboxDatabase.getMemoryInboxReceiptForMemory,
+        listMediaForMemory: mediaDatabase.listMediaForMemory,
+        listMediaObservations: mediaDatabase.listMediaObservations,
+        listVoiceForMemory: voiceDatabase.listVoiceForMemory,
+        listConfirmedOralHistoryEvidence: oralHistoryDatabase?.listConfirmedOralHistoryEvidence || (() => []),
+        listCoMemoryResponseSources: coMemoryResponseDatabase?.listCoMemoryResponseSources || (() => [])
+      }
+    });
+  }
   const databaseHealth = createDatabaseHealthReader({
     db,
     schemaVersion,
     getTimeCalibrationHealthSnapshot: timeCalibrationDatabase?.getTimeCalibrationStats,
     getCuratorAgentHealthSnapshot: curatorAgentDatabase?.getCuratorAgentStats,
-    getCuratorAgentBackup: curatorAgentDatabase?.buildCuratorAgentBackup
+    getCuratorAgentBackup: curatorAgentDatabase?.buildCuratorAgentBackup,
+    getMemoryInboxHealthSnapshot: memoryInboxDatabase?.getMemoryInboxStats,
+    getMemoryInboxBackup: memoryInboxDatabase?.buildMemoryInboxBackup,
+    getProvenanceHealthSnapshot: provenanceDatabase?.getProvenanceStats,
+    getProvenanceBackup: provenanceDatabase?.buildProvenanceBackup,
+    getCoMemoryResponseHealthSnapshot: coMemoryResponseDatabase?.getCoMemoryResponseStats,
+    getCoMemoryResponseBackup: coMemoryResponseDatabase?.buildCoMemoryResponseBackup,
+    getMuseumLockState: museumLockDatabase?.getMuseumLockState
   });
 
   const upsertHall = db.prepare(`
@@ -743,6 +842,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     if (!memory) return false;
     return withTransaction(() => {
       curatorAgentDatabase?.purgeCuratorAgentRunsForMemory?.(id);
+      memoryInboxDatabase?.detachMemoryInboxAdmission?.(id);
       clueDatabase.removeMemoryClues(id);
       const result = statements.deleteMemory.run(id);
       if (memory.agentRunId) statements.deleteAgentRun.run(memory.agentRunId);
@@ -770,6 +870,18 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     return withTransaction(() => {
       const curatorAgentCleanup = curatorAgentDatabase?.clearCuratorAgentRuns() || {
         runsDeleted: 0
+      };
+      const memoryInboxCleanup = memoryInboxDatabase?.clearMemoryInbox() || {
+        memoryInboxItemsDeleted: 0,
+        memoryInboxSourcesDeleted: 0
+      };
+      const provenanceCleanup = provenanceDatabase?.clearProvenanceClaims() || {
+        claimsDeleted: 0,
+        sourcesDeleted: 0,
+        eventsDeleted: 0
+      };
+      const coMemoryCleanup = coMemoryResponseDatabase?.clearCoMemoryResponses?.() || {
+        coMemoryResponsesDeleted: 0
       };
       const capsuleCleanup = capsuleDatabase.clearCapsules();
       const oralHistoryCleanup = oralHistoryDatabase?.clearOralHistories() || {
@@ -800,7 +912,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
         DELETE FROM agent_runs;
         DELETE FROM memories;
       `);
-      return { memoriesDeleted, agentRunsDeleted, memoryEventsDeleted, exhibitionsDeleted, revisitStatesDeleted, revisitIntentsDeleted, timeCalibrationsDeleted, ...curatorAgentCleanup, ...capsuleCleanup, ...oralHistoryCleanup, ...clueCleanup, ...voiceCleanup };
+      return { memoriesDeleted, agentRunsDeleted, memoryEventsDeleted, exhibitionsDeleted, revisitStatesDeleted, revisitIntentsDeleted, timeCalibrationsDeleted, ...memoryInboxCleanup, ...provenanceCleanup, ...coMemoryCleanup, ...curatorAgentCleanup, ...capsuleCleanup, ...oralHistoryCleanup, ...clueCleanup, ...voiceCleanup };
     });
   }
 
@@ -1247,6 +1359,31 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
       proposals: 0,
       decisions: 0
     };
+    const memoryInboxStats = memoryInboxDatabase?.getMemoryInboxStats?.() || {
+      sources: 0,
+      items: 0,
+      pending: 0,
+      dismissed: 0,
+      accepted: 0,
+      orphaned: 0,
+      needsReview: 0
+    };
+    const provenanceStats = provenanceDatabase?.getProvenanceStats?.() || {
+      claims: 0,
+      sources: 0,
+      events: 0,
+      draft: 0,
+      confirmed: 0,
+      needsReview: 0,
+      withdrawn: 0
+    };
+    const coMemoryStats = coMemoryResponseDatabase?.getCoMemoryResponseStats?.() || {
+      responses: 0,
+      memories: 0,
+      unverifiedIdentity: 0,
+      encryptedTransport: 0,
+      unsigned: 0
+    };
     return {
       memories: memories.length,
       halls: new Set(memories.map((memory) => memory.hall)).size,
@@ -1275,6 +1412,18 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
       curatorAgentInterruptedRuns: curatorAgentStats.interrupted,
       curatorAgentProposals: curatorAgentStats.proposals,
       curatorAgentDecisions: curatorAgentStats.decisions,
+      memoryInboxSources: memoryInboxStats.sources,
+      memoryInboxItems: memoryInboxStats.items,
+      memoryInboxPending: memoryInboxStats.pending,
+      memoryInboxAccepted: memoryInboxStats.accepted,
+      memoryInboxNeedsReview: memoryInboxStats.needsReview,
+      provenanceClaims: provenanceStats.claims,
+      provenanceSources: provenanceStats.sources,
+      provenanceEvents: provenanceStats.events,
+      provenanceConfirmed: provenanceStats.confirmed,
+      provenanceNeedsReview: provenanceStats.needsReview,
+      coMemoryResponses: coMemoryStats.responses,
+      coMemoryUnverifiedIdentity: coMemoryStats.unverifiedIdentity,
       capsules: capsuleStats.capsules,
       capsuleMediaLinks: capsuleStats.mediaLinks
     };
@@ -1770,6 +1919,14 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     ...(timeCalibrationDatabase || {}),
     ...(oralHistoryDatabase || {}),
     ...(curatorAgentDatabase || {}),
+    ...(memoryInboxDatabase || {}),
+    ...(provenanceDatabase || {}),
+    ...(coMemoryResponseDatabase || {}),
+    ...(museumLockDatabase || {}),
+    ...(provenanceSourceCatalog ? {
+      listProvenanceSources: provenanceSourceCatalog.listSources,
+      resolveProvenanceSource: provenanceSourceCatalog.resolveSource
+    } : {}),
     deleteExhibition,
     listRecentMemoryRevisions,
     searchClues,
