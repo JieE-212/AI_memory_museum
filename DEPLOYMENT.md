@@ -1,14 +1,15 @@
 # 时屿（TIME ISLE）V14.0.0 发布说明
 
-线上 Demo（当前为 V14.0.0）：
+线上 Demo（当前均为 V14.0.0）：
 
 ```text
-https://ai-memory-museum-demo.vercel.app
+国内主入口（CloudBase）：https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com
+全球备用（Vercel）：https://ai-memory-museum-demo.vercel.app
 ```
 
-腾讯云 Lighthouse 香港镜像的本地部署资产与安全交接见 [`deploy/tencent/README.md`](./deploy/tencent/README.md)。该镜像当前仍处于本地准备阶段，只有购买服务器、绑定 HTTPS 域名并完成真机与生产接口验收后，才能写入简历或标记为已发布；Vercel 继续作为现有生产地址。
+腾讯云 Lighthouse 香港镜像的本地部署资产与安全交接见 [`deploy/tencent/README.md`](./deploy/tencent/README.md)。该镜像当前仍处于本地准备阶段，只有购买服务器、绑定 HTTPS 域名并完成真机与生产接口验收后，才能标记为已发布；现有 CloudBase 国内入口与 Vercel 全球备用入口不依赖该方案。
 
-腾讯云 CloudBase 云托管的受限公开 Demo 配置见 [`deploy/cloudbase/README.md`](./deploy/cloudbase/README.md)。免费体验环境已经创建，但云托管服务尚未启用或发布；试运行必须保持“按量付费”关闭、只消耗套餐资源点，并固定为 0–1 个实例。只有公开域名、资源点扣减、缩零恢复与真机访问全部验收后，才能把该入口写入简历。
+腾讯云 CloudBase 云托管的受限公开 Demo 配置见 [`deploy/cloudbase/README.md`](./deploy/cloudbase/README.md)。服务 `time-isle-demo` 的部署 `001` 已从提交 `278f925` 构建并发布；桌面公网首页及 `/api/version`、`/api/health`、`/api/demo/status`、`/api/memories` 已验收为 `V14.0.0 / schema 19 / 4` 条播种记忆。实例固定为 `0–1` 个、规格为 `0.5` 核 / `1 GiB`，SQLite 与媒体仅写 `/tmp`；按量付费保持关闭，截至 2026-07-20 桌面验收时控制台显示套餐用量为 `0.11 / 3000` 点。手机 Wi-Fi 与蜂窝网络真机访问仍待用户验收，不应写成已完成移动网络验收。
 
 V14.0.0（schema 19）已于 2026-07-20 发布：本地 `npm.cmd run build`、`npm.cmd run check`、262 条真实 HTTP smoke、15/15 项 Playwright 三档门禁与 1265×720、390×844、320×700 三档真实目视均已通过；功能提交 `2dcce402b13f1d43c54c6a196b8e2273c9483eb3` 已进入 GitHub 与 Gitee 的 `main`，并由 GitHub 触发 Vercel 生产部署。
 
@@ -191,7 +192,17 @@ git push github main
 
 ## 部署后验证
 
-确认以下地址均可访问：
+CloudBase 国内主入口已完成桌面公网首页与四个 API 验收：
+
+```text
+https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com
+https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com/api/version
+https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com/api/health
+https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com/api/demo/status
+https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com/api/memories
+```
+
+Vercel 全球备用入口继续确认以下地址：
 
 ```text
 https://ai-memory-museum-demo.vercel.app
@@ -208,7 +219,9 @@ https://ai-memory-museum-demo.vercel.app/offline.html
 - `sw.js` 只应预缓存离线边界页、其样式和公开品牌 SVG，不得缓存首页、API、图片、声音、归档或用户内容。
 - `offline.html` 应可独立打开，并明确说明断网时不会展示私人馆藏。
 
-2026-07-20 已完成 V14 生产核验：`/api/version` 与 `/api/health` 返回 `version: 14.0.0`、`schemaVersion: 19`、`mode: interview-demo`、`storage: ephemeral-sqlite`、`aiMode: mock-fallback`。`GET /api/curator-agent/sample` 返回：
+2026-07-20 已完成 CloudBase 桌面公网核验：`/api/version` 返回 `version: 14.0.0`，`/api/health` 返回 `schemaVersion: 19`，`/api/memories` 返回 4 条播种记忆；首页、`/api/demo/status` 与上述接口均可公开访问。服务保持 `0.5` 核 / `1 GiB`、最小 `0` / 最大 `1` 个实例，SQLite 与媒体目录位于 `/tmp`；按量付费关闭，截至本次桌面验收时控制台显示套餐用量为 `0.11 / 3000` 点。手机 Wi-Fi 与蜂窝网络真机验收尚未执行，缩零后的冷启动与临时写入消失也仍应单独复核。
+
+同日已完成 Vercel V14 生产核验：`/api/version` 返回 `version: 14.0.0`，`/api/health` 返回 `schemaVersion: 19`、`mode: interview-demo`、`storage: ephemeral-sqlite`、`aiMode: mock-fallback`。`GET /api/curator-agent/sample` 返回：
 
 ```json
 {
@@ -235,7 +248,7 @@ https://ai-memory-museum-demo.vercel.app/offline.html
 
 ## 重复 Vercel 项目
 
-同一 GitHub 仓库如果连接多个 Vercel 项目，每次推送可能重复构建。正式简历链接只保留：
+同一 GitHub 仓库如果连接多个 Vercel 项目，每次推送可能重复构建。作为全球备用入口的 Vercel 项目只保留：
 
 ```text
 ai-memory-museum-demo
@@ -243,4 +256,4 @@ ai-memory-museum-demo
 
 其他重复项目应删除或断开 Git 连接，避免浪费构建额度和误用域名。
 
-当前状态重申：V14.0.0 / schema 19 已于 2026-07-20 完成 GitHub、Gitee 双远端发布与 Vercel 生产核验，功能提交为 `2dcce402b13f1d43c54c6a196b8e2273c9483eb3`；V10.0.0 / schema 14 与提交 `7107ede` 保留为历史发布基线。
+当前状态重申：V14.0.0 / schema 19 已于 2026-07-20 完成 GitHub、Gitee 双远端发布与 Vercel 生产核验，功能提交为 `2dcce402b13f1d43c54c6a196b8e2273c9483eb3`；CloudBase 国内入口的部署 `001` 来自提交 `278f925`，已完成桌面公网首页和四 API 验收，手机 Wi-Fi / 蜂窝网络真机验收仍待用户完成。V10.0.0 / schema 14 与提交 `7107ede` 保留为历史发布基线。
