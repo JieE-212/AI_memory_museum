@@ -38,6 +38,7 @@ accept("deployment accepts an explicitly port-scoped host", deployed, request("G
 reject("deployment rejects an unlisted host", deployed, request("GET", "other.vercel.app"), 421, "HOST_NOT_ALLOWED");
 reject("deployment does not implicitly trust loopback", deployed, request("GET", "localhost"), 421, "HOST_NOT_ALLOWED");
 reject("deployment host ports must match explicitly", deployed, request("GET", "api.memories.example"), 421, "HOST_NOT_ALLOWED");
+reject("forwarded host cannot replace an unlisted Host", deployed, request("GET", "attacker.example", { "x-forwarded-host": "memories.example" }), 421, "HOST_NOT_ALLOWED");
 reject("deployment with no platform or explicit hosts fails closed", createRequestSecurity({ deployment: true }), request("GET", "anything.example"), 421, "HOST_NOT_ALLOWED");
 throws("invalid deployment host configuration fails at startup", () => createRequestSecurity({ deployment: true, allowedHosts: "*.example.com" }), TypeError);
 
@@ -46,7 +47,12 @@ accept("safe HEAD does not require Origin", local(), request("HEAD", "localhost:
 accept("write accepts an exact local Origin without Fetch Metadata", local(), request("POST", "localhost:3000", { origin: "http://localhost:3000" }));
 accept("write accepts an exact Origin marked same-origin", local(), request("PUT", "127.0.0.1:3000", { origin: "http://127.0.0.1:3000", "sec-fetch-site": "same-origin" }));
 accept("deployment write requires HTTPS and accepts matching Origin", deployed, request("DELETE", "memories.example", { origin: "https://memories.example", "sec-fetch-site": "same-origin" }));
+accept("deployment write accepts an exact HTTPS Origin with its allowed port", deployed, request("POST", "api.memories.example:8443", { origin: "https://api.memories.example:8443" }));
+accept("forwarded protocol cannot weaken an exact HTTPS Origin", deployed, request("POST", "memories.example", { origin: "https://memories.example", "x-forwarded-proto": "http" }));
 reject("write rejects a missing Origin", local(), request("POST", "localhost:3000"), 403, "ORIGIN_REQUIRED");
+reject("deployment write rejects an Origin missing the allowed host port", deployed, request("POST", "api.memories.example:8443", { origin: "https://api.memories.example" }), 403, "ORIGIN_MISMATCH");
+reject("deployment write rejects duplicate raw Origin headers", deployed, request("POST", "memories.example", {}, ["Host", "memories.example", "Origin", "https://memories.example", "Origin", "https://memories.example"]), 403, "ORIGIN_REQUIRED");
+reject("deployment write rejects duplicate Fetch Metadata headers", deployed, request("POST", "memories.example", {}, ["Host", "memories.example", "Origin", "https://memories.example", "Sec-Fetch-Site", "same-origin", "Sec-Fetch-Site", "same-origin"]), 403, "FETCH_SITE_INVALID");
 reject("write rejects a foreign Origin", local(), request("POST", "localhost:3000", { origin: "http://attacker.example" }), 403, "ORIGIN_MISMATCH");
 reject("write rejects the opaque null Origin", local(), request("POST", "localhost:3000", { origin: "null" }), 403, "ORIGIN_INVALID");
 reject("write rejects an Origin with a path", local(), request("POST", "localhost:3000", { origin: "http://localhost:3000/path" }), 403, "ORIGIN_MISMATCH");
@@ -58,7 +64,7 @@ reject("absolute-form request targets cannot replace the validated host", local(
 reject("backslash network-path targets cannot replace the validated host", local(), request("GET", "localhost:3000", {}, null, "/\\attacker.example/api/health"), 400, "REQUEST_TARGET_INVALID");
 
 equal("authority parser canonicalizes host case and port", parseAuthority("LOCALHOST:03000").authority, "localhost:3000");
-equal("platform host discovery uses only documented Vercel variables", platformHostsFromEnv({ VERCEL_URL: "one.vercel.app", VERCEL_BRANCH_URL: "two.vercel.app", OTHER: "ignored.example" }).join(","), "one.vercel.app,two.vercel.app");
+equal("platform host discovery uses only documented Vercel variables", platformHostsFromEnv({ VERCEL_URL: "one.vercel.app", VERCEL_BRANCH_URL: "two.vercel.app", VERCEL_PROJECT_PRODUCTION_URL: "three.vercel.app", OTHER: "ignored.example" }).join(","), "one.vercel.app,two.vercel.app,three.vercel.app");
 
 console.log(`Request security checks passed: ${assertions} assertions.`);
 

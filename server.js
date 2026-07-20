@@ -33,6 +33,7 @@ const { sendArchiveFile, withRequestAbort } = require("./lib/archive-http");
 const { cleanupArchiveStaging } = require("./lib/archive-staging");
 const { resetDemoStorage, createDemoCapacityGuard } = require("./lib/demo-safety");
 const { createRequestSecurity, platformHostsFromEnv } = require("./lib/request-security");
+const { resolveRuntimeDeployment } = require("./lib/runtime-deployment");
 const { createRuntimeMetadata } = require("./lib/runtime-metadata");
 const { createCollectionHealthApi } = require("./lib/collection-health-api");
 const { createArchiveInspectionApi } = require("./lib/archive-inspection-api");
@@ -52,10 +53,10 @@ const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
 loadEnvFile(path.join(ROOT_DIR, ".env"));
 
-const PORT = Number(process.env.PORT) || 3000;
-const IS_VERCEL = Boolean(process.env.VERCEL);
-const requestSecurity = createRequestSecurity({ deployment: IS_VERCEL, allowedHosts: process.env.ALLOWED_HOSTS, platformHosts: platformHostsFromEnv(process.env) });
 const INTERVIEW_DEMO = parseEnvFlag(process.env.INTERVIEW_DEMO) || parseEnvFlag(process.env.DEMO_MODE);
+const runtimeDeployment = resolveRuntimeDeployment(process.env, { interviewDemo: INTERVIEW_DEMO });
+const { bindHost: BIND_HOST, isVercelRuntime: IS_VERCEL, port: PORT, publicDeployment: IS_PUBLIC_DEPLOYMENT } = runtimeDeployment;
+const requestSecurity = createRequestSecurity({ deployment: IS_PUBLIC_DEPLOYMENT, allowedHosts: process.env.ALLOWED_HOSTS, platformHosts: IS_VERCEL ? platformHostsFromEnv(process.env) : [] });
 const DB_PATH = process.env.DB_PATH || (INTERVIEW_DEMO
   ? path.join(os.tmpdir(), "ai-memory-museum-interview-demo.sqlite")
   : path.join(ROOT_DIR, "data", "memory-museum.sqlite"));
@@ -1419,8 +1420,8 @@ if (IS_VERCEL) {
   module.exports = handleRequest;
 } else {
   const server = http.createServer(handleRequest);
-  server.listen(PORT, "127.0.0.1", () => {
-    console.log(`时屿（TIME ISLE）已启动：http://127.0.0.1:${PORT}`);
+  server.listen(PORT, BIND_HOST, () => {
+    console.log(`时屿（TIME ISLE）已启动：http://${BIND_HOST.includes(":") ? `[${BIND_HOST}]` : BIND_HOST}:${PORT}`);
     console.log(AI_ENABLED ? "AI 模式：已配置模型" : "AI 模式：本地 Mock 回退");
   });
   server.on("error", (error) => {

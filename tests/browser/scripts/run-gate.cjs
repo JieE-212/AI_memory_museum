@@ -31,6 +31,11 @@ async function main() {
     env: {
       ...sharedEnv,
       PORT: String(port),
+      VERCEL: "",
+      PUBLIC_DEPLOYMENT: "false",
+      BIND_HOST: "127.0.0.1",
+      ALLOWED_HOSTS: "",
+      DEMO_MODE: "false",
       INTERVIEW_DEMO: "true",
       AI_API_KEY: "",
       DB_PATH: path.join(tempRoot, "ai-memory-museum-browser-gate.sqlite"),

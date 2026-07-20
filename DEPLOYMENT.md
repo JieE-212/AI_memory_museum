@@ -6,6 +6,10 @@
 https://ai-memory-museum-demo.vercel.app
 ```
 
+腾讯云 Lighthouse 香港镜像的本地部署资产与安全交接见 [`deploy/tencent/README.md`](./deploy/tencent/README.md)。该镜像当前仍处于本地准备阶段，只有购买服务器、绑定 HTTPS 域名并完成真机与生产接口验收后，才能写入简历或标记为已发布；Vercel 继续作为现有生产地址。
+
+腾讯云 CloudBase 云托管的受限公开 Demo 配置见 [`deploy/cloudbase/README.md`](./deploy/cloudbase/README.md)。免费体验环境已经创建，但云托管服务尚未启用或发布；试运行必须保持“按量付费”关闭、只消耗套餐资源点，并固定为 0–1 个实例。只有公开域名、资源点扣减、缩零恢复与真机访问全部验收后，才能把该入口写入简历。
+
 V14.0.0（schema 19）已于 2026-07-20 发布：本地 `npm.cmd run build`、`npm.cmd run check`、262 条真实 HTTP smoke、15/15 项 Playwright 三档门禁与 1265×720、390×844、320×700 三档真实目视均已通过；功能提交 `2dcce402b13f1d43c54c6a196b8e2273c9483eb3` 已进入 GitHub 与 Gitee 的 `main`，并由 GitHub 触发 Vercel 生产部署。
 
 本文保留 V7.1.0（schema 9）与 V10.0.0（schema 14）作为历史发布阶段，V14.0.0 是当前发布。V10 已于 2026-07-19 完成本地检查、GitHub 与 Gitee 双远端推送及 Vercel 生产部署核验；实际部署状态始终以线上 `/api/version` 与 `/api/health` 返回值为准。

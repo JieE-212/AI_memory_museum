@@ -1,0 +1,37 @@
+{
+  "$comment": "Review manifest only: enter these values in the CloudBase console. This is not a CloudBase CLI import file.",
+  "service": {
+    "name": "time-isle-demo",
+    "deploymentMode": "dockerfile",
+    "repositoryContext": ".",
+    "dockerfilePath": "Dockerfile",
+    "containerPort": 3000
+  },
+  "resources": {
+    "cpu": 0.5,
+    "memoryGiB": 1
+  },
+  "traffic": {
+    "publicAccess": true,
+    "routePath": "/",
+    "externalScheme": "https"
+  },
+  "scaling": {
+    "minimumInstances": 0,
+    "maximumInstances": 1
+  },
+  "billing": {
+    "resourcePointsOnly": true,
+    "payAsYouGo": false,
+    "stopIfUpgradeIsRequired": true
+  },
+  "healthCheck": {
+    "protocol": "TCP",
+    "port": 3000
+  },
+  "state": {
+    "persistentStorage": false,
+    "temporaryDirectory": "/tmp"
+  },
+  "environmentTemplate": "deploy/cloudbase/cloudbase.env.example"
+}
