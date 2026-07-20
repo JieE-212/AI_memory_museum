@@ -1,18 +1,20 @@
-# 时屿（TIME ISLE）V10.0.0 发布与 V7.1.0 历史 Demo 说明
+# 时屿（TIME ISLE）V14.0.0 发布说明
 
-线上 Demo（当前为 V10.0.0）：
+线上 Demo（当前为 V14.0.0）：
 
 ```text
 https://ai-memory-museum-demo.vercel.app
 ```
 
-本文保留 V7.1.0（schema 9）作为历史发布阶段，并记录 V10 的当前发布口径。V10 已于 2026-07-19 完成本地检查、GitHub 与 Gitee 双远端推送及 Vercel 生产部署核验；实际部署状态始终以线上 `/api/version` 与 `/api/health` 返回值为准。
+V14.0.0（schema 19）已于 2026-07-20 发布：本地 `npm.cmd run build`、`npm.cmd run check`、262 条真实 HTTP smoke、15/15 项 Playwright 三档门禁与 1265×720、390×844、320×700 三档真实目视均已通过；功能提交 `2dcce402b13f1d43c54c6a196b8e2273c9483eb3` 已进入 GitHub 与 Gitee 的 `main`，并由 GitHub 触发 Vercel 生产部署。
 
-V10.0.0（schema 14）已完成受限本地策展助手及其审计/恢复边界，最终代码提交为 `7107ede`；`npm.cmd run build`、`npm.cmd run check` 全绿，HTTP smoke 249 条；策展 core 131、归档 98、界面 51、数据库健康 42、馆藏体检 83、Demo 安全 19、前端 109、JSON 导入 160、归档验真 42、媒体备份 312/恢复 189 条专项断言均已通过。1265×720、390×844、320×700 的浏览器 DOM 与真实交互验收也已通过，并非仅凭截图判断。生产接口已核验 `10.0.0 / schema 14 / interview-demo / ephemeral-sqlite`。
+本文保留 V7.1.0（schema 9）与 V10.0.0（schema 14）作为历史发布阶段，V14.0.0 是当前发布。V10 已于 2026-07-19 完成本地检查、GitHub 与 Gitee 双远端推送及 Vercel 生产部署核验；实际部署状态始终以线上 `/api/version` 与 `/api/health` 返回值为准。
 
-V10 PWA 是公开、临时、只用于面试演示的受保护 Demo：安装到设备不会开放麦克风、媒体写入或私人内容持久化。它不接收私人图片或声音，不保存展览、回访、实体变更或时间胶囊，也不允许 `.time-isle` 归档恢复。完整媒体保存、胶囊封存和归档恢复应在具有持久磁盘的本地 Node.js 环境体验；浏览器端加密流程可以使用公开示例预览，但不要输入私人内容。
+V10.0.0（schema 14）历史基线已完成受限本地策展助手及其审计/恢复边界，最终代码提交为 `7107ede`；`npm.cmd run build`、`npm.cmd run check` 全绿，HTTP smoke 249 条；策展 core 131、归档 98、界面 51、数据库健康 42、馆藏体检 83、Demo 安全 19、前端 109、JSON 导入 160、归档验真 42、媒体备份 312/恢复 189 条专项断言均已通过。1265×720、390×844、320×700 的浏览器 DOM 与真实交互验收也已通过，并非仅凭截图判断。生产接口曾核验 `10.0.0 / schema 14 / interview-demo / ephemeral-sqlite`。
 
-当前线上 V10 沿用 4 件示例展品、1 场可分享的已确认展览、1 个确认事件和 1 项“保留多种记录”时间校准；符合条件时可只读展示口述史问题与已有来源，但没有真实示例音频时不会伪造可播放回答。策展助手只通过 `GET /api/curator-agent/sample` 合成工作区，零持久化；所有 `/api/curator-agent/**` 非 GET/HEAD 请求在读取请求体前返回 403。数据仍位于临时 SQLite；公开 Demo 不请求麦克风、不打开音频文件选择，并继续禁止口述史、展览、回访意愿、时间校准、胶囊和媒体持久化。
+V14 PWA 是公开、临时、只用于面试演示的受保护 Demo：安装到设备不会开放麦克风、媒体写入或私人内容持久化。它不接收私人图片或声音，不保存展览、回访、实体变更或时间胶囊，也不允许 `.time-isle` 归档恢复。完整媒体保存、胶囊封存和归档恢复应在具有持久磁盘的本地 Node.js 环境体验；浏览器端加密流程可以使用公开示例预览，但不要输入私人内容。
+
+当前线上 V14 沿用 4 件示例展品、1 场可分享的已确认展览、1 个确认事件和 1 项“保留多种记录”时间校准；符合条件时可只读展示口述史问题与已有来源，但没有真实示例音频时不会伪造可播放回答。策展助手只通过 `GET /api/curator-agent/sample` 合成工作区，零持久化；设备内镜片只对合成或播种来源生成确定性只读预览。数据仍位于临时 SQLite；公开 Demo 不请求麦克风、不打开音频文件选择，并在正文前阻止共忆保存、锁馆切换、结构演练上传以及口述史、展览、回访意愿、时间校准、胶囊和媒体持久化。
 
 ## Git 连接
 
@@ -77,7 +79,7 @@ AI_TIMEOUT_MS=20000
 
 公开 Demo 通常不需要配置 `DB_PATH` 或 `MEDIA_ROOT`。代码会在任何启动删除前解析真实路径，并要求二者位于系统临时目录、使用 `ai-memory-museum-` 专用前缀，且不能相同或互相包含；否则进程 fail closed，避免误配置清理私人数据。也不要提交 `.env`、本地 SQLite、`data/media` 或 `.time-isle` 备份。
 
-## 当前 V10 Demo 安全行为
+## 当前 V14 Demo 安全行为
 
 `INTERVIEW_DEMO=true` 时：
 
@@ -101,7 +103,7 @@ V7 的图片、声音与胶囊层使用本地文件系统、SHA-256 内容寻址
 - 公开 Demo 明确关闭媒体写入，而不是假装已经持久保存。
 - 不要仅把 `INTERVIEW_DEMO` 改为 `false` 就当作私人生产部署；实例重建后 SQLite 和图片都可能丢失。
 - 私人或长期部署应使用 Node.js 24+ 和持久磁盘，同时持久化 `DB_PATH` 与 `MEDIA_ROOT`，并定期下载完整 `.time-isle`。
-- 若未来接入云数据库或对象存储，需要额外实现身份认证、租户隔离、访问控制、密钥管理和存储驱动；这些不在 V10.0.0 范围内。
+- 若未来接入云数据库或对象存储，需要额外实现身份认证、租户隔离、访问控制、密钥管理和存储驱动；这些不在 V14.0.0 范围内。
 
 本地持久配置示例：
 
@@ -111,7 +113,9 @@ $env:MEDIA_ROOT = "D:\time-isle\media"
 npm.cmd start
 ```
 
-默认本地路径分别为 `data/memory-museum.sqlite`、`data/media/` 和 `data/media/voice/`。V10 schema 14 完整 `.time-isle` 会包含馆藏、照片、声音、确认文字稿、口述问题与回答、人工选段、图片线索、实体图、主题展览、回访状态与明确意愿、时间校准、时间胶囊、时光拼图、可校验修订链和受限策展审计。`timeline/calibrations.json`、`oral-history/state.json` 与 `curator-agent/state.json` 都是对应 schema 的 required section；早期文字整理的 `agent_runs / steps / events` 仍不归档。恢复先处理记忆/修订/媒体和事件/声音，再恢复口述史、时间校准、展览，最后把策展运行重写为 `historical + needsReview + allowDecisions: false` 的只读历史；历史决定不能再次授权执行。脱敏策展 section 只保留计数和固定说明，排除目标、展品 ID、工具、提案、决定内容、哈希和时间戳。
+默认本地路径分别为 `data/memory-museum.sqlite`、`data/media/` 和 `data/media/voice/`。V14 schema 19 完整 `.time-isle` 在 V10 内容基础上加入 `inbox/state.json`、`provenance/state.json`、`co-memory/responses.json`；恢复会先建立收件箱/共忆记录，再建立依赖它们的 provenance 引用，任何 ID、哈希、绑定或引用冲突都会在正式写入前整批拒绝。脱敏共忆 section 只保留响应、未验证身份、加密传输和未签名计数，物理排除问答、ID 与哈希。
+
+锁状态与 recovery verifier 不属于普通馆藏可迁移数据：完整或脱敏 JSON、`.time-isle` 都不会携带锁状态、盐、digest 或 verifier。馆外信笺文件虽然经过浏览器端加密，但确认入馆后的问答仍以普通明文结构保存在本机 SQLite；锁馆也只阻止经应用发起的新写请求，不会加密 SQLite、图片、声音或磁盘。
 
 ## 发布前检查
 
@@ -124,10 +128,10 @@ npm.cmd run check
 ```
 
 - `build`：语法检查和各独立回归，不运行 HTTP smoke。
-- `smoke`：在系统临时目录启动本地服务；V10 当前 249 条真实 HTTP 断言已通过。
+- `smoke`：在系统临时目录启动本地服务；V14 当前发布基线为 262 条，V10 的 249 条保留为历史基线。
 - `check`：依次执行全部语法、独立回归和 HTTP smoke；`npm.cmd test` 与它等价。
 
-回归覆盖真实格式校验、安全展示图、精确去重、关联保护与 GC、EXIF 待确认/GPS 敏感、区域证据、声音、口述史、主题展览、受限策展助手、实体线索、胶囊锁定、三层分享隐私编辑台、浏览器端加密、明确回访意愿、记忆修订、来源校准、馆藏体检，以及 schema 14 `.time-isle` 全量验真、历史授权隔离、损坏零写入和事务恢复。
+V14 发布回归除既有媒体、口述史、策展、分享、修订、来源校准和归档链路外，还覆盖共忆加密往返/确认/归档恢复、四种确定性镜片、策展简报交接、schema 19 锁状态、正文前 423 门禁、锁馆期间只读能力与结构恢复演练。所有测试使用临时数据库与媒体目录，不触碰私人 `data/`。
 
 ## V7.2–V10 发布验收（本地回归）
 
@@ -160,14 +164,26 @@ npm.cmd run check
 
 V9 最终关键计数为：HTTP smoke 227、前端 104、口述史 94、口述归档 18、声音采集 UI 26、口述史 UI 37、时间校准 158/UI 206、JSON 导入 141、媒体备份 266/恢复 170、PWA 79；`npm.cmd run check` 全绿。V8 的 211 条 smoke 继续只是上一阶段历史基线，不与 V9 混用。
 
-V10 当前专项计数为：受限策展 core 131、严格归档 98、界面 51、数据库健康 42、馆藏体检 83、Demo 安全 19、前端 109、JSON 导入 160、归档验真 42、媒体备份 312/恢复 189，均已通过；完整 `npm.cmd run build`、`npm.cmd run check` 与 249 条 smoke 全绿。三档浏览器真实交互确认四导航/移动底栏、无横向溢出、移动全屏工作台、逐项保存/关系/发布、隐私编辑台默认零素材、最近记录只读打开/离线重放，以及删除前二次确认均正常。
+V10 历史专项计数为：受限策展 core 131、严格归档 98、界面 51、数据库健康 42、馆藏体检 83、Demo 安全 19、前端 109、JSON 导入 160、归档验真 42、媒体备份 312/恢复 189，均已通过；完整 `npm.cmd run build`、`npm.cmd run check` 与 249 条 smoke 全绿。三档浏览器真实交互确认四导航/移动底栏、无横向溢出、移动全屏工作台、逐项保存/关系/发布、隐私编辑台默认零素材、最近记录只读打开/离线重放，以及删除前二次确认均正常。
 
-V10 最终代码提交 `7107ede` 已于 2026-07-19 推送到 GitHub 与 Gitee，并由 GitHub `main` 触发生产部署。后续代码变更仍应先完成整库门禁、临时数据清理和三档真实浏览器验收，再分别推送两个远端：
+V10 最终代码提交 `7107ede` 已于 2026-07-19 推送到 GitHub 与 Gitee，并由 GitHub `main` 触发生产部署。V14 功能提交 `2dcce402b13f1d43c54c6a196b8e2273c9483eb3` 于 2026-07-20 按同一顺序推送，GitHub 与 Gitee 的 `main` 均已包含并对齐该功能提交，GitHub 推送随后触发 Vercel 生产部署。后续代码变更仍应先完成整库门禁、临时数据清理和三档真实浏览器验收，再分别推送两个远端：
 
 ```powershell
 git push gitee main
 git push github main
 ```
+
+上述顺序已用于 V14 发布；Gitee 保存同版本镜像，GitHub `main` 负责触发 Vercel 生产构建。发布状态仍须同时核对双远端提交与生产接口，不能只凭一次 `git push` 判断完成。
+
+## V12–V14 发布门禁
+
+- 共忆信笺必须在浏览器内完成请求/回信的 PBKDF2-SHA-256 + AES-256-GCM 往返，验证请求摘要绑定、错口令/篡改拒绝、自述未验证身份、显式入馆确认、完整/脱敏归档与冲突整批回滚。馆外文件加密不能被表述为本机 SQLite 静态加密。
+- 设备内镜片必须只接受 GET 查询参数中的明确展品 ID，服务端按 ID 重读当前馆藏；四种镜片保持零模型、零工具调用、零保存。2–6 件可显式交接策展简报，7–20 件必须重新选择，不得静默截断或自动运行。
+- 锁馆必须先等待在途写请求和后台维护结束；锁定或状态损坏时，新的 mutation 在读取 Content-Type/正文前 fail-closed 返回 `423`，`bodyBytesRead` 保持 0。GET、导出、`POST /api/archive/inspect` 与 `POST /api/recovery-drills/structural` 保持可用。
+- recovery verifier 只保存派生材料，不保存明文口令；普通 JSON、`.time-isle`、日志和公开状态不得包含锁状态、盐、digest 或 verifier。锁馆不提供 SQLite、媒体或磁盘静态加密。
+- 结构演练只接受完整 `.time-isle`，以 `structural-verification` 核对 manifest、哈希和引用；`actualRestorePerformed`、`isolatedRestorePerformed`、`disasterRecoveryProven` 与 `diskEncryptionProvided` 必须全部为 `false`。页面不得显示“恢复成功”。
+- `INTERVIEW_DEMO=true` 下，共忆文件输入/保存、锁馆切换与结构演练上传必须提前 403 且零写；镜片若展示，只能在合成/播种来源上做确定性只读预览。
+- 2026-07-20，V14 发布基线已通过 `npm.cmd run build`、`npm.cmd run check`、262 条真实 HTTP smoke、15/15 项三档 Playwright 门禁与 `git diff --check`；1265×720、390×844、320×700 的真实目视也确认四导航、移动底栏、默认折叠、无横向溢出和页面控制台零错误。后续任何代码变更或再次发布前都必须重新运行对应门禁。
 
 ## 部署后验证
 
@@ -188,7 +204,7 @@ https://ai-memory-museum-demo.vercel.app/offline.html
 - `sw.js` 只应预缓存离线边界页、其样式和公开品牌 SVG，不得缓存首页、API、图片、声音、归档或用户内容。
 - `offline.html` 应可独立打开，并明确说明断网时不会展示私人馆藏。
 
-2026-07-19 已完成生产核验：`/api/version` 与 `/api/health` 返回 `version: 10.0.0`、`schemaVersion: 14`、`mode: interview-demo`、`storage: ephemeral-sqlite`。`GET /api/curator-agent/sample` 返回：
+2026-07-20 已完成 V14 生产核验：`/api/version` 与 `/api/health` 返回 `version: 14.0.0`、`schemaVersion: 19`、`mode: interview-demo`、`storage: ephemeral-sqlite`、`aiMode: mock-fallback`。`GET /api/curator-agent/sample` 返回：
 
 ```json
 {
@@ -197,7 +213,7 @@ https://ai-memory-museum-demo.vercel.app/offline.html
 }
 ```
 
-策展 sample 请求前后持久化运行数均为 0（`0 → 0`），确认该线上示例为合成只读工作区且没有创建运行。写保护、口述史只读、媒体禁写和归档禁恢复仍由本地整库回归覆盖；后续每次生产发布都应重新核验关键接口，不把未实际执行的线上检查写成已完成事实。
+策展 sample 请求前后持久化运行数均为 0（`0 → 0`），确认该线上示例为合成只读工作区且没有创建运行。另以虚构 `text/plain` 正文分别探测 `POST /api/museum-lock/lock` 与 `POST /api/recovery-drills/structural`，两者均在读取正文前返回 `403`、`code: MUSEUM_LOCK_DEMO_READ_ONLY`、`bodyBytesRead: 0`；探针前后的完整 stats、公开锁状态与策展运行数保持不变。写保护、口述史只读、媒体禁写和归档禁恢复继续由本地整库回归覆盖；后续每次生产发布都应重新核验关键接口，不把未实际执行的线上检查写成已完成事实。
 
 最后在无痕窗口完成一次人工路径：
 
@@ -211,7 +227,7 @@ https://ai-memory-museum-demo.vercel.app/offline.html
 8. 确认图片/声音入口、完整归档恢复、旧 JSON 导入、删除和清空均不可用；直接写 API 或 `POST /api/archive/restore` 返回 403。
 9. 在支持安装的浏览器确认“数据与项目”渐进出现安装入口；断网后只显示离线隐私边界页，重新联网可返回应用，安装前后麦克风和媒体写入均保持关闭。
 
-本轮收尾必须在可丢弃、无隐私的数据上覆盖：口述 draft/confirmed/重答/撤回、旧校准 `needsReview`、受限策展运行/取消/逐项决定/来源变化/重放评测、schema 14 完整/脱敏历史恢复与 Demo sample 零写；图片、声音、胶囊和离线口令链路继续纳入整库回归。若提交前代码变化，应重复对应检查；测试后仍须停止临时服务并删除临时数据库、媒体和下载文件。
+本轮收尾必须在可丢弃、无隐私的数据上覆盖：口述 draft/confirmed/重答/撤回、旧校准 `needsReview`、受限策展运行/取消/逐项决定/来源变化/重放评测、schema 19 完整/脱敏恢复、共忆回信与 provenance 依赖、四种镜片、锁馆/解锁和结构演练，以及 Demo 新接口零写；图片、声音、胶囊和离线口令链路继续纳入整库回归。若提交前代码变化，应重复对应检查；测试后仍须停止临时服务并删除临时数据库、媒体和下载文件。
 
 ## 重复 Vercel 项目
 
@@ -222,3 +238,5 @@ ai-memory-museum-demo
 ```
 
 其他重复项目应删除或断开 Git 连接，避免浪费构建额度和误用域名。
+
+当前状态重申：V14.0.0 / schema 19 已于 2026-07-20 完成 GitHub、Gitee 双远端发布与 Vercel 生产核验，功能提交为 `2dcce402b13f1d43c54c6a196b8e2273c9483eb3`；V10.0.0 / schema 14 与提交 `7107ede` 保留为历史发布基线。
