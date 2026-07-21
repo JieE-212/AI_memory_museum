@@ -44,10 +44,13 @@ const { createMemoryInboxApi } = require("./lib/memory-inbox-api");
 const { createProvenanceApi } = require("./lib/provenance-api");
 const { createCoMemoryResponseApi } = require("./lib/co-memory-response-api");
 const { createMemoryLensApi } = require("./lib/memory-lens-api");
+const { createMultiPerspectiveApi } = require("./lib/multi-perspective-api");
+const { createSemanticRecallApi } = require("./lib/semantic-recall-api");
+const { SEMANTIC_RECALL_LIMITS, SEMANTIC_RECALL_MODEL } = require("./lib/semantic-recall-service");
 const { createMuseumLockApi } = require("./lib/museum-lock-api");
-const { createStructuralRecoveryApi } = require("./lib/structural-recovery-api");
-const { createStructuralRecoveryRuntime } = require("./lib/structural-recovery-runtime");
+const { createRecoveryDrillApis } = require("./lib/recovery-drill-server");
 const { createMuseumWriteRuntime } = require("./lib/museum-write-runtime");
+const { getStaticAssetPolicy } = require("./lib/static-asset-policy");
 
 const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
@@ -64,7 +67,7 @@ const MEDIA_ROOT = process.env.MEDIA_ROOT || (INTERVIEW_DEMO
   ? path.join(os.tmpdir(), "ai-memory-museum-interview-demo-media")
   : path.join(path.dirname(DB_PATH), "media"));
 const VOICE_ROOT = INTERVIEW_DEMO ? path.join(MEDIA_ROOT, "voice") : (process.env.VOICE_ROOT || path.join(MEDIA_ROOT, "voice"));
-const APP_VERSION = "14.0.0";
+const APP_VERSION = "17.0.0";
 const SCHEMA_VERSION = 19;
 const MAX_RAW_LENGTH = 4000;
 const MAX_BODY_LENGTH = 2 * 1024 * 1024;
@@ -106,23 +109,13 @@ const memoryInboxApi = createMemoryInboxApi({ store, normalizeMemory, interviewD
 const provenanceApi = createProvenanceApi({ store, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
 const coMemoryResponseApi = createCoMemoryResponseApi({ store, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
 const memoryLensApi = createMemoryLensApi({ store, decorateMemory: decorateMemoryForLens, sendJson, httpError });
+const multiPerspectiveApi = createMultiPerspectiveApi({ store, interviewDemo: INTERVIEW_DEMO, sendJson, httpError });
+const semanticRecallApi = createSemanticRecallApi({ store, sendJson, httpError });
 const museumLockApi = createMuseumLockApi({ store, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
-const structuralRecoveryApi = createStructuralRecoveryApi({
-  drill: createStructuralRecoveryRuntime({
-    mediaRoot: MEDIA_ROOT,
-    prepareMediaArchive,
-    validateVoiceBackup: store.validateVoiceBackup,
-    validateTimeCalibrationBackup: store.validateTimeCalibrationBackup,
-    validateOralHistoryBackup: store.validateOralHistoryBackup,
-    validateCuratorAgentBackup: store.validateCuratorAgentBackup,
-    validateMemoryInboxBackup: store.validateMemoryInboxBackup,
-    validateProvenanceBackup: store.validateProvenanceBackup,
-    validateCoMemoryResponseBackup: store.validateCoMemoryResponseBackup,
-    supportedSchemaVersion: SCHEMA_VERSION
-  }),
-  interviewDemo: INTERVIEW_DEMO,
-  sendJson,
-  httpError
+const { structuralRecoveryApi, isolatedRecoveryApi } = createRecoveryDrillApis({
+  mediaRoot: MEDIA_ROOT, temporaryRoot: os.tmpdir(), prepareMediaArchive, store,
+  schemaVersion: SCHEMA_VERSION, halls, normalizeMemory, createId,
+  interviewDemo: INTERVIEW_DEMO, sendJson, httpError
 });
 const museumWriteRuntime = createMuseumWriteRuntime({ store });
 const collectionHealthApi = createCollectionHealthApi({ store, mediaStorage, voiceStorage, mediaApi, voiceApi, sendJson, readJsonBody, httpError });
@@ -166,9 +159,10 @@ const buildPrivacySummary = createPrivacySummary({
     { name: "不确定时间线与来源校准", location: "用户确认的时间范围、所选来源摘要与待复核状态只保存在本机 SQLite；不会回写展品日期或把冲突裁决成历史事实" },
     { name: "事件级口述史与声音选段", location: "问题、手划声音片段、人工文字稿和明确时间含义保存在本机 SQLite；声音仍位于本机内容寻址目录，不做自动转写、说话人或情绪识别" },
     { name: "实体线索、别名与检索索引", location: "仅保存于本机 SQLite；同名默认只是线索，只有明确确认后才会新增别名或合并档案" },
-    { name: "声音片段与人工文字稿", location: "声音文件仅保存在本机内容寻址目录；只有人工确认的文字稿会进入本地检索，不发送给外部模型" }
+    { name: "声音片段与人工文字稿", location: "声音文件仅保存在本机内容寻址目录；只有人工确认的文字稿会进入本地检索，不发送给外部模型" },
+    { name: "设备内语义回忆", location: "主动启用后，标题、说明、正文、标签和已确认文字稿只进入当前浏览器 Worker；查询、向量和索引不写入浏览器存储或服务端" }
   ],
-  featureControls: ["共忆回信先在浏览器验真和预览，再独立确认入馆；身份始终是 self-asserted-unverified，不会自动合并、改写原记忆或生成日期、人物和关系", "设备内镜片只生成确定性、可解释的未保存投影；共同出现、证据数量与线索命中不代表关系、质量或事实，也不会自动运行策展", "锁馆只阻止经应用发起的新写入，verifier 不是明文口令但仍属敏感认证材料；结构演练只验 manifest、哈希和引用，不显示恢复成功或容灾证明", "文档片段必须逐段加入收件箱并再次确认入馆；系统不从文件自动生成日期、人物、关系、说话人或情绪", "策展助手只生成绑定来源快照的提案；保存草稿、确认关联与发布必须逐项决定，分享只交接隐私编辑台且不能批量批准", "编辑与历史恢复必须匹配当前展品版本，冲突时不会覆盖较新的内容", "时间校准只接受用户明确确认；来源集合变化后旧判断转为待复核且不改写原日期", "口述史草稿和‘仍不确定’不会生成日期来源；重答与撤回答案保留为只读历史", "回访意愿只接受用户明确确认；恢复自然回访会删除对应长期意愿记录", "实体别名与合并必须先预览，再由用户明确确认", "声音文字稿只有人工确认后才会公开展示并进入检索"]
+  featureControls: ["共忆回信先在浏览器验真和预览，再独立确认入馆；身份始终是 self-asserted-unverified，不会自动合并、改写原记忆或生成日期、人物和关系", "设备内镜片只生成确定性、可解释的未保存投影；共同出现、证据数量与线索命中不代表关系、质量或事实，也不会自动运行策展", "设备语义使用同源真实 embedding，但相似排序不代表事实、关系、情绪、真实性或概率；失败时明确回退到字段与线索检索", "锁馆只阻止经应用发起的新写入，verifier 不是明文口令但仍属敏感认证材料；结构演练只验 manifest、哈希和引用，不显示恢复成功或容灾证明", "文档片段必须逐段加入收件箱并再次确认入馆；系统不从文件自动生成日期、人物、关系、说话人或情绪", "策展助手只生成绑定来源快照的提案；保存草稿、确认关联与发布必须逐项决定，分享只交接隐私编辑台且不能批量批准", "编辑与历史恢复必须匹配当前展品版本，冲突时不会覆盖较新的内容", "时间校准只接受用户明确确认；来源集合变化后旧判断转为待复核且不改写原日期", "口述史草稿和‘仍不确定’不会生成日期来源；重答与撤回答案保留为只读历史", "回访意愿只接受用户明确确认；恢复自然回访会删除对应长期意愿记录", "实体别名与合并必须先预览，再由用户明确确认", "声音文字稿只有人工确认后才会公开展示并进入检索"]
 });
 seedInterviewDemoData({
   enabled: INTERVIEW_DEMO,
@@ -207,9 +201,10 @@ async function handleRequest(request, response) {
     await startupMaintenance;
     const url = new URL(request.url, requestContext.origin);
     if (isInterviewDemoBlockedMutation(request, url)) {
+      const isolatedRecoveryBlocked = url.pathname === "/api/recovery-drills/isolated-restore";
       return sendJson(response, 403, {
         error: "公开 Demo 已阻止这项会影响示例稳定性的操作。",
-        code: "MUSEUM_LOCK_DEMO_READ_ONLY",
+        code: isolatedRecoveryBlocked ? "ISOLATED_RECOVERY_DEMO_READ_ONLY" : "MUSEUM_LOCK_DEMO_READ_ONLY",
         interviewDemo: true,
         blockedAction: `${request.method} ${url.pathname}`,
         bodyBytesRead: 0
@@ -250,10 +245,18 @@ async function handleRequest(request, response) {
         storage: INTERVIEW_DEMO ? "ephemeral-sqlite" : "local-sqlite",
         aiMode: AI_ENABLED ? "configured" : "mock-fallback",
         search: {
-          mode: "semantic-clues",
+          mode: "field-and-clue-retrieval",
           engine: "fts5-trigram",
           shortQueryFallback: "parameterized-like",
           externalModelRequired: false
+        },
+        semanticRecall: {
+          mode: "device-worker-memory-only",
+          model: SEMANTIC_RECALL_MODEL.id,
+          dimensions: SEMANTIC_RECALL_MODEL.dimensions,
+          maximumDocuments: SEMANTIC_RECALL_LIMITS.memories,
+          remoteModelsAllowed: false,
+          persisted: false
         },
         stats: store.getStats()
       });
@@ -271,6 +274,8 @@ async function handleRequest(request, response) {
     if (museumLockHandled !== false) return museumLockHandled;
     const structuralRecoveryHandled = await structuralRecoveryApi.handle(request, response, url);
     if (structuralRecoveryHandled !== false) return structuralRecoveryHandled;
+    const isolatedRecoveryHandled = await isolatedRecoveryApi.handle(request, response, url);
+    if (isolatedRecoveryHandled !== false) return isolatedRecoveryHandled;
 
     const memoryInboxHandled = await memoryInboxApi.handle(request, response, url);
     if (memoryInboxHandled !== false) return memoryInboxHandled;
@@ -280,6 +285,10 @@ async function handleRequest(request, response) {
     if (coMemoryResponseHandled !== false) return coMemoryResponseHandled;
     const memoryLensHandled = await memoryLensApi.handle(request, response, url);
     if (memoryLensHandled !== false) return memoryLensHandled;
+    const multiPerspectiveHandled = await multiPerspectiveApi.handle(request, response, url);
+    if (multiPerspectiveHandled !== false) return multiPerspectiveHandled;
+    const semanticRecallHandled = await semanticRecallApi.handle(request, response, url);
+    if (semanticRecallHandled !== false) return semanticRecallHandled;
 
     const mediaHandled = await mediaApi.handle(request, response, url);
     if (mediaHandled !== false) return mediaHandled;
@@ -1240,7 +1249,12 @@ function isInterviewDemoBlockedMutation(request, url) {
 }
 
 function isArchiveBinaryRequest(request, url) {
-  return request.method === "POST" && ["/api/archive/restore", "/api/archive/inspect", "/api/recovery-drills/structural"].includes(url.pathname);
+  return request.method === "POST" && [
+    "/api/archive/restore",
+    "/api/archive/inspect",
+    "/api/recovery-drills/structural",
+    "/api/recovery-drills/isolated-restore"
+  ].includes(url.pathname);
 }
 
 function assertArchiveContentType(request) {
@@ -1279,27 +1293,16 @@ function serveStatic(urlPath, response) {
   if (!filePath.startsWith(`${PUBLIC_DIR}${path.sep}`) && filePath !== path.join(PUBLIC_DIR, "index.html")) {
     throw httpError(403, "禁止访问该路径。");
   }
-  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) throw httpError(404, "页面不存在。");
+  if (!fs.existsSync(filePath)) throw httpError(404, "页面不存在。");
+  const stat = fs.statSync(filePath);
+  if (!stat.isFile()) throw httpError(404, "页面不存在。");
+  const policy = getStaticAssetPolicy(relative, filePath);
   response.statusCode = 200;
-  response.setHeader("Content-Type", getContentType(filePath));
-  const fileName = path.basename(filePath).toLowerCase(); const noCache = ["index.html", "sw.js", "manifest.webmanifest"].includes(fileName);
-  response.setHeader("Cache-Control", noCache ? "no-cache, no-store, must-revalidate" : "public, max-age=300"); if (fileName === "sw.js") response.setHeader("Service-Worker-Allowed", "/");
+  response.setHeader("Content-Type", policy.contentType);
+  response.setHeader("Content-Length", String(stat.size));
+  response.setHeader("Cache-Control", policy.cacheControl);
+  if (policy.serviceWorkerAllowed) response.setHeader("Service-Worker-Allowed", "/");
   fs.createReadStream(filePath).pipe(response);
-}
-
-function getContentType(filePath) {
-  const extension = path.extname(filePath).toLowerCase();
-  return {
-    ".html": "text/html; charset=utf-8",
-    ".css": "text/css; charset=utf-8",
-    ".js": "application/javascript; charset=utf-8",
-    ".json": "application/json; charset=utf-8", ".webmanifest": "application/manifest+json; charset=utf-8",
-    ".svg": "image/svg+xml",
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".webp": "image/webp"
-  }[extension] || "application/octet-stream";
 }
 
 function setSecurityHeaders(response) {
@@ -1307,14 +1310,14 @@ function setSecurityHeaders(response) {
   response.setHeader("Referrer-Policy", "same-origin");
   response.setHeader("X-Frame-Options", "DENY");
   response.setHeader("Permissions-Policy", `camera=(), microphone=${INTERVIEW_DEMO ? "()" : "(self)"}, geolocation=()`);
-  response.setHeader("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self'; script-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+  response.setHeader("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
 }
 
 function sendJson(response, statusCode, payload) {
   if (response.headersSent) return;
   response.statusCode = statusCode;
   response.setHeader("Content-Type", "application/json; charset=utf-8");
-  response.setHeader("Cache-Control", "no-store");
+  if (!response.hasHeader("Cache-Control")) response.setHeader("Cache-Control", "no-store");
   response.end(JSON.stringify(payload));
 }
 

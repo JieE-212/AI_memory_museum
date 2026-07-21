@@ -16,6 +16,7 @@
 }
 
 .museum-lock-panel > summary > span:first-child,
+.isolated-recovery > div,
 .structural-recovery > div {
   display: grid;
   min-width: 0;
@@ -23,6 +24,7 @@
 }
 
 .museum-lock-panel summary small,
+.isolated-recovery small,
 .structural-recovery small {
   color: var(--ink-soft);
   font-size: 0.74rem;
@@ -51,6 +53,7 @@
 
 .museum-lock-body,
 .museum-lock-form,
+.isolated-recovery,
 .structural-recovery {
   display: grid;
   gap: 12px;
@@ -103,26 +106,84 @@
 }
 
 .museum-lock-status.is-error,
+#isolatedRecoveryStatus.is-error,
 #structuralRecoveryStatus.is-error {
   color: var(--danger);
 }
 
 .museum-lock-status.is-success,
+#isolatedRecoveryStatus.is-success,
 #structuralRecoveryStatus.is-success {
   color: var(--accent-dark);
 }
 
-.structural-recovery {
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
+.isolated-recovery {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: var(--surface-muted);
 }
 
+.isolated-recovery .button,
 .structural-recovery .button {
   width: fit-content;
   min-height: 44px;
   margin: 0;
 }
 
+.isolated-recovery-steps {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  list-style: none;
+}
+
+.isolated-recovery-steps[hidden] {
+  display: none;
+}
+
+.isolated-recovery-steps li {
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+}
+
+.isolated-recovery-steps li[data-state="passed"] {
+  border-color: var(--accent);
+  color: var(--accent-dark);
+}
+
+.isolated-recovery-steps li[data-state="passed"]::before {
+  content: "✓ ";
+  font-weight: 850;
+}
+
+.structural-recovery-legacy {
+  border-top: 1px solid var(--line);
+}
+
+.structural-recovery-legacy > summary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+
+.structural-recovery {
+  padding: 4px 0 2px;
+}
+
+#isolatedRecoveryStatus,
 #structuralRecoveryStatus {
   min-width: 0;
   min-height: 20px;
@@ -143,8 +204,13 @@
   }
 
   .museum-lock-form .button,
+  .isolated-recovery .button,
   .structural-recovery .button {
     width: 100%;
+  }
+
+  .isolated-recovery-steps {
+    grid-template-columns: 1fr;
   }
 
   .museum-lock-body {
@@ -162,7 +228,8 @@
 }
 
 @media (max-width: 320px) {
-  .museum-lock-boundary {
+  .museum-lock-boundary,
+  .isolated-recovery {
     padding-inline: 10px;
   }
 }

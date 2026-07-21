@@ -19,6 +19,7 @@ const HASH_D = "d".repeat(64);
 const ORIGINAL_KEY = `time-source:${"1".repeat(64)}`;
 const REVISION_KEY = `time-source:${"2".repeat(64)}`;
 const PHOTO_KEY = `time-source:${"3".repeat(64)}`;
+const ORAL_KEY = `time-source:${"4".repeat(64)}`;
 let assertions = 0;
 
 async function main() {
@@ -27,6 +28,7 @@ async function main() {
   checkHostIntegration();
   await checkPuzzleTargetRouting();
   await checkOpenAndRendering();
+  await checkOralHistoryRendering();
   await checkSavedSourceSnapshotsSurvive();
   await checkPutAndBusyState();
   await checkConflictRefreshKeepsDraft();
@@ -55,8 +57,16 @@ function checkModuleAndNormalization() {
       candidate(ORIGINAL_KEY, "memory-current", "第一段<script>alert(1)</script>"),
       candidate(REVISION_KEY, "revision", "第二版", { revisionNo: 2 }),
       candidate(PHOTO_KEY, "exif", "照片", { displayDate: "2024-06-18", sourceQuote: "相机记录" }),
+      candidate(ORAL_KEY, "oral-history", "", {
+        status: "confirmed",
+        memoryId: "",
+        eventId: "event-oral",
+        eventTitle: "家庭口述核对",
+        displayDate: "2024-06-20",
+        transcriptExcerpt: "人工确认的口述回答"
+      }),
       candidate(ORIGINAL_KEY, "memory-current", "重复来源"),
-      candidate(`time-source:${"4".repeat(64)}`, "invented-photo", "不可信类型")
+      candidate(`time-source:${"5".repeat(64)}`, "invented-photo", "不可信类型")
     ],
     sourceSetSha256: HASH_A.toUpperCase(),
     calibration: {
@@ -70,9 +80,12 @@ function checkModuleAndNormalization() {
     etag: '"payload-etag"'
   }, '"header-etag"');
 
-  equal(normalized.candidates.length, 3, "候选规范化会去重并拒绝未知来源类型");
-  deepEqual(normalized.candidates.map((item) => item.sourceKind), ["original", "revision", "photo"], "后端候选类型映射为三种可信中文标签");
+  equal(normalized.candidates.length, 4, "候选规范化会保留口述来源、去重并拒绝未知来源类型");
+  deepEqual(normalized.candidates.map((item) => item.sourceKind), ["original", "revision", "photo", "oralHistory"], "后端候选类型映射为四种可信中文标签");
   equal(normalized.candidates[2].excerpt, "相机记录", "sourceQuote 作为原文证据摘录进入只读来源卡");
+  equal(normalized.candidates[3].title, "家庭口述核对", "口述候选使用事件标题作为可核对标题");
+  equal(normalized.candidates[3].dateText, "2024-06-20", "口述候选保留后端生成的日期文案");
+  equal(normalized.candidates[3].excerpt, "人工确认的口述回答", "transcriptExcerpt 作为人工口述摘录进入只读来源卡");
   equal(normalized.sourceSetSha256, HASH_A, "来源集合 SHA-256 被规范为小写");
   equal(normalized.etag, '"header-etag"', "响应头 ETag 优先于 payload 冗余字段");
   equal(normalized.needsReview, true, "来源变化复核状态被显式保留");
@@ -130,8 +143,8 @@ function checkStaticContracts() {
   ok(source.includes("elements.note.value = \"\"") && source.includes("state = emptyState()"), "reset 清空备注、ETag、payload 与选择状态");
   ok(source.includes("公开 Demo 仅展示示例判断，不保存访客修改") && source.includes("state.demo || state.busy"), "公开 Demo 有只读说明并锁定 mutation 控件");
   ok(source.includes("不会改写两段原文、展品日期，也不会自动确认它们属于同一往事"), "模块明确声明不改写原文且不自动归并往事");
-  ok(source.includes("原文来源") && source.includes("记忆修订") && source.includes("照片时间线索"), "候选来源只使用三种受控标签");
-  ok(source.includes("source.sourceQuote"), "原文 claim 摘录读取后端安全公开字段 sourceQuote");
+  ok(source.includes("原文来源") && source.includes("记忆修订") && source.includes("照片时间线索") && source.includes("人工确认的口述来源"), "候选来源只使用四种受控标签");
+  ok(source.includes("source.sourceQuote") && source.includes("source.transcriptExcerpt"), "原文 claim 与人工口述摘录只读取后端安全公开字段");
   ok(source.includes("<fieldset") && source.includes("<legend>"), "动态来源选择使用原生 fieldset 与 legend");
   ok(source.includes('type="checkbox"') && source.includes("timeCalibrationResolutionKind"), "来源复选与分辨率单选拥有独立原生表单合同");
   ok(!/localStorage|sessionStorage|indexedDB/iu.test(source), "时间校准不建立浏览器二次持久化");
@@ -207,6 +220,28 @@ async function checkOpenAndRendering() {
   equal(harness.elements.deleteButton.hidden, true, "未校准状态不展示删除动作");
   ok(harness.elements.status.textContent.includes("3 条"), "来源计数使用完整 Unicode 文案呈现");
   deepEqual(harness.busyChanges, [true, false], "GET 的 busy 状态成对通知宿主");
+}
+
+async function checkOralHistoryRendering() {
+  const harness = createHarness();
+  harness.queue.enqueue(jsonResponse(workspace({
+    candidates: [candidate(ORAL_KEY, "oral-history", "", {
+      status: "confirmed",
+      memoryId: "",
+      eventId: "event-oral-render",
+      eventTitle: "家庭访谈<script>alert('title')</script>",
+      displayDate: "2024-06-20<img src=x onerror=alert('date')>",
+      transcriptExcerpt: "奶奶确认是端午后一天<script>alert('transcript')</script>"
+    })]
+  }), { etag: '"etag-oral-render"' }));
+
+  const result = await harness.controller.open({ eventId: "event-oral-render", sessionKey: "oral-render" });
+  equal(result.candidates.length, 1, "oral-history 候选不会被前端静默过滤");
+  equal(result.candidates[0].sourceKind, "oralHistory", "oral-history 映射到独立受控来源类别");
+  ok(harness.elements.sources.innerHTML.includes("人工确认的口述来源"), "口述来源卡显示清晰中文标签");
+  ok(harness.elements.sources.innerHTML.includes("2024-06-20&lt;img") && !harness.elements.sources.innerHTML.includes("2024-06-20<img"), "口述日期在写入来源卡前完成 HTML 转义");
+  ok(harness.elements.sources.innerHTML.includes("奶奶确认是端午后一天&lt;script&gt;") && !harness.elements.sources.innerHTML.includes("奶奶确认是端午后一天<script>"), "口述文字稿摘录在写入来源卡前完成 HTML 转义");
+  equal(harness.elements.sources.sourceInputs.length, 1, "人工确认的口述来源可作为时间判断的可核对来源");
 }
 
 async function checkPuzzleTargetRouting() {

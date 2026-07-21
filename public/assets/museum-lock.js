@@ -30,6 +30,7 @@
     bind(elements.panel, "toggle", () => {
       if (!elements.panel.open) clearSecrets();
     });
+    bind(elements.isolatedFile, "change", runIsolatedRecovery);
     bind(elements.drillFile, "change", runStructuralDrill);
     bind(global, "pagehide", destroy);
     void loadState();
@@ -132,6 +133,45 @@
       }
     }
 
+    async function runIsolatedRecovery(event) {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+      if (!file || !state || demo || busy) return;
+      resetIsolatedSteps();
+      if (!String(file.name || "").toLowerCase().endsWith(".time-isle")) {
+        return setIsolatedStatus("请选择扩展名为 .time-isle 的完整备份。", true);
+      }
+      setBusy(true);
+      setIsolatedStatus(`正在验真并把 ${file.name} 恢复到本机一次性副本；完成体检和销毁前不会显示通过…`);
+      try {
+        const payload = await requestJson("/api/recovery-drills/isolated-restore", {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: file
+        });
+        const receipt = payload.receipt;
+        if (receipt?.kind !== "isolated-restore" || receipt?.verdict !== "passed-isolated-restore" ||
+            receipt?.isolation?.currentMuseumCapabilityProvided !== false ||
+            receipt?.isolation?.sandboxDestroyed !== true ||
+            receipt?.limitations?.disasterRecoveryProven !== false) {
+          throw new Error("服务器没有返回安全、完整的一次性恢复回执。");
+        }
+        markIsolatedStepsPassed();
+        const counts = receipt.checks?.restore?.counts || {};
+        const database = receipt.checks?.database || {};
+        setIsolatedStatus(
+          `演练通过：${safeCount(counts.memories)} 件展品、${safeCount(counts.mediaAssets)} 组图片、${safeCount(counts.voiceAssets)} 段声音已在一次性副本真实恢复，${safeCount(database.passed)} 项数据库体检通过；副本已关闭并销毁。该结果不等于异机灾备、磁盘加密或生产恢复承诺。`,
+          false,
+          true
+        );
+      } catch (error) {
+        resetIsolatedSteps();
+        setIsolatedStatus(`一次性恢复演练未通过：${message(error)}；当前馆藏没有获得本次演练的写入。`, true);
+      } finally {
+        setBusy(false);
+      }
+    }
+
     async function requestJson(url, requestOptions) {
       request?.abort();
       request = new AbortController();
@@ -157,6 +197,9 @@
       elements.action.disabled = busy || demo;
       elements.passphrase.disabled = busy || demo;
       elements.confirm.disabled = busy || demo || elements.confirmField.hidden;
+      elements.isolatedFile.disabled = busy || demo;
+      elements.isolatedLabel.classList.toggle("is-disabled", busy || demo);
+      elements.isolatedLabel.setAttribute("aria-disabled", String(busy || demo));
       elements.drillFile.disabled = busy || demo;
       elements.drillLabel.classList.toggle("is-disabled", busy || demo);
       elements.drillLabel.setAttribute("aria-disabled", String(busy || demo));
@@ -182,6 +225,7 @@
       }
       if (demo) {
         clearSecrets();
+        setIsolatedStatus("公开 Demo 不读取、暂存或恢复私人备份；请在本地版本运行一次性恢复演练。");
         setLockStatus("公开 Demo 不接收口令、备份或锁馆请求；本地版本才会保存写保护状态。");
         setDrillStatus("公开 Demo 不暂存私人备份；请在本地版本运行结构演练。");
       }
@@ -203,6 +247,20 @@
 
     function setDrillStatus(text, error = false, success = false) {
       setStatus(elements.drillStatus, text, error, success);
+    }
+
+    function setIsolatedStatus(text, error = false, success = false) {
+      setStatus(elements.isolatedStatus, text, error, success);
+    }
+
+    function resetIsolatedSteps() {
+      elements.isolatedSteps.hidden = true;
+      elements.isolatedSteps.querySelectorAll("[data-isolated-step]").forEach((step) => delete step.dataset.state);
+    }
+
+    function markIsolatedStepsPassed() {
+      elements.isolatedSteps.hidden = false;
+      elements.isolatedSteps.querySelectorAll("[data-isolated-step]").forEach((step) => { step.dataset.state = "passed"; });
     }
 
     function destroy() {
@@ -233,9 +291,11 @@
     const ids = {
       panel: "museumLockPanel", state: "museumLockState", form: "museumLockForm", passphrase: "museumLockPassphrase",
       confirmField: "museumLockConfirmField", confirm: "museumLockPassphraseConfirm", action: "museumLockAction",
-      status: "museumLockStatus", drillFile: "structuralRecoveryFile", drillStatus: "structuralRecoveryStatus"
+      status: "museumLockStatus", isolatedFile: "isolatedRecoveryFile", isolatedSteps: "isolatedRecoverySteps",
+      isolatedStatus: "isolatedRecoveryStatus", drillFile: "structuralRecoveryFile", drillStatus: "structuralRecoveryStatus"
     };
     const elements = Object.fromEntries(Object.entries(ids).map(([key, id]) => [key, documentRef.getElementById(id)]));
+    elements.isolatedLabel = documentRef.querySelector('label[for="isolatedRecoveryFile"]');
     elements.drillLabel = documentRef.querySelector('label[for="structuralRecoveryFile"]');
     return Object.values(elements).every(Boolean) ? elements : null;
   }
@@ -260,9 +320,20 @@
   }
 
   function message(error) {
+    if (error?.code === "ISOLATED_RECOVERY_CLEANUP_REQUIRED") {
+      return "上一次演练的一次性副本尚未成功销毁；系统已在读取新备份前停止。请稍后重试，若持续出现请重启本地服务。";
+    }
+    if (error?.code === "ISOLATED_RECOVERY_CLEANUP_FAILED") {
+      return "本次一次性副本未能安全销毁；新演练已暂停，当前馆藏没有被写入。请稍后重试清理。";
+    }
     if (error?.code === "MUSEUM_LOCK_VERIFIER_MISMATCH") return "口令不正确；锁馆状态没有变化。";
     if (error?.code === "MUSEUM_LOCK_REVISION_CONFLICT") return "锁馆状态已变化，请刷新后再试。";
     return String(error?.message || error || "请求未完成。");
+  }
+
+  function safeCount(value) {
+    const number = Number(value);
+    return Number.isSafeInteger(number) && number >= 0 ? number : 0;
   }
 
   const api = Object.freeze({ createController, applyWriteProtection, normalizePublicState });

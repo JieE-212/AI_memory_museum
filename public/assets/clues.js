@@ -31,7 +31,7 @@
       results,
       engine: {
         mode: "clue",
-        label: String(rawEngine.label || "语义线索检索"),
+        label: String(rawEngine.label || "字段与线索检索"),
         fts: String(rawEngine.fts || "fts5-trigram"),
         shortQueryFallback: rawEngine.shortQueryFallback === true
       }

@@ -25,7 +25,7 @@ async function run() {
   try {
     server = await startServer();
     const health = await requestJson(server.port, { path: "/api/health" });
-    check("standalone public health is available through the exact host", health.status === 200 && health.payload.ok === true && health.payload.version === "14.0.0" && health.payload.schemaVersion === 19);
+    check("standalone public health is available through the exact host", health.status === 200 && health.payload.ok === true && health.payload.version === "17.0.0" && health.payload.schemaVersion === 19);
 
     const status = await requestJson(server.port, { path: "/api/demo/status" });
     check("standalone public runtime is the protected seeded Demo", status.status === 200 && status.payload.interviewDemo === true && status.payload.aiMode === "mock-fallback" && status.payload.seededExamples === 4 && status.payload.seededExhibitions === 1 && status.payload.seededTimeCalibrations === 1);

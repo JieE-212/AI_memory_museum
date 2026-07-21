@@ -1433,10 +1433,10 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     const limit = Math.min(50, Math.max(1, Number(options.limit) || 12));
     const mode = ["keyword", "semantic", "hybrid"].includes(options.mode) ? options.mode : "hybrid";
     const keywordTerms = buildSearchTerms(query);
-    const semanticTerms = mode === "keyword" ? [] : buildSemanticTerms(keywordTerms, query);
+    const ruleExpansionTerms = mode === "keyword" ? [] : buildRuleExpansionTerms(keywordTerms, query);
     const response = clueDatabase.searchClues(keywordTerms.join(" "), {
       limit,
-      ruleExpansions: semanticTerms
+      ruleExpansions: ruleExpansionTerms
     });
     return {
       ...response,
@@ -1957,7 +1957,7 @@ const searchVocabulary = [
   "照片", "日记", "聊天", "重要", "珍贵"
 ];
 const searchStopWords = new Set(["帮我", "看看", "一下", "哪些", "有什么", "有没有", "什么", "为什么", "如何", "怎么", "关于", "相关", "这个", "这些", "记忆", "展品", "讲讲", "总结", "推荐"]);
-const semanticGroups = [
+const clueExpansionGroups = [
   ["低谷", "难过", "委屈", "疲惫", "孤独", "迷茫", "遗憾"],
   ["朋友", "陪伴", "室友", "同学", "群聊", "合照", "温暖"],
   ["家", "家人", "妈妈", "爸爸", "饭桌", "春节", "牵挂"],
@@ -1977,10 +1977,10 @@ function buildSearchTerms(query) {
   return [...new Set([...vocabularyHits, ...tokens])].slice(0, 12);
 }
 
-function buildSemanticTerms(keywords, query) {
+function buildRuleExpansionTerms(keywords, query) {
   const text = String(query || "");
   const expanded = new Set();
-  semanticGroups.forEach((group) => {
+  clueExpansionGroups.forEach((group) => {
     if (group.some((term) => text.includes(term) || keywords.includes(term))) group.forEach((term) => expanded.add(term));
   });
   return [...expanded].filter((term) => !keywords.includes(term)).slice(0, 12);

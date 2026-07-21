@@ -11,6 +11,7 @@ const css = read("public/pwa.css");
 const app = read("public/assets/pwa.js");
 const worker = read("public/sw.js");
 const server = read("server.js");
+const staticAssetPolicy = read("lib/static-asset-policy.js");
 const mediaApi = read("lib/media-api.js");
 const manifest = JSON.parse(read("public/manifest.webmanifest"));
 const vercel = JSON.parse(read("vercel.json"));
@@ -78,9 +79,9 @@ async function main() {
   check(offline.includes("不会展示馆藏、照片、声音或导出内容"), "离线页明确说明私人数据不进入缓存");
   check(!/https?:\/\//iu.test(offline), "离线页不依赖第三方网络资源");
 
-  check(server.includes('".webmanifest": "application/manifest+json; charset=utf-8"'), "本地服务返回正确 Manifest 类型");
-  check(server.includes('["index.html", "sw.js", "manifest.webmanifest"].includes(fileName)'), "本地服务禁止缓存 Worker 与 Manifest");
-  check(server.includes('response.setHeader("Service-Worker-Allowed", "/")'), "本地服务显式允许根作用域");
+  check(staticAssetPolicy.includes('".webmanifest": "application/manifest+json; charset=utf-8"'), "本地服务返回正确 Manifest 类型");
+  check(staticAssetPolicy.includes('["index.html", "sw.js", "manifest.webmanifest"].includes(fileName)'), "本地服务禁止缓存 Worker 与 Manifest");
+  check(staticAssetPolicy.includes('serviceWorkerAllowed: fileName === "sw.js"') && server.includes('response.setHeader("Service-Worker-Allowed", "/")'), "本地服务显式允许根作用域");
   check(server.includes("worker-src 'self'; manifest-src 'self'"), "本地 CSP 显式限制 Worker 与 Manifest 来源");
   check(mediaApi.includes('response.setHeader("Cache-Control", "private, no-store")') && !mediaApi.includes("immutable"), "所有私人图片变体统一禁用浏览器缓存");
   const swHeaders = vercel.headers.find((entry) => entry.source === "/sw.js")?.headers || [];

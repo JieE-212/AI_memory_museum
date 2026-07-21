@@ -160,7 +160,7 @@ async function checkApi() {
   const search = await invoke(api, "GET", "/api/search?q=%E9%98%BF%E5%B2%9A&limit=2&mode=hybrid");
   equal(search.response.statusCode, 200, "q 搜索成功");
   equal(search.response.payload.engine.mode, "clue", "搜索引擎统一为 clue");
-  equal(search.response.payload.engine.label, "语义线索检索", "搜索引擎有用户可读标签");
+  equal(search.response.payload.engine.label, "字段与线索检索", "搜索引擎使用不冒充 embedding 的用户标签");
   equal(search.response.payload.engine.fts, "fts5-trigram", "搜索引擎声明 FTS5 trigram");
   equal(search.response.payload.engine.shortQueryFallback, true, "短词回退只透传 store metadata");
   equal(search.response.payload.results.length, 2, "搜索保留结果");

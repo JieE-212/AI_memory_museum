@@ -229,6 +229,39 @@ async function runArchiveMediaFlow() {
       });
       const inspection = await inspectionResponse.json();
       assert("备份验真只读返回可恢复边界并清理暂存", inspectionResponse.ok && inspection.inspection.restorable === true && inspection.inspection.schemaVersion === 19 && inspection.inspection.counts.memories === 2 && inspection.inspection.counts.mediaAssets === 2 && inspection.inspection.counts.voices === 1 && inspection.inspection.counts.revisions === 2 && inspection.inspection.counts.revisitIntents === 1 && inspection.inspection.counts.timeCalibrations === 0 && inspection.inspection.counts.oralHistoryQuestions === 0 && inspection.inspection.counts.oralHistoryAnswers === 0 && inspection.inspection.counts.curatorAgentRuns === 0 && inspection.inspection.counts.curatorAgentProposals === 0 && inspection.inspection.counts.curatorAgentDecisions === 0 && (await getJson(`${baseUrl}/api/memories`)).payload.memories.length === 2 && !fs.existsSync(path.join(mediaRoot, ".inspect")));
+      const isolatedStatsBefore = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+      const isolatedMemoriesBefore = (await getJson(`${baseUrl}/api/memories`)).payload.memories.map((memory) => memory.id).sort();
+      const isolatedMediaFilesBefore = listFiles(mediaRoot).map((file) => path.relative(mediaRoot, file)).sort();
+      const isolatedResponse = await fetch(`${baseUrl}/api/recovery-drills/isolated-restore`, {
+        method: "POST",
+        headers: writeHeaders(`${baseUrl}/api/recovery-drills/isolated-restore`, { "Content-Type": "application/vnd.time-isle" }),
+        body: archive
+      });
+      const isolated = await isolatedResponse.json();
+      const isolatedStatsAfter = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+      const isolatedMemoriesAfter = (await getJson(`${baseUrl}/api/memories`)).payload.memories.map((memory) => memory.id).sort();
+      const isolatedMediaFilesAfter = listFiles(mediaRoot).map((file) => path.relative(mediaRoot, file)).sort();
+      const isolatedText = JSON.stringify(isolated);
+      assert(
+        "真实隔离恢复通过 HTTP 将展品、图片和声音恢复到一次性副本，体检销毁后不写当前馆藏",
+        isolatedResponse.ok &&
+          isolated.receipt?.kind === "isolated-restore" &&
+          isolated.receipt?.verdict === "passed-isolated-restore" &&
+          isolated.receipt?.checks?.restore?.counts?.memories === 2 &&
+          isolated.receipt?.checks?.restore?.counts?.mediaAssets === 2 &&
+          isolated.receipt?.checks?.restore?.counts?.voiceAssets === 1 &&
+          isolated.receipt?.checks?.database?.passed === isolated.receipt?.checks?.database?.total &&
+          isolated.receipt?.isolation?.currentMuseumCapabilityProvided === false &&
+          isolated.receipt?.isolation?.currentMuseumWrites === 0 &&
+          isolated.receipt?.isolation?.sandboxDestroyed === true &&
+          isolated.receipt?.limitations?.disasterRecoveryProven === false &&
+          JSON.stringify(isolatedStatsAfter) === JSON.stringify(isolatedStatsBefore) &&
+          JSON.stringify(isolatedMemoriesAfter) === JSON.stringify(isolatedMemoriesBefore) &&
+          JSON.stringify(isolatedMediaFilesAfter) === JSON.stringify(isolatedMediaFilesBefore) &&
+          !isolatedText.includes(leftId) && !isolatedText.includes(rightId) &&
+          !isolatedText.includes(leftAsset.id) && !isolatedText.includes(sourceVoiceId) &&
+          !isolatedText.includes("归档声音暗号") && !/[A-Za-z]:\\|\/tmp\/|"sha256"/u.test(isolatedText)
+      );
       const archiveCollection = await getJson(`${baseUrl}/api/memories/export`);
       const archivedEntityCount = archiveCollection.payload.entities.entities.length;
       const archivedEntityId = archiveCollection.payload.entities.entities[0].id;
@@ -465,6 +498,12 @@ async function runMuseumLockAndLensFlow() {
         body: archive
       });
       const drill = await drillResponse.json();
+      const isolatedResponse = await fetch(`${baseUrl}/api/recovery-drills/isolated-restore`, {
+        method: "POST",
+        headers: writeHeaders(`${baseUrl}/api/recovery-drills/isolated-restore`, { "Content-Type": "application/vnd.time-isle" }),
+        body: archive
+      });
+      const isolated = await isolatedResponse.json();
       const stateAfterReadOnlyOperations = await getJson(`${baseUrl}/api/museum-lock`);
       assert(
         "锁馆期间归档验真和结构恢复演练可用且不会写当前馆藏",
@@ -478,6 +517,12 @@ async function runMuseumLockAndLensFlow() {
           drill.verification?.limitations?.isolatedRestorePerformed === false &&
           drill.verification?.limitations?.disasterRecoveryProven === false &&
           drill.verification?.limitations?.diskEncryptionProvided === false &&
+          isolatedResponse.ok &&
+          isolated.receipt?.kind === "isolated-restore" &&
+          isolated.receipt?.checks?.restore?.counts?.memories === 2 &&
+          isolated.receipt?.isolation?.currentMuseumCapabilityProvided === false &&
+          isolated.receipt?.isolation?.sandboxDestroyed === true &&
+          isolated.receipt?.limitations?.disasterRecoveryProven === false &&
           stateAfterReadOnlyOperations.payload.state?.status === "locked" &&
           stateAfterReadOnlyOperations.payload.state?.revision === locked.payload.state.revision &&
           (await getJson(`${baseUrl}/api/memories`)).payload.memories.length === 2
@@ -538,6 +583,9 @@ async function runLocalFlow() {
     const archaeologyStyles = await fetch(`${baseUrl}/archaeology.css`);
     const app = await fetch(`${baseUrl}/assets/app.js`);
     assert("静态资源可访问", styles.ok && archaeologyStyles.ok && app.ok);
+    const semanticCore = await fetch(`${baseUrl}/assets/semantic-recall-core.mjs`);
+    const semanticModelConfig = await fetch(`${baseUrl}/assets/models/v17/Xenova/bge-small-zh-v1.5/config.json`);
+    assert("设备语义模块与模型配置同源可访问", semanticCore.ok && semanticCore.headers.get("content-type") === "application/javascript; charset=utf-8" && semanticModelConfig.ok && semanticModelConfig.headers.get("content-type") === "application/json; charset=utf-8" && semanticModelConfig.headers.get("cache-control") === "public, max-age=31536000, immutable");
 
     const manifestResponse = await fetch(`${baseUrl}/manifest.webmanifest`);
     const manifest = await manifestResponse.json();
@@ -550,9 +598,9 @@ async function runLocalFlow() {
     assert("离线页明确不缓存或展示私人馆藏", offlineResponse.ok && offlineText.includes("不会展示馆藏、照片、声音或导出内容") && !offlineText.includes("<script"));
 
     const health = await getJson(`${baseUrl}/api/health`);
-    assert("健康检查返回时屿 V14 与 schema 19", health.response.ok && health.response.headers.get("cache-control") === "no-store" && health.payload.ok && health.payload.version === "14.0.0" && health.payload.schemaVersion === 19 && health.payload.name === "时屿" && health.payload.englishName === "TIME ISLE" && health.payload.tagline === "AI 私人记忆策展工具" && health.payload.stats.capsules === 0 && health.payload.stats.timeCalibrations === 0 && health.payload.stats.oralHistoryQuestions === 0 && health.payload.stats.oralHistoryAnswers === 0 && health.payload.stats.curatorAgentRuns === 0 && health.payload.stats.curatorAgentCompletedRuns === 0 && health.payload.stats.curatorAgentInterruptedRuns === 0 && health.payload.stats.curatorAgentProposals === 0 && health.payload.stats.curatorAgentDecisions === 0);
+    assert("健康检查返回时屿 V17 与 schema 19", health.response.ok && health.response.headers.get("cache-control") === "no-store" && health.payload.ok && health.payload.version === "17.0.0" && health.payload.schemaVersion === 19 && health.payload.name === "时屿" && health.payload.englishName === "TIME ISLE" && health.payload.tagline === "AI 私人记忆策展工具" && health.payload.stats.capsules === 0 && health.payload.stats.timeCalibrations === 0 && health.payload.stats.oralHistoryQuestions === 0 && health.payload.stats.oralHistoryAnswers === 0 && health.payload.stats.curatorAgentRuns === 0 && health.payload.stats.curatorAgentCompletedRuns === 0 && health.payload.stats.curatorAgentInterruptedRuns === 0 && health.payload.stats.curatorAgentProposals === 0 && health.payload.stats.curatorAgentDecisions === 0);
     assert("本地模式使用 SQLite", health.payload.mode === "local" && health.payload.storage === "local-sqlite");
-    assert("健康检查声明本地语义线索检索与短词回退", health.payload.search?.engine === "fts5-trigram" && health.payload.search?.shortQueryFallback === "parameterized-like" && health.payload.search?.externalModelRequired === false);
+    assert("健康检查区分字段线索与设备语义", health.payload.search?.mode === "field-and-clue-retrieval" && health.payload.search?.engine === "fts5-trigram" && health.payload.search?.shortQueryFallback === "parameterized-like" && health.payload.search?.externalModelRequired === false && health.payload.semanticRecall?.model === "Xenova/bge-small-zh-v1.5" && health.payload.semanticRecall?.dimensions === 512 && health.payload.semanticRecall?.remoteModelsAllowed === false && health.payload.semanticRecall?.persisted === false);
 
     const spoofedHost = await rawHttpStatus(`${baseUrl}/api/health`, {
       headers: { Host: "attacker.example" }
@@ -575,7 +623,7 @@ async function runLocalFlow() {
     assert("写请求以 403 拒绝恶意 Origin", maliciousOrigin === 403);
 
     const version = await getJson(`${baseUrl}/api/version`);
-    assert("版本接口描述 V14 核心产品流程与人工边界", version.response.ok && version.payload.version === "14.0.0" && ["共忆见证", "设备内可解释镜片", "锁馆与结构验真"].every((item) => version.payload.productFlow.includes(item)) && version.payload.v7.offlineSharing.includes("AES-256-GCM") && version.payload.v7.pwa.includes("不缓存私人馆藏") && version.payload.v72.concurrency.includes("If-Match") && version.payload.v73.sharePrivacy.includes("浏览器内") && version.payload.v73.revisitIntent.includes("明确选择") && version.payload.v8.uncertainTimeline.includes("不会回写展品日期") && version.payload.v8.provenanceReview.includes("待复核") && version.payload.v9.oralHistory.includes("一个问题") && version.payload.v9.humanBoundary.includes("不自动转写") && version.payload.v9.provenance.includes("草稿") && version.payload.v10.boundedAgent.includes("固定四项") && version.payload.v10.humanDecisions.includes("分别需要") && version.payload.v10.replayableEvaluation.includes("不重新读取") && version.payload.v10.restoreBoundary.includes("待复核只读历史") && version.payload.v12.coMemoryLetters.includes("AES-256-GCM") && version.payload.v13.localBoundary.includes("零外部模型") && version.payload.v14.museumLock.includes("423") && version.payload.v14.recoveryDrill.includes("不能证明"));
+    assert("版本接口描述 V17 核心产品流程与人工边界", version.response.ok && version.payload.version === "17.0.0" && ["共忆见证", "设备内可解释镜片", "多视角记忆对照", "设备内按意思找回", "锁馆与一次性真实恢复演练"].every((item) => version.payload.productFlow.includes(item)) && version.payload.v7.offlineSharing.includes("AES-256-GCM") && version.payload.v7.pwa.includes("不缓存私人馆藏") && version.payload.v72.concurrency.includes("If-Match") && version.payload.v73.sharePrivacy.includes("浏览器内") && version.payload.v73.revisitIntent.includes("明确选择") && version.payload.v8.uncertainTimeline.includes("不会回写展品日期") && version.payload.v8.provenanceReview.includes("待复核") && version.payload.v9.oralHistory.includes("一个问题") && version.payload.v9.humanBoundary.includes("不自动转写") && version.payload.v9.provenance.includes("草稿") && version.payload.v10.boundedAgent.includes("固定四项") && version.payload.v10.humanDecisions.includes("分别需要") && version.payload.v10.replayableEvaluation.includes("不重新读取") && version.payload.v10.restoreBoundary.includes("待复核只读历史") && version.payload.v12.coMemoryLetters.includes("AES-256-GCM") && version.payload.v13.localBoundary.includes("零外部模型") && version.payload.v14.museumLock.includes("423") && version.payload.v14.recoveryDrill.includes("不能证明") && version.payload.v15.isolatedRestore.includes("一次性") && version.payload.v15.recoveryBoundary.includes("不证明异机灾备") && version.payload.v16.derivedBoundary.includes("零模型") && version.payload.v16.identityBoundary.includes("身份未核验") && version.payload.v17.semanticRecall.includes("512 维") && version.payload.v17.privacyBoundary.includes("Worker 内存") && version.payload.v17.interpretationBoundary.includes("不是事实"));
 
     const demo = await getJson(`${baseUrl}/api/demo/status`);
     assert("本地模式未伪装成公开 Demo", demo.response.ok && demo.payload.interviewDemo === false);
@@ -604,6 +652,28 @@ async function runLocalFlow() {
 
     const detail = await getJson(`${baseUrl}/api/memories/${memoryId}`);
     assert("展品详情可读取", detail.response.ok && detail.payload.memory.rawContent === rawContent);
+
+    const semanticStatsBefore = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+    const semanticSnapshot = await getJson(`${baseUrl}/api/semantic-recall/snapshot`);
+    const semanticDocument = semanticSnapshot.payload.snapshot?.documents?.find((item) => item.memoryId === memoryId);
+    const rejectedSemanticQuery = await getJson(`${baseUrl}/api/semantic-recall/snapshot?query=private`);
+    const rejectedSemanticWrite = await postJson(`${baseUrl}/api/semantic-recall/snapshot`, { query: "不能发送" });
+    const semanticStatsAfter = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+    assert("设备语义快照 GET 只投影五类可索引文字", semanticSnapshot.response.ok && semanticSnapshot.response.headers.get("cache-control") === "private, no-store" && semanticDocument?.rawContent === rawContent.normalize("NFKC") && JSON.stringify(Object.keys(semanticDocument).sort()) === JSON.stringify(["confirmedTranscripts", "exhibitText", "memoryId", "rawContent", "tags", "title"].sort()) && semanticSnapshot.payload.snapshot?.model?.remoteModelsAllowed === false && semanticSnapshot.payload.snapshot?.boundary?.persisted === false);
+    assert("设备语义快照拒绝查询参数和非 GET 方法", rejectedSemanticQuery.response.status === 400 && rejectedSemanticWrite.response.status === 405);
+    assert("设备语义 HTTP 快照前后馆藏统计零变化", JSON.stringify(semanticStatsAfter) === JSON.stringify(semanticStatsBefore));
+
+    const perspectiveStatsBefore = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+    const perspectives = await getJson(`${baseUrl}/api/multi-perspective/memories/${memoryId}`);
+    const perspectiveEtag = perspectives.response.headers.get("etag");
+    const unchangedPerspective = await fetch(`${baseUrl}/api/multi-perspective/memories/${memoryId}`, { headers: { "If-None-Match": perspectiveEtag } });
+    const rejectedPerspectiveQuery = await getJson(`${baseUrl}/api/multi-perspective/memories/${memoryId}?limit=1`);
+    const rejectedPerspectiveWrite = await postJson(`${baseUrl}/api/multi-perspective/memories/${memoryId}`, {});
+    const perspectiveStatsAfter = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+    assert("多视角对照 GET 返回本地零模型零保存 DTO", perspectives.response.ok && perspectives.response.headers.get("cache-control") === "private, no-store" && /^"multi-perspective-[a-f0-9]{64}"$/u.test(perspectiveEtag || "") && perspectives.payload.preview?.target?.id === memoryId && perspectives.payload.preview?.synthetic === false && perspectives.payload.preview?.execution?.modelCalls === 0 && perspectives.payload.preview?.execution?.toolCalls === 0 && perspectives.payload.preview?.execution?.persisted === false);
+    assert("多视角对照支持内容 ETag 的 304 重用", unchangedPerspective.status === 304);
+    assert("多视角对照拒绝查询参数和非 GET 方法", rejectedPerspectiveQuery.response.status === 400 && rejectedPerspectiveWrite.response.status === 405);
+    assert("多视角对照 HTTP 预览前后馆藏统计零变化", JSON.stringify(perspectiveStatsAfter) === JSON.stringify(perspectiveStatsBefore));
 
     const trace = await getJson(`${baseUrl}/api/memories/${memoryId}/agent-run`);
     assert("展品可回看 Agent 依据", trace.response.ok && trace.payload.run.steps.length === 3 && trace.payload.run.memoryId === memoryId);
@@ -2242,6 +2312,8 @@ async function runDemoSafetyFlow() {
     assert("公开 Demo 阻止胶囊写入且外壳列表保持零变化", demoCapsulesBefore.response.ok && blockedCapsule.response.status === 403 && blockedCapsule.payload.interviewDemo === true && demoCapsulesAfter.payload.capsules.length === demoCapsulesBefore.payload.capsules.length);
 
     const targetId = memories.payload.memories[0].id;
+    const syntheticPerspectives = await getJson(`${baseUrl}/api/multi-perspective/memories/demo-never-read-private-store`);
+    assert("公开 Demo 多视角对照固定返回合成零保存投影", syntheticPerspectives.response.ok && syntheticPerspectives.payload.preview?.synthetic === true && syntheticPerspectives.payload.preview?.target?.id === "demo-never-read-private-store" && syntheticPerspectives.payload.preview?.execution?.externalModel === false && syntheticPerspectives.payload.preview?.execution?.persisted === false && JSON.stringify(syntheticPerspectives.payload).includes("身份未核验") && !JSON.stringify(syntheticPerspectives.payload).includes(targetId));
     const demoRevisit = await getJson(`${baseUrl}/api/revisits?kind=random&localDate=2026-07-16&timezone=Asia%2FShanghai`);
     assert("公开 Demo 可以浏览但不会预写回访状态", demoRevisit.response.ok && demoRevisit.payload.revisit?.memory.id && demoRevisit.payload.revisit.state.viewCount === 0);
     const demoIntentBefore = await getJson(`${baseUrl}/api/revisits/${targetId}/intent`);
@@ -2288,7 +2360,7 @@ async function runDemoSafetyFlow() {
     assert("公开 Demo 禁止完整归档恢复", blockedArchiveRestore.status === 403);
 
     const demoLockBefore = await getJson(`${baseUrl}/api/museum-lock`);
-    const demoV14StatsBefore = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+    const demoV15StatsBefore = (await getJson(`${baseUrl}/api/health`)).payload.stats;
     const blockedDemoLockResponse = await fetch(`${baseUrl}/api/museum-lock/lock`, {
       method: "POST",
       headers: writeHeaders(`${baseUrl}/api/museum-lock/lock`, { "Content-Type": "text/plain" }),
@@ -2301,17 +2373,27 @@ async function runDemoSafetyFlow() {
       body: Buffer.alloc(2048, 0x41)
     });
     const blockedDemoDrill = await blockedDemoDrillResponse.json();
+    const blockedDemoIsolatedResponse = await fetch(`${baseUrl}/api/recovery-drills/isolated-restore`, {
+      method: "POST",
+      headers: writeHeaders(`${baseUrl}/api/recovery-drills/isolated-restore`, { "Content-Type": "text/plain" }),
+      body: Buffer.alloc(2048, 0x42)
+    });
+    const blockedDemoIsolated = await blockedDemoIsolatedResponse.json();
     const demoLockAfter = await getJson(`${baseUrl}/api/museum-lock`);
-    const demoV14StatsAfter = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+    const demoV15StatsAfter = (await getJson(`${baseUrl}/api/health`)).payload.stats;
     assert(
       "公开 Demo 在解析 Content-Type 和正文前以 403 阻止锁馆与结构演练上传",
       [
         [blockedDemoLockResponse, blockedDemoLock],
         [blockedDemoDrillResponse, blockedDemoDrill]
       ].every(([response, payload]) => response.status === 403 && payload.interviewDemo === true && payload.bodyBytesRead === 0) &&
+        blockedDemoIsolatedResponse.status === 403 &&
+        blockedDemoIsolated.code === "ISOLATED_RECOVERY_DEMO_READ_ONLY" &&
+        blockedDemoIsolated.interviewDemo === true &&
+        blockedDemoIsolated.bodyBytesRead === 0 &&
         demoLockAfter.payload.state?.status === demoLockBefore.payload.state?.status &&
         demoLockAfter.payload.state?.revision === demoLockBefore.payload.state?.revision &&
-        JSON.stringify(demoV14StatsAfter) === JSON.stringify(demoV14StatsBefore) &&
+        JSON.stringify(demoV15StatsAfter) === JSON.stringify(demoV15StatsBefore) &&
         !fs.existsSync(path.join(mediaRoot, ".drill"))
     );
 

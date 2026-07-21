@@ -316,6 +316,10 @@ function checkTranscriptSearchAndRollback() {
 function checkBackupRestoreAndPurge() {
   const source = createFixture("backup-source", ["memory-a", "memory-b"]);
   const target = createFixture("backup-target", ["target-a", "target-b"]);
+  let silentRestoreNotifications = 0;
+  const silentTarget = createFixture("backup-silent", ["silent-a", "silent-b"], () => {
+    silentRestoreNotifications += 1;
+  });
   try {
     const first = source.voice.createVoiceAsset(asset("backup-first", { status: "ready" }));
     const second = source.voice.createVoiceAsset(asset("backup-second", { status: "ready", mimeType: "audio/mp4", codec: "aac" }));
@@ -333,6 +337,15 @@ function checkBackupRestoreAndPurge() {
     ok(source.voice.validateVoiceBackup(redacted, []), "redacted summary has a strict contract");
     const redactedText = JSON.stringify(redacted);
     ok(!redactedText.includes("秘密") && !redactedText.includes(first.id) && !redactedText.includes(first.storageKey), "redacted summary physically excludes text, IDs and paths");
+
+    const silentRestored = silentTarget.voice.restoreVoiceData(full, {
+      memoryIdMap: { "memory-a": "silent-a", "memory-b": "silent-b" },
+      storageKeyMap: Object.fromEntries(full.assets.map((item, index) => [item.storageKey, `voice/silent-${index}.webm`])),
+      notifyConfirmedTranscriptChanges: false
+    });
+    equal(silentRestored.transcripts, 2, "silent restore still writes every transcript");
+    equal(silentRestoreNotifications, 0, "authoritative restore suppresses transient clue notifications");
+    ok(searchDocument(silentTarget.db, "silent-a").voice_text.length > 0, "suppression keeps restored voice search text intact");
 
     target.voice.createVoiceAsset({ ...asset("occupied", { status: "ready" }), id: first.id });
     const restored = target.voice.restoreVoiceData(full, {
@@ -378,6 +391,7 @@ function checkBackupRestoreAndPurge() {
   } finally {
     source.close();
     target.close();
+    silentTarget.close();
   }
 }
 

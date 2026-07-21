@@ -1,0 +1,363 @@
+.multi-perspective-panel {
+  margin: 22px 0 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.multi-perspective-panel > summary {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 2px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.multi-perspective-panel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.multi-perspective-panel > summary > span:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.multi-perspective-panel > summary strong,
+.multi-perspective-section-heading h3,
+.multi-perspective-card-heading strong {
+  color: var(--ink);
+  font-family: "Noto Serif SC", "Songti SC", Georgia, serif;
+}
+
+.multi-perspective-panel > summary small,
+.multi-perspective-panel > summary > span:last-child,
+.multi-perspective-section-heading span {
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+}
+
+.multi-perspective-panel[open] > summary > span:last-child {
+  transform: rotate(45deg);
+}
+
+.multi-perspective-panel > summary:focus-visible,
+.multi-perspective-panel button:focus-visible,
+.multi-perspective-panel details > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.multi-perspective-body {
+  display: grid;
+  gap: 18px;
+  padding: 2px 0 22px;
+}
+
+.multi-perspective-intro,
+.multi-perspective-demo,
+.multi-perspective-time {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: var(--surface-muted);
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  line-height: 1.7;
+}
+
+.multi-perspective-demo {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+}
+
+.multi-perspective-section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.multi-perspective-section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.multi-perspective-section-heading h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.multi-perspective-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.multi-perspective-card,
+.multi-perspective-claim,
+.multi-perspective-history > li {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+}
+
+.multi-perspective-card.is-reply {
+  border-left: 3px solid var(--warm);
+}
+
+.multi-perspective-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.multi-perspective-card-heading strong,
+.multi-perspective-card blockquote,
+.multi-perspective-question,
+.multi-perspective-card-boundary,
+.multi-perspective-claim span,
+.multi-perspective-history span {
+  overflow-wrap: anywhere;
+}
+
+.multi-perspective-badge {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--ink-soft);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.multi-perspective-card.is-reply .multi-perspective-badge {
+  border-color: var(--warm);
+  background: var(--warm-soft);
+  color: var(--ink);
+}
+
+.multi-perspective-question,
+.multi-perspective-card-boundary,
+.multi-perspective-note,
+.multi-perspective-actions p {
+  margin: 8px 0 0;
+  color: var(--ink-soft);
+  font-size: 0.74rem;
+  line-height: 1.65;
+}
+
+.multi-perspective-card blockquote {
+  margin: 10px 0 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--line);
+  color: var(--ink);
+  font-size: 0.84rem;
+  line-height: 1.7;
+}
+
+.multi-perspective-relation-state {
+  display: block;
+  margin-top: 10px;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.multi-perspective-more > summary,
+.multi-perspective-receipt > summary {
+  min-height: 44px;
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.multi-perspective-more .multi-perspective-grid {
+  margin-top: 10px;
+}
+
+.multi-perspective-claim-list {
+  display: grid;
+  gap: 10px;
+}
+
+.multi-perspective-claim.needs-review {
+  border-color: var(--warm);
+  background: var(--warm-soft);
+}
+
+.multi-perspective-claim > strong {
+  display: block;
+  color: var(--ink);
+}
+
+.multi-perspective-claim > p {
+  margin: 5px 0 0;
+  color: var(--ink-soft);
+  font-size: 0.74rem;
+}
+
+.multi-perspective-claim ul,
+.multi-perspective-history {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.multi-perspective-claim li {
+  display: grid;
+  gap: 3px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.multi-perspective-claim li > strong {
+  font-size: 0.78rem;
+}
+
+.multi-perspective-claim li > span {
+  color: var(--ink);
+  font-size: 0.78rem;
+}
+
+.multi-perspective-claim li > small {
+  color: var(--ink-soft);
+}
+
+.multi-perspective-empty {
+  margin: 0;
+  padding: 14px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-small);
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  line-height: 1.7;
+}
+
+.multi-perspective-history {
+  margin-top: 0;
+}
+
+.multi-perspective-history > li {
+  display: grid;
+  gap: 4px;
+}
+
+.multi-perspective-history strong {
+  color: var(--ink);
+  font-size: 0.8rem;
+}
+
+.multi-perspective-history span {
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+}
+
+.multi-perspective-time {
+  display: grid;
+  gap: 4px;
+}
+
+.multi-perspective-time strong {
+  color: var(--ink);
+}
+
+.multi-perspective-time p,
+.multi-perspective-time small,
+.multi-perspective-receipt p {
+  margin: 0;
+}
+
+.multi-perspective-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.multi-perspective-actions .button {
+  min-height: 44px;
+}
+
+.multi-perspective-actions p {
+  flex: 1 1 100%;
+}
+
+.multi-perspective-status {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+}
+
+.multi-perspective-status.is-error {
+  color: var(--danger);
+}
+
+.multi-perspective-receipt {
+  border-top: 1px solid var(--line);
+}
+
+.multi-perspective-receipt p {
+  padding-bottom: 8px;
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 650px) {
+  .multi-perspective-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .multi-perspective-section-heading {
+    display: grid;
+    gap: 2px;
+  }
+
+  .multi-perspective-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .multi-perspective-actions .button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 390px) {
+  .multi-perspective-card,
+  .multi-perspective-claim,
+  .multi-perspective-time {
+    padding: 10px;
+  }
+
+  .multi-perspective-card-heading {
+    display: grid;
+  }
+
+  .multi-perspective-badge {
+    width: fit-content;
+  }
+}
+
+@media (max-width: 320px) {
+  .multi-perspective-panel > summary {
+    gap: 8px;
+  }
+
+  .multi-perspective-card,
+  .multi-perspective-claim,
+  .multi-perspective-history > li {
+    padding: 9px;
+  }
+}

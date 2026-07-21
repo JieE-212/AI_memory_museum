@@ -120,13 +120,11 @@ const sampleMemories = [
   "雨停后我没有立刻回去，而是沿着河边多走了一段。路灯落在积水里，普通的一天忽然安静了下来。",
   "最迷茫的那段时间，一个朋友突然打来电话。他没有劝我振作，只陪我把混乱的话说完。"
 ];
-let searchTimer = null;
-let toastTimer = null;
+let searchTimer = null, toastTimer = null;
 let mediaController = null, voiceController = null;
 let mediaEvidenceController = null, portabilityController = null, mediaCompareControllers = [], mediaLabController = null;
-let exhibitionsController = null, capsulesController = null, curatorAgentController = null, revisitsController = null, cluesController = null, revisionsController = null, collectionHealthController = null, timeCalibrationController = null, oralHistoriesController = null, memoryInboxController = null, provenanceController = null, coMemoryLetterController = null, memoryLensController = null;
-bindEvents();
-initialize();
+let exhibitionsController = null, capsulesController = null, curatorAgentController = null, revisitsController = null, cluesController = null, revisionsController = null, collectionHealthController = null, timeCalibrationController = null, oralHistoriesController = null, memoryInboxController = null, provenanceController = null, coMemoryLetterController = null, memoryLensController = null, multiPerspectiveController = null, semanticRecallController = null;
+bindEvents(); initialize();
 
 async function initialize() {
   setRuntimeStatus("正在连接", "loading");
@@ -170,14 +168,14 @@ async function initialize() {
       demo: demo.interviewDemo,
       onCompose: composeInboxItem
     }) || null;
-    provenanceController = window.TimeIsleProvenance?.createController({
-      demo: demo.interviewDemo
-    }) || null;
-    coMemoryLetterController = window.TimeIsleCoMemoryHost?.createController({ demo: demo.interviewDemo, onChanged: () => provenanceController?.refresh?.() }) || null;
+    multiPerspectiveController = window.TimeIsleMultiPerspectiveHost?.createController() || null;
+    semanticRecallController = window.TimeIsleSemanticRecall?.createController({ onOpenMemory: openMemory, onFallback: (query) => { elements.searchInput.value = String(query || "").slice(0, 160); switchView("collection", { focusHeading: true }); if (elements.searchInput.value.trim()) performSearch(); else renderCollection(); } }) || null;
+    provenanceController = window.TimeIsleProvenance?.createController({ demo: demo.interviewDemo, onChanged: () => multiPerspectiveController?.refresh?.() }) || null;
+    coMemoryLetterController = window.TimeIsleCoMemoryHost?.createController({ demo: demo.interviewDemo, onChanged: () => { provenanceController?.refresh?.(); multiPerspectiveController?.refresh?.(); } }) || null;
     initializeTimeCalibrationController(options.voicePolicy, demo.interviewDemo);
     populateOptions();
     renderApp();
-    elements.footerVersion.textContent = `v${version.version || "14.0.0"}`;
+    elements.footerVersion.textContent = `v${version.version || "17.0.0"}`;
     setRuntimeStatus(demo.interviewDemo ? "Demo 已连接" : "本地馆藏已连接", "ready");
     const initialView = normalizeView(location.hash.replace("#", ""));
     switchView(initialView, { updateHash: false });
@@ -277,7 +275,7 @@ function bindEvents() {
   elements.dialogTraceButton.addEventListener("click", showAgentTrace);
   elements.dialogEditButton.addEventListener("click", editSelectedMemory);
   elements.dialogDeleteButton.addEventListener("click", deleteSelectedMemory);
-  elements.memoryDialog.addEventListener("close", () => { mediaEvidenceController?.close(); mediaLabController?.close(); provenanceController?.close(); coMemoryLetterController?.close(); });
+  elements.memoryDialog.addEventListener("close", () => { mediaEvidenceController?.close(); mediaLabController?.close(); provenanceController?.close(); coMemoryLetterController?.close(); multiPerspectiveController?.close(); });
   elements.puzzleSaveAnswerButton.addEventListener("click", () => savePuzzleAnswer("answer"));
   elements.puzzleUnknownButton.addEventListener("click", () => savePuzzleAnswer("keep_unknown"));
   elements.puzzleSkipButton.addEventListener("click", () => savePuzzleAnswer("skip"));
@@ -386,7 +384,7 @@ async function performSearch() {
   state.searchError = "";
   elements.searchErrorState.hidden = true;
   elements.memoryGrid.setAttribute("aria-busy", "true");
-  elements.collectionMeta.textContent = "正在沿语义线索寻找展品…";
+  elements.collectionMeta.textContent = "正在按字段与线索寻找展品…";
   try {
     const payload = await requestJson(`/api/search?limit=50&query=${encodeURIComponent(query)}`);
     if (requestId !== state.searchRequest) return;
@@ -500,6 +498,7 @@ async function openMemory(id) {
   revisionsController?.open(memory, elements.dialogBody);
   provenanceController?.open(memory, elements.dialogBody);
   coMemoryLetterController?.open(memory, elements.dialogBody);
+  multiPerspectiveController?.open(memory, elements.dialogBody);
   elements.dialogRouteButton.disabled = state.memories.length < 2;
   elements.dialogRouteButton.title = state.memories.length < 2 ? "至少需要两件展品才能生成航线" : "查看与这件展品有关的记忆";
   elements.dialogTraceButton.disabled = !memory.agentRunId;
@@ -533,7 +532,7 @@ function renderMemoryDetail(memory) {
     <h3>原始记忆</h3>
     <div class="detail-raw">${escapeHtml(memory.rawContent || "未保留原文")}</div>
     ${window.TimeIsleProvenance?.renderPanel(memory) || ""}
-    ${window.TimeIsleCoMemoryLetters?.renderPanel(memory) || ""}`;
+    ${window.TimeIsleCoMemoryLetters?.renderPanel(memory) || ""}${window.TimeIsleMultiPerspective?.renderPanel(memory) || ""}`;
 }
 function renderEntityChips(memory, type, fallback, tags = false) {
   const refs = (memory.entityRefs || memory.entities || []).filter((item) => ({ people: "person", location: "place" }[item.type] || item.type) === type && (item.id || item.entityId));
@@ -1366,6 +1365,7 @@ async function reloadMemories() {
   capsulesController?.refresh();
   revisitsController?.invalidate();
   memoryLensController?.invalidate?.();
+  semanticRecallController?.invalidate?.();
   memoryInboxController?.load();
   renderStats();
   if (elements.searchInput.value.trim()) await performSearch(); else renderCollection();

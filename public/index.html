@@ -10,34 +10,36 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="时屿" />
     <title>时屿｜AI 私人记忆策展工具</title>
-    <link rel="manifest" href="/manifest.webmanifest?v=14.0.0" />
+    <link rel="manifest" href="/manifest.webmanifest?v=17.0.0" />
     <link rel="icon" href="/assets/time-isle-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/assets/time-isle-apple-touch.png" />
     <link rel="stylesheet" href="/styles.css?v=7.2.0-touch5" />
-    <link rel="stylesheet" href="/pwa.css?v=14.0.0" />
+    <link rel="stylesheet" href="/pwa.css?v=17.0.0" />
     <link rel="stylesheet" href="/archaeology.css" />
     <link rel="stylesheet" href="/exhibitions.css?v=7.2.0" />
-    <link rel="stylesheet" href="/curator-agent.css?v=14.0.0" />
-    <link rel="stylesheet" href="/capsules.css?v=14.0.0" />
-    <link rel="stylesheet" href="/share-privacy.css?v=14.0.0" />
-    <link rel="stylesheet" href="/revisits.css?v=14.0.0" />
-    <link rel="stylesheet" href="/revisit-intents.css?v=14.0.0" />
-    <link rel="stylesheet" href="/time-calibrations.css?v=14.0.0" />
+    <link rel="stylesheet" href="/curator-agent.css?v=17.0.0" />
+    <link rel="stylesheet" href="/capsules.css?v=17.0.0" />
+    <link rel="stylesheet" href="/share-privacy.css?v=17.0.0" />
+    <link rel="stylesheet" href="/revisits.css?v=17.0.0" />
+    <link rel="stylesheet" href="/revisit-intents.css?v=17.0.0" />
+    <link rel="stylesheet" href="/time-calibrations.css?v=17.0.0" />
     <link rel="stylesheet" href="/revisions.css?v=7.2.0-a11y2" />
     <link rel="stylesheet" href="/clues.css?v=7.2.0" />
     <link rel="stylesheet" href="/collection-health.css?v=7.2.0-a11y2" />
     <link rel="stylesheet" href="/media.css" />
     <link rel="stylesheet" href="/voice.css?v=7.2.0-align1" />
-    <link rel="stylesheet" href="/oral-histories.css?v=14.0.0" />
+    <link rel="stylesheet" href="/oral-histories.css?v=17.0.0" />
     <link rel="stylesheet" href="/media-evidence.css" />
     <link rel="stylesheet" href="/media-compare.css" />
     <link rel="stylesheet" href="/media-ocr.css" />
     <link rel="stylesheet" href="/media-lab.css" />
-    <link rel="stylesheet" href="/memory-inbox.css?v=14.0.0-mobile1" />
-    <link rel="stylesheet" href="/provenance.css?v=14.0.0" />
-    <link rel="stylesheet" href="/co-memory-letter.css?v=14.0.0" />
-    <link rel="stylesheet" href="/memory-lens.css?v=14.0.0" />
-    <link rel="stylesheet" href="/museum-lock.css?v=14.0.0" />
+    <link rel="stylesheet" href="/memory-inbox.css?v=17.0.0-mobile1" />
+    <link rel="stylesheet" href="/provenance.css?v=17.0.0" />
+    <link rel="stylesheet" href="/co-memory-letter.css?v=17.0.0" />
+    <link rel="stylesheet" href="/multi-perspective.css?v=17.0.0" />
+    <link rel="stylesheet" href="/semantic-recall.css?v=17.0.0" />
+    <link rel="stylesheet" href="/memory-lens.css?v=17.0.0" />
+    <link rel="stylesheet" href="/museum-lock.css?v=17.0.0" />
   </head>
   <body>
     <a class="skip-link" href="#mainContent">跳到主要内容</a>
@@ -338,6 +340,41 @@
             </div>
           </details>
 
+          <details class="semantic-recall-card" id="semanticRecallDetails">
+            <summary>
+              <span><strong>按意思找回</strong><small>设备内中文语义 · 主动启用后才加载约 47 MB</small></span>
+              <span aria-hidden="true">＋</span>
+            </summary>
+            <div class="semantic-recall-body">
+              <p class="semantic-recall-intro">不用记得原文。试着描述“小时候下雨天等爷爷”这样的画面，时屿会在当前设备里比较文字含义，找回可能相关的展品。索引只反映你点击“准备”这一刻的馆藏。</p>
+              <div class="semantic-recall-boundary" aria-label="设备语义隐私边界">
+                <div><strong>只在你点击后运行</strong><span>展开不会下载；点击准备后才加载约 47 MB 模型。</span></div>
+                <div><strong>文字与查询不上传</strong><span>标题、说明、正文片段、标签和确认文字稿只进入浏览器 Worker。</span></div>
+                <div><strong>变化后重新准备</strong><span>查询、向量和索引只在本页内存中；刷新、其他标签页或外部修改后需要重备。</span></div>
+              </div>
+              <div class="semantic-recall-actions">
+                <button type="button" class="button primary" id="semanticRecallPrepare">在此设备准备（约 47 MB）</button>
+                <button type="button" class="button secondary" id="semanticRecallStop" hidden>停止准备</button>
+                <button type="button" class="button text-button" id="semanticRecallClear" hidden>释放本页模型内存</button>
+              </div>
+              <progress class="semantic-recall-progress" id="semanticRecallProgress" max="100" value="0" hidden>0%</progress>
+              <p class="semantic-recall-status" id="semanticRecallStatus" role="status" aria-live="polite">尚未加载模型，也没有建立设备索引。</p>
+              <form class="semantic-recall-form" id="semanticRecallForm" hidden>
+                <label>
+                  <span class="sr-only">描述想找回的记忆</span>
+                  <input id="semanticRecallQuery" type="search" minlength="2" maxlength="160" autocomplete="off" placeholder="例如：小时候下雨天等爷爷" disabled />
+                </label>
+                <button type="submit" class="button primary" id="semanticRecallSubmit" disabled>按意思寻找</button>
+              </form>
+              <button type="button" class="button text-button compact" id="semanticRecallFallback">改用字段与线索检索</button>
+              <div class="semantic-recall-results" id="semanticRecallResults" aria-live="polite" hidden></div>
+              <details class="semantic-recall-explanation">
+                <summary>它怎样工作，结果又代表什么？</summary>
+                <p>本功能使用自托管的真实中文 embedding 模型，把馆藏文字与本次描述转换为 512 维向量，再按文本相似度排序。最接近的结果也可能不相关；相似不等于事实、人物关系、情绪、真实性或概率判断。释放按钮会终止本页 Worker 并清掉查询、向量和索引，但浏览器仍可能保留同源模型文件的普通 HTTP 缓存。模型无法加载时，页面会明确显示“设备语义不可用”，并保留原来的字段与线索检索。</p>
+              </details>
+            </div>
+          </details>
+
           <section class="guide-card" aria-labelledby="guideTitle">
             <div class="section-heading compact-heading">
               <div>
@@ -416,7 +453,7 @@
             <div class="data-location-list" id="dataLocationList"></div>
             <details class="museum-lock-panel" id="museumLockPanel">
               <summary>
-                <span><strong>锁馆与恢复演练</strong><small>应用级写保护 · 结构验真不写入当前馆藏</small></span>
+                <span><strong>锁馆与恢复演练</strong><small>应用级写保护 · 真恢复只发生在一次性副本</small></span>
                 <span class="museum-lock-state" id="museumLockState" role="status" aria-live="polite">读取中</span>
               </summary>
               <div class="museum-lock-body">
@@ -431,12 +468,26 @@
                   <button type="submit" class="button secondary" id="museumLockAction" disabled>读取锁馆状态</button>
                   <p class="museum-lock-status" id="museumLockStatus" role="status" aria-live="polite">口令只用于本次派生校验，不写入浏览器存储、日志或普通归档。</p>
                 </form>
-                <section class="structural-recovery" aria-labelledby="structuralRecoveryTitle">
+                <section class="isolated-recovery" aria-labelledby="isolatedRecoveryTitle">
+                  <div><strong id="isolatedRecoveryTitle">一次性恢复副本</strong><small>把完整备份真实恢复到临时 SQLite、图片和声音副本；体检并销毁后才算通过，不会写入现在的馆藏</small></div>
+                  <input id="isolatedRecoveryFile" class="sr-only" type="file" accept="application/vnd.time-isle,.time-isle" disabled />
+                  <label class="button secondary compact file-button" for="isolatedRecoveryFile">选择完整备份开始演练</label>
+                  <ol class="isolated-recovery-steps" id="isolatedRecoverySteps" aria-label="恢复演练结果" hidden>
+                    <li data-isolated-step="archive">归档验真</li>
+                    <li data-isolated-step="restore">副本恢复与体检</li>
+                    <li data-isolated-step="cleanup">关闭并销毁副本</li>
+                  </ol>
+                  <p id="isolatedRecoveryStatus" role="status" aria-live="polite">只在本机生成一次性副本；这不是异机灾备、磁盘加密或生产恢复证明。</p>
+                </section>
+                <details class="structural-recovery-legacy">
+                  <summary>只做结构预检（兼容）</summary>
+                  <section class="structural-recovery" aria-labelledby="structuralRecoveryTitle">
                   <div><strong id="structuralRecoveryTitle">完整备份结构演练</strong><small>核对 manifest、哈希与引用；不会执行真实恢复，也不能证明具备灾难恢复能力</small></div>
                   <input id="structuralRecoveryFile" class="sr-only" type="file" accept="application/vnd.time-isle,.time-isle" disabled />
                   <label class="button text-button compact file-button" for="structuralRecoveryFile">选择 .time-isle 开始演练</label>
-                  <p id="structuralRecoveryStatus" role="status" aria-live="polite">仅接受完整备份；完成或失败后都会清理隔离暂存。</p>
-                </section>
+                    <p id="structuralRecoveryStatus" role="status" aria-live="polite">仅接受完整备份；完成或失败后都会清理隔离暂存。</p>
+                  </section>
+                </details>
               </div>
             </details>
             <details class="collection-health-panel" id="collectionHealthDetails">
@@ -454,7 +505,7 @@
                 <div id="collectionHealthResult" aria-live="polite" aria-atomic="true"></div>
                 <div class="archive-inspect">
                   <strong>验一份现有备份</strong>
-                  <small>只验证能否安全恢复，不把内容写入当前馆藏。</small>
+                  <small>只核对归档结构与安全计数，不执行真实恢复，也不把内容写入当前馆藏。</small>
                   <div class="archive-inspect-row">
                     <input id="archiveInspectFile" class="sr-only" type="file" accept="application/vnd.time-isle,.time-isle" />
                     <label class="button text-button compact file-button" for="archiveInspectFile">选择 .time-isle 验真</label>
@@ -1036,39 +1087,42 @@
 
     <footer class="site-footer">
       <span>时屿 · 让记忆可整理，也让 AI 的依据可回看。</span>
-      <span id="footerVersion">v14.0.0</span>
+      <span id="footerVersion">v17.0.0</span>
     </footer>
 
     <script src="/assets/portability.js"></script>
     <script src="/assets/media-intelligence.js"></script>
     <script src="/assets/media.js"></script>
-    <script src="/assets/voice-capture.js?v=14.0.0"></script>
+    <script src="/assets/voice-capture.js?v=17.0.0"></script>
     <script src="/assets/voice.js?v=7.2.0"></script>
     <script src="/assets/media-evidence.js"></script>
     <script src="/assets/media-compare.js"></script>
     <script src="/assets/media-ocr.js"></script>
     <script src="/assets/media-lab.js"></script>
     <script src="/assets/exhibitions.js?v=7.2.0"></script>
-    <script src="/assets/curator-agent.js?v=14.0.0"></script>
-    <script src="/assets/memory-lens.js?v=14.0.0"></script>
-    <script src="/assets/memory-lens-host.js?v=14.0.0"></script>
-    <script src="/assets/museum-lock.js?v=14.0.0"></script>
-    <script src="/assets/capsule-crypto.js?v=14.0.0"></script>
-    <script src="/assets/share-privacy.js?v=14.0.0"></script>
-    <script src="/assets/capsules.js?v=14.0.0"></script>
-    <script src="/assets/revisit-intents.js?v=14.0.0"></script>
-    <script src="/assets/revisits.js?v=14.0.0"></script>
-    <script src="/assets/time-calibrations.js?v=14.0.0"></script>
-    <script src="/assets/oral-histories.js?v=14.0.0"></script>
+    <script src="/assets/curator-agent.js?v=17.0.0"></script>
+    <script src="/assets/memory-lens.js?v=17.0.0"></script>
+    <script src="/assets/memory-lens-host.js?v=17.0.0"></script>
+    <script src="/assets/museum-lock.js?v=17.0.0"></script>
+    <script src="/assets/capsule-crypto.js?v=17.0.0"></script>
+    <script src="/assets/share-privacy.js?v=17.0.0"></script>
+    <script src="/assets/capsules.js?v=17.0.0"></script>
+    <script src="/assets/revisit-intents.js?v=17.0.0"></script>
+    <script src="/assets/revisits.js?v=17.0.0"></script>
+    <script src="/assets/time-calibrations.js?v=17.0.0"></script>
+    <script src="/assets/oral-histories.js?v=17.0.0"></script>
     <script src="/assets/revisions.js?v=7.2.0-a11y2"></script>
     <script src="/assets/clues.js?v=7.2.0"></script>
     <script src="/assets/collection-health.js?v=7.2.0-a11y2"></script>
-    <script src="/assets/memory-inbox.js?v=14.0.0"></script>
-    <script src="/assets/co-memory-crypto.js?v=14.0.0"></script>
-    <script src="/assets/co-memory-letter.js?v=14.0.0"></script>
-    <script src="/assets/co-memory-host.js?v=14.0.0"></script>
-    <script src="/assets/provenance.js?v=14.0.0"></script>
-    <script src="/assets/pwa.js?v=14.0.0"></script>
-    <script src="/assets/app.js?v=14.0.0"></script>
+    <script src="/assets/memory-inbox.js?v=17.0.0"></script>
+    <script src="/assets/co-memory-crypto.js?v=17.0.0"></script>
+    <script src="/assets/co-memory-letter.js?v=17.0.0"></script>
+    <script src="/assets/co-memory-host.js?v=17.0.0"></script>
+    <script src="/assets/provenance.js?v=17.0.0"></script>
+    <script src="/assets/multi-perspective.js?v=17.0.0"></script>
+    <script src="/assets/multi-perspective-host.js?v=17.0.0"></script>
+    <script src="/assets/semantic-recall.js?v=17.0.0"></script>
+    <script src="/assets/pwa.js?v=17.0.0"></script>
+    <script src="/assets/app.js?v=17.0.0"></script>
   </body>
 </html>

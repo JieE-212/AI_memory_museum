@@ -1,11 +1,11 @@
 "use strict";
 
 const CACHE_PREFIX = "time-isle-public-shell-";
-const CACHE_NAME = `${CACHE_PREFIX}v14.0.0`;
+const CACHE_NAME = `${CACHE_PREFIX}v17.0.0`;
 const OFFLINE_URL = "/offline.html";
 const SHELL_ASSETS = Object.freeze([
   OFFLINE_URL,
-  "/pwa.css?v=14.0.0",
+  "/pwa.css?v=17.0.0",
   "/assets/time-isle-icon.svg"
 ]);
 const CACHEABLE_PATHS = new Set(SHELL_ASSETS.map((value) => new URL(value, self.location.origin).pathname));

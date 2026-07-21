@@ -28,7 +28,8 @@
   const SOURCE_KIND_LABELS = Object.freeze({
     original: "原文来源",
     revision: "记忆修订",
-    photo: "照片时间线索"
+    photo: "照片时间线索",
+    oralHistory: "人工确认的口述来源"
   });
   const RESOLUTION_NAME = "timeCalibrationResolutionKind";
   const SOURCE_NAME = "timeCalibrationSourceKey";
@@ -687,10 +688,10 @@
     return {
       sourceKey,
       sourceKind,
-      title: boundedText(source.title || source.memoryTitle || source.name, 200),
+      title: boundedText(source.title || source.memoryTitle || source.eventTitle || source.name, 200),
       date,
       dateText: boundedText(source.dateText || source.displayDate || source.timeLabel, 100),
-      excerpt: boundedText(source.excerpt || source.sourceQuote || source.quote || source.description, 500)
+      excerpt: boundedText(source.excerpt || source.sourceQuote || source.transcriptExcerpt || source.quote || source.description, 500)
     };
   }
 
@@ -748,6 +749,7 @@
     if (["original", "memory", "record", "raw", "memory_original", "memory-current", "raw-claim"].includes(kind)) return "original";
     if (["revision", "memory_revision", "correction", "revised"].includes(kind)) return "revision";
     if (["photo", "image", "media", "photo_metadata", "exif"].includes(kind)) return "photo";
+    if (kind === "oral-history") return "oralHistory";
     return "";
   }
 

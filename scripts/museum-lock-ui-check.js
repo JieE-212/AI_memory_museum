@@ -61,6 +61,11 @@ check(!/gradient\s*\(/iu.test(css), "锁馆界面不使用渐变");
 
 check(source.includes("当前馆藏可写入；设置口令后可启用应用级写保护。") && source.includes("当前馆藏已启用应用级写保护；输入原口令可解除锁馆。"), "锁馆状态读取完成后不再停留在加载文案");
 
+check(
+  source.includes("ISOLATED_RECOVERY_CLEANUP_REQUIRED") && source.includes("ISOLATED_RECOVERY_CLEANUP_FAILED"),
+  "cleanup latch failures receive a dedicated beginner-readable explanation"
+);
+
 console.log(`Museum-lock UI checks passed: ${assertions} assertions.`);
 
 function fakeControl(disabled = false) {
