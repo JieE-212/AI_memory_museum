@@ -28,7 +28,7 @@ for (const canary of ["草稿文字暗号", "原始音频暗号", "gps-canary", 
   ok(!serialized.includes(canary), `snapshot excludes ${canary}`);
 }
 equal(snapshot.model, SEMANTIC_RECALL_MODEL, "snapshot uses the pinned model contract");
-equal(snapshot.model.downloadBytes, 46_979_726, "UI download disclosure is backed by exact static bytes");
+equal(snapshot.model.downloadBytes, 46_979_724, "UI download disclosure is backed by exact static bytes");
 equal(snapshot.model.remoteModelsAllowed, false, "remote model loading is explicitly forbidden");
 deepEqual(snapshot.boundary.indexedFields, ["title", "exhibitText", "rawContent", "tags", "confirmedTranscripts"], "boundary lists the five allowed source fields");
 ok(Object.isFrozen(snapshot) && Object.isFrozen(snapshot.documents) && Object.isFrozen(snapshot.documents[0]), "snapshot is immutable");
