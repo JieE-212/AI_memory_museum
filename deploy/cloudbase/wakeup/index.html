@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="时屿国内唤醒入口：按需唤醒临时展馆，准备完成后自动进入。" />
+    <meta name="theme-color" content="#f4f1ea" />
+    <meta name="robots" content="noindex, nofollow, noarchive" />
+    <meta name="referrer" content="no-referrer" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com; connect-src 'none'; font-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; manifest-src 'none'; base-uri 'none'; form-action 'none'" />
+    <title>时屿｜唤醒展馆</title>
+    <link rel="stylesheet" href="./wakeup.css?v=1" />
+    <script src="./wakeup.js?v=1" defer></script>
+  </head>
+  <body data-wakeup-state="idle">
+    <a class="skip-link" href="#mainContent">跳到主要内容</a>
+
+    <main class="wakeup-shell" id="mainContent">
+      <section class="wakeup-card" aria-labelledby="wakeupTitle">
+        <header class="brand" aria-label="时屿 TIME ISLE">
+          <span class="brand-mark" aria-hidden="true">屿</span>
+          <span>
+            <strong>时屿</strong>
+            <small>TIME ISLE</small>
+          </span>
+        </header>
+
+        <p class="eyebrow">Domestic wake-up entrance</p>
+        <h1 id="wakeupTitle">让展馆醒来，再从容进入。</h1>
+        <p class="lead">为了节省免费资源点，时屿在长时间无人访问时会暂时休息。你确认进入后，我们会做一轮有限唤醒，准备完成便自动带你入馆。</p>
+
+        <div class="status-panel" id="wakeupStatusPanel" aria-busy="false">
+          <span class="status-signal" aria-hidden="true"></span>
+          <div class="status-copy" role="status" aria-live="polite" aria-atomic="true">
+            <strong id="wakeupStatusTitle">展馆正在休息</strong>
+            <p id="wakeupStatusDetail">点击下方按钮后开始；页面不会在后台持续保活。</p>
+          </div>
+        </div>
+        <p class="progress" id="wakeupProgress">尚未发起连接</p>
+
+        <div class="actions">
+          <button class="button primary" id="wakeupButton" type="button">唤醒并进入</button>
+          <a class="button secondary" id="directLink" href="https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com/#reflect" rel="noreferrer">直接尝试打开</a>
+        </div>
+
+        <aside class="fallback-card" aria-labelledby="fallbackTitle">
+          <div>
+            <strong id="fallbackTitle">需要马上查看？</strong>
+            <p>若国内展馆暂时没有苏醒，可以打开同版本的全球备用 Demo。</p>
+          </div>
+          <a id="fallbackLink" href="https://ai-memory-museum-demo.vercel.app/#reflect" rel="noreferrer">打开 Vercel 备用入口</a>
+        </aside>
+
+        <details>
+          <summary>为什么不让服务一直运行？</summary>
+          <p>当前体验版只有有限资源点。保持最小实例为 0，可以避免常驻费用；每次点击最多进行 3 次静态资产探测，不创建定时心跳，也不会保存浏览记录。</p>
+        </details>
+
+        <p class="privacy-note">这是使用虚构示例数据的公开面试 Demo，请勿输入真实姓名、私人照片、录音或其他敏感内容。</p>
+
+        <noscript>
+          <p class="noscript-note">当前浏览器没有启用 JavaScript，无法自动完成唤醒。请使用上方“直接尝试打开”或 Vercel 备用入口。</p>
+        </noscript>
+      </section>
+
+      <footer>时屿 · 让记忆可整理，也让等待有解释。</footer>
+    </main>
+  </body>
+</html>

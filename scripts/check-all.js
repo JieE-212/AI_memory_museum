@@ -7,6 +7,7 @@ const root = path.resolve(__dirname, "..");
 const withoutSmoke = process.argv.includes("--without-smoke");
 const syntaxFiles = [
   "scripts/check-all.js",
+  "scripts/cloudbase-wakeup-check.js",
   "server.js",
   "database.js",
   "api/index.js",
@@ -143,6 +144,7 @@ const syntaxFiles = [
   "public/assets/share-privacy.js",
   "public/assets/capsules.js",
   "public/assets/pwa.js",
+  "deploy/cloudbase/wakeup/wakeup.js",
   "public/sw.js",
   "public/assets/app.js"
 ];
@@ -154,6 +156,7 @@ const checks = [
   "scripts/public-deployment-check.js",
   "scripts/tencent-deployment-assets-check.js",
   "scripts/cloudbase-deployment-assets-check.js",
+  "scripts/cloudbase-wakeup-check.js",
   "scripts/collection-import-check.js",
   "scripts/revision-database-check.js",
   "scripts/revision-backup-check.js",

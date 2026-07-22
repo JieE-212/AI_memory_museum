@@ -51,7 +51,7 @@ check("guide fixes the reviewed CloudBase CPU and memory size", guide.includes("
 check("guide discloses shared ephemeral visitor data", guide.includes("访客提交的有限临时内容在实例存活期间可能被其他访客看到") && guide.includes("缩容到 0") && guide.includes("不要输入真实姓名"));
 check("guide forbids AI keys and private persistence", guide.includes("不配置 `AI_API_KEY`") && guide.includes("不挂载持久卷") && guide.includes("不要添加持久磁盘、云数据库或第二个服务实例"));
 check("guide keeps the free trial behind a hard resource-point boundary", guide.includes("每月提供 3000 资源点") && guide.includes("“按量付费”必须始终保持关闭") && guide.includes("要求打开按量付费、充值或升级个人版") && guide.includes("停止条件"));
-check("guide keeps resume claims behind real-device acceptance", guide.includes("电脑、手机 Wi-Fi 和手机蜂窝网络") && guide.includes("才能把它更新到简历"));
+check("guide keeps resume claims behind real-device acceptance", guide.includes("电脑、手机 Wi-Fi 和手机蜂窝网络") && guide.includes("国内简历入口候选") && guide.includes("才能把静态地址更新到实际简历"));
 
 console.log(`CloudBase deployment asset checks passed: ${assertions} assertions.`);
 

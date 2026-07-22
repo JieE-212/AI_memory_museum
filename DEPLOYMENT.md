@@ -3,15 +3,16 @@
 线上 Demo（当前均为 V17.0.0）：
 
 ```text
-国内主入口（CloudBase）：https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com
+国内唤醒入口（CloudBase 静态托管）：https://shiyu-memory-demo-d3di282387d5c7-1456049152.tcloudbaseapp.com
+CloudBase 应用直连（诊断备用）：https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com
 全球备用（Vercel）：https://ai-memory-museum-demo.vercel.app
 ```
 
 腾讯云 Lighthouse 香港镜像的本地部署资产与安全交接见 [`deploy/tencent/README.md`](./deploy/tencent/README.md)。该镜像当前仍处于本地准备阶段，只有购买服务器、绑定 HTTPS 域名并完成真机与生产接口验收后，才能标记为已发布；现有 CloudBase 国内入口与 Vercel 全球备用入口不依赖该方案。
 
-腾讯云 CloudBase 云托管的受限公开 Demo 配置见 [`deploy/cloudbase/README.md`](./deploy/cloudbase/README.md)。服务 `time-isle-demo` 的部署 `002` 于 2026-07-22 12:39:01 从 Gitee `main@38d3450` 构建并发布，状态正常并承接 100% 流量；桌面公网 UI、版本/健康/Demo/记忆、设备语义、多视角、隔离恢复禁写与静态模型资产均已验收为 V17。实例固定为 `0–1` 个、规格为 `0.5` 核 / `1 GiB`，SQLite 与媒体仅写 `/tmp`，无持久卷或 API Key 注入。2026-07-20 的部署 `001 / 278f925`、`0.11 / 3000` 套餐读数和手机 Wi-Fi / 蜂窝入口可达结果属于 V14 历史记录；V17 手机真机与缩零冷启动仍待单独复核。
+腾讯云 CloudBase 云托管的受限公开 Demo 配置见 [`deploy/cloudbase/README.md`](./deploy/cloudbase/README.md)。服务 `time-isle-demo` 的部署 `002` 于 2026-07-22 12:39:01 从 Gitee `main@38d3450` 构建并发布，状态正常并承接 100% 流量；桌面公网 UI、版本/健康/Demo/记忆、设备语义、多视角、隔离恢复禁写与静态模型资产均已验收为 V17。实例固定为 `0–1` 个、规格为 `0.5` 核 / `1 GiB`，SQLite 与媒体仅写 `/tmp`，无持久卷或 API Key 注入。独立静态应用 `time-isle-wakeup-002` 已把 4 个本地审核文件部署到静态根路径 `/`；入口点击后有限唤醒云托管，不改变实例数量、付费、路由、Host 或数据边界。V17 手机真机与临时内容消失仍待单独复核。
 
-V17.0.0（schema 19）已于 2026-07-22 发布：本地 `npm.cmd run build`、`npm.cmd run check`、272 条真实 HTTP smoke、21/21 项 Playwright 三档门禁与桌面、390×844、320×700 真实浏览器验收均已通过；功能提交 `413f78640baad7eae6324ef14bc291f05325fbf6` 与热修复 `38d3450b9f26efdc59df4860317cdf9513e77e65` 已进入 GitHub、Gitee `main`，并完成 Vercel 与 CloudBase 生产部署。
+V17.0.0（schema 19）已于 2026-07-22 发布：本地 `npm.cmd run build`、`npm.cmd run check`、272 条真实 HTTP smoke、21/21 项 Playwright 三档门禁与桌面、390×844、320×700 真实浏览器验收均已通过；功能提交 `413f78640baad7eae6324ef14bc291f05325fbf6` 与热修复 `38d3450b9f26efdc59df4860317cdf9513e77e65` 已进入 GitHub、Gitee `main`，并完成 Vercel 与 CloudBase 生产部署。随后完成的国内入口可用性加固把三档浏览器门禁扩展为 24/24，并新增 24 项静态唤醒合同断言。
 
 本文保留 V7.1.0（schema 9）、V10.0.0（schema 14）与 V14.0.0（schema 19）作为历史发布阶段，V17.0.0 是当前发布。V10 于 2026-07-19、V14 于 2026-07-20 分别完成当时的发布闭环；实际部署状态始终以线上 `/api/version` 与 `/api/health` 返回值为准。
 
@@ -189,13 +190,14 @@ git push github main
 - 结构演练只接受完整 `.time-isle`，以 `structural-verification` 核对 manifest、哈希和引用；`actualRestorePerformed`、`isolatedRestorePerformed`、`disasterRecoveryProven` 与 `diskEncryptionProvided` 必须全部为 `false`。页面不得显示“恢复成功”。
 - `INTERVIEW_DEMO=true` 下，共忆文件输入/保存、锁馆切换与结构演练上传必须提前 403 且零写；镜片若展示，只能在合成/播种来源上做确定性只读预览。
 - V15 完整恢复必须写入一次性 SQLite/图片/声音副本，独立体检并确认销毁；公开 Demo 在读取归档正文前拒绝。V16 多视角固定 GET-only、零模型、零保存；V17 语义模型与运行库同源固定 SHA，真实 512 维 embedding 只留在 Worker 会话内存。
-- 2026-07-20，V14 历史发布基线通过 262 条 HTTP smoke 与 15/15 项 Playwright；2026-07-21，V17 发布基线通过 `npm.cmd run build`、`npm.cmd run check`、272 条真实 HTTP smoke、21/21 项三档 Playwright 门禁与 `git diff --check`，并完成桌面、390×844、320×700 真实浏览器验收。后续任何代码变更或再次发布前都必须重新运行对应门禁。
+- 2026-07-20，V14 历史发布基线通过 262 条 HTTP smoke 与 15/15 项 Playwright；2026-07-21，V17 发布基线通过 `npm.cmd run build`、`npm.cmd run check`、272 条真实 HTTP smoke、21/21 项三档 Playwright 门禁与 `git diff --check`。2026-07-22，静态唤醒入口把门禁扩展为 24/24，并通过 24 项有限重试、固定目标、零保活与三档响应式断言。后续任何代码变更或再次发布前都必须重新运行对应门禁。
 
 ## 部署后验证
 
-CloudBase 国内主入口已完成桌面公网首页与四个 API 验收：
+CloudBase 国内唤醒入口与应用直连分别核验：
 
 ```text
+https://shiyu-memory-demo-d3di282387d5c7-1456049152.tcloudbaseapp.com
 https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com
 https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com/api/version
 https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com/api/health
@@ -222,7 +224,7 @@ https://ai-memory-museum-demo.vercel.app/offline.html
 - `sw.js` 只应预缓存离线边界页、其样式和公开品牌 SVG，不得缓存首页、API、图片、声音、归档或用户内容。
 - `offline.html` 应可独立打开，并明确说明断网时不会展示私人馆藏。
 
-2026-07-22 已完成 CloudBase 部署 `002` 的 V17 桌面公网核验：`/api/version` 返回 `17.0.0`，`/api/health` 返回 `schemaVersion: 19 / interview-demo / ephemeral-sqlite / mock-fallback`，`/api/memories` 返回 4 条播种记忆。设备语义快照为 4 件、`46979724` 字节、远程模型关闭、零持久化；多视角合成投影为零外部模型、零持久化；隔离恢复探针返回 `403 / ISOLATED_RECOVERY_DEMO_READ_ONLY / bodyBytesRead: 0`，前后 stats 不变。资产清单与 Worker 返回 200，ONNX 文件返回 200 与 `24010842` 字节；`#reflect` 页面显示 `v17.0.0` 且控制台零错误。服务保持 `0.5` 核 / `1 GiB`、最小 `0` / 最大 `1`、无持久卷。V17 手机真机与缩零冷启动仍应单独复核。
+2026-07-22 已完成 CloudBase 部署 `002` 的 V17 桌面公网核验：`/api/version` 返回 `17.0.0`，`/api/health` 返回 `schemaVersion: 19 / interview-demo / ephemeral-sqlite / mock-fallback`，`/api/memories` 返回 4 条播种记忆。设备语义快照为 4 件、`46979724` 字节、远程模型关闭、零持久化；多视角合成投影为零外部模型、零持久化；隔离恢复探针返回 `403 / ISOLATED_RECOVERY_DEMO_READ_ONLY / bodyBytesRead: 0`，前后 stats 不变。资产清单与 Worker 返回 200，ONNX 文件返回 200 与 `24010842` 字节；`#reflect` 页面显示 `v17.0.0` 且控制台零错误。空闲后的首次 `/api/version` 曾由 CloudBase 网关返回 nginx 503，同一路径约 5 秒后恢复为 `17.0.0`，确认存在缩零冷启动窗口。静态应用 `time-isle-wakeup-002` 随后成功发布 4/4 文件，入口返回 200，桌面真实点击可用固定 192×192 PNG 探针唤醒并自动进入 `#reflect`。V17 手机真机与临时内容消失仍应单独复核。
 
 2026-07-20 曾完成 Vercel V14 历史生产核验：`/api/version` 返回 `14.0.0`，策展 sample、锁馆与结构演练的深度探针结果如下；这些数字不冒充 V17 已重跑的同名探针。`GET /api/curator-agent/sample` 返回：
 
@@ -261,4 +263,4 @@ ai-memory-museum-demo
 
 其他重复项目应删除或断开 Git 连接，避免浪费构建额度和误用域名。
 
-当前状态重申：V17.0.0 / schema 19 已于 2026-07-22 完成 GitHub、Gitee 双远端与 Vercel、CloudBase 双生产入口发布；功能提交为 `413f78640baad7eae6324ef14bc291f05325fbf6`，热修复为 `38d3450b9f26efdc59df4860317cdf9513e77e65`，CloudBase 当前生效部署为 `002`。CloudBase 继续作为国内简历主入口，Vercel 保留为全球备用；V17 手机真机、缩零冷启动与临时内容消失仍是独立待观察项。V14 的 `2dcce40 / 001 / 278f925 / 262 / 15/15` 与手机结果、V10 的 `7107ede / 249` 仅保留为历史发布基线。
+当前状态重申：V17.0.0 / schema 19 已于 2026-07-22 完成 GitHub、Gitee 双远端与 Vercel、CloudBase 双生产入口发布；功能提交为 `413f78640baad7eae6324ef14bc291f05325fbf6`，热修复为 `38d3450b9f26efdc59df4860317cdf9513e77e65`，CloudBase 当前生效云托管部署为 `002`，静态唤醒部署为 `time-isle-wakeup-002`。静态地址是新的国内简历入口候选，Vercel 保留为全球备用，云托管直链保留为诊断地址；V17 手机真机与临时内容消失仍是独立待观察项。V14 的 `2dcce40 / 001 / 278f925 / 262 / 15/15` 与手机结果、V10 的 `7107ede / 249` 仅保留为历史发布基线。
