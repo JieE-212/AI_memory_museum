@@ -4,7 +4,7 @@
 
 把散落的日记、聊天片段、照片与声音整理成一座可检索、可回顾的私人记忆岛屿；再把用户确认过的展览封存到未来，或生成口令加密、断网可读的单文件。
 
-- 国内唤醒入口（CloudBase 静态托管，桌面已验收、手机待复核）: https://shiyu-memory-demo-d3di282387d5c7-1456049152.tcloudbaseapp.com
+- 国内主入口（CloudBase 静态托管，桌面与手机 Wi-Fi / 蜂窝入口链路已验收）: https://shiyu-memory-demo-d3di282387d5c7-1456049152.tcloudbaseapp.com
 - CloudBase 应用直连（V17.0.0，诊断备用）: https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com
 - 全球备用 Demo（Vercel，V17.0.0）: https://ai-memory-museum-demo.vercel.app
 - GitHub（V17.0.0）: https://github.com/JieE-212/AI_memory_museum
@@ -14,7 +14,7 @@
 
 > V17 发布状态（2026-07-22）：**V17.0.0 / schema 19** 已发布。功能提交为 `413f78640baad7eae6324ef14bc291f05325fbf6`，语义静态资产披露热修复为 `38d3450b9f26efdc59df4860317cdf9513e77e65`；GitHub 与 Gitee 的 `main` 均已包含这两项代码提交。Vercel 已部署 V17；CloudBase 服务 `time-isle-demo` 的部署 `002` 于 2026-07-22 12:39:01 从 Gitee `main@38d3450` 创建，状态正常并承接 100% 流量。独立静态应用 `time-isle-wakeup` 的部署 `time-isle-wakeup-002` 随后成功上传 4 个审核文件，作为不会随 Node 实例缩零的国内唤醒入口。
 >
-> V17 生产验收：CloudBase 与 Vercel 均返回 `17.0.0 / schema 19 / interview-demo / ephemeral-sqlite / mock-fallback`。CloudBase 还完成首页、4 件播种记忆、设备语义快照、多视角合成投影、隔离恢复正文前 403、Worker、资产清单和 ONNX 文件核验，探针前后 stats 不变；公开页面显示 `v17.0.0` 且控制台零错误。可用性加固另通过 24 项永久断言与 24/24 项三档 Playwright 门禁；静态入口返回 200，点击后用最多 3 次固定 PNG 探针唤醒并自动进入 V17，不设置后台心跳。V17 尚未重新执行手机真机复核；2026-07-20 的手机 Wi-Fi / 蜂窝入口可达结果只属于 V14 历史发布。
+> V17 生产验收：CloudBase 与 Vercel 均返回 `17.0.0 / schema 19 / interview-demo / ephemeral-sqlite / mock-fallback`。CloudBase 还完成首页、4 件播种记忆、设备语义快照、多视角合成投影、隔离恢复正文前 403、Worker、资产清单和 ONNX 文件核验，探针前后 stats 不变；公开页面显示 `v17.0.0` 且控制台零错误。可用性加固另通过 24 项永久断言与 24/24 项三档 Playwright 门禁；静态入口返回 200，点击后用最多 3 次固定 PNG 探针唤醒并自动进入 V17，不设置后台心跳。2026-07-22，用户已在手机 Wi-Fi 与蜂窝网络下确认静态入口可达并成功进入 V17 主应用；该结果只代表入口链路验收，不扩大为所有移动端功能逐项验收。
 >
 > V18 门禁结论：Windows x64 上固定版本 SQLite3MC 原生驱动的可行性 canary 已通过，但缺少 Linux `node:24-bookworm-slim` 与 CloudBase 同等执行证据，因此总体 **NO-GO**，没有进入正式数据层。当前锁馆仍是应用层写门禁，SQLite、图片和声音没有实现静态加密；SQLite3MC 也不能表述为 Zetetic 官方 SQLCipher。
 
@@ -580,7 +580,7 @@ V10 新增 `curator-agent-check.js`、`curator-agent-backup-check.js` 与 `curat
 
 V14 在此基础上新增共忆、镜片、锁馆和结构演练的永久专项门禁，并把 schema 19 锁状态接入数据库健康。2026-07-20，发布基线已通过 `npm.cmd run build`、`npm.cmd run check`、262 条真实 HTTP smoke 与 15/15 项 Playwright 三档门禁；1265×720、390×844、320×700 的真实目视也确认了四导航、移动底栏、默认折叠、锁馆写保护、无横向溢出和页面控制台零错误。功能提交 `2dcce402b13f1d43c54c6a196b8e2273c9483eb3` 已进入 GitHub 与 Gitee 的 `main`；Vercel 生产版本、策展 sample 以及锁馆/结构演练两项零写探针均已按上文完成核验。
 
-V17.0.0 在 schema 19 上追加 V15 一次性真实隔离恢复、V16 多视角只读对照和 V17 设备内中文语义回忆。2026-07-21，`npm.cmd run build`、`npm.cmd run check`、272 条真实 HTTP smoke 与 21/21 项 Playwright 三档门禁均已通过；桌面、390×844、320×700 的真实浏览器验收覆盖四导航、默认折叠、固定移动底栏、长文本和无横向溢出。真实 q8 ONNX/WASM 推理已成功，专项门禁确认无第三方请求，准备与释放前后不新增 localStorage、sessionStorage、IndexedDB 或 Cache Storage。2026-07-22，以上代码经 `413f786` 与 `38d3450` 进入双远端，并完成 Vercel 与 CloudBase V17 生产核验；V17 手机真机复核仍待执行。
+V17.0.0 在 schema 19 上追加 V15 一次性真实隔离恢复、V16 多视角只读对照和 V17 设备内中文语义回忆。2026-07-21，`npm.cmd run build`、`npm.cmd run check`、272 条真实 HTTP smoke 与 21/21 项 Playwright 三档门禁均已通过；桌面、390×844、320×700 的真实浏览器验收覆盖四导航、默认折叠、固定移动底栏、长文本和无横向溢出。真实 q8 ONNX/WASM 推理已成功，专项门禁确认无第三方请求，准备与释放前后不新增 localStorage、sessionStorage、IndexedDB 或 Cache Storage。2026-07-22，以上代码经 `413f786` 与 `38d3450` 进入双远端，并完成 Vercel 与 CloudBase V17 生产核验；同日用户确认手机 Wi-Fi / 蜂窝静态入口链路均可进入 V17。
 
 真实 HTTP smoke 继续覆盖静态页面与安全头、DNS rebinding Host 拒绝、同源写入、Mock 整理、展品 CRUD、修订父链与并发冲突、字段与线索检索及讲解、设备语义只读快照、图片和语音链路、主题展览、回访及明确意愿、胶囊锁定、馆藏体检、只读归档验真与 future schema 拒绝；V9 还验证口述史创建/替换/撤回、`draft` 与 `uncertain` 不成为日期来源、day/range 成为事件级来源、校准进入 `needsReview`、声音免受误删、非空 JSON 要求 `.time-isle`、完整/脱敏 schema 13 恢复和公开 Demo 403。V10 追加验证策展 sample 零写、运行/取消/幂等、只读工具白名单、固定预算、逐项决定、来源变更、回执重放、schema 14 完整/脱敏历史恢复和 Demo 非只读 403。完整回归继续覆盖真实 q8 embedding 静态哈希、Worker 会话清理、格式与存储事务、严格脱敏、20 MiB 修订预算、64 MiB JSON 导入、崩溃暂存清扫、三层分享隐私投影、浏览器端加密信封和自包含阅读页。
 
@@ -613,4 +613,4 @@ V17.0.0 在 schema 19 上追加 V15 一次性真实隔离恢复、V16 多视角�
 - 系统不会自动发布展览、确认人物/事件关系或分享任何口述与媒体内容；这些动作继续由用户逐项确认。
 - 当前适合个人本地使用和面试演示；多用户认证、跨设备同步、云端持久数据库与云媒体存储不在 V17.0.0 范围内。
 
-V17.0.0 / schema 19 已于 2026-07-22 完成发布：功能提交 `413f78640baad7eae6324ef14bc291f05325fbf6` 与热修复 `38d3450b9f26efdc59df4860317cdf9513e77e65` 已进入 GitHub、Gitee `main`；Vercel 与 CloudBase 部署 `002` 均通过生产核验。CloudBase 静态唤醒地址当前是桌面已验收、手机待复核的国内简历入口候选，云托管直连保留为诊断地址，Vercel 保留为全球备用；缩零冷启动窗口已经观察到，V17 手机真机与临时内容消失仍待单独复核。V14 与 V10 的提交、smoke、生产探针和手机结果仅保留为历史证据。V18 停在总体 NO-GO 的可行性门禁，没有实现真正加密。更多说明见 [产品说明](./项目文档/产品说明.md)、[技术设计](./项目文档/技术设计.md)、[V15–V18 扩展路线](./项目文档/V15-V18扩展路线.md) 和 [V18.0 加密可行性门禁记录](./项目文档/V18.0加密可行性门禁记录.md)。部署步骤见 [DEPLOYMENT.md](./DEPLOYMENT.md)。
+V17.0.0 / schema 19 已于 2026-07-22 完成发布：功能提交 `413f78640baad7eae6324ef14bc291f05325fbf6` 与热修复 `38d3450b9f26efdc59df4860317cdf9513e77e65` 已进入 GitHub、Gitee `main`；Vercel 与 CloudBase 部署 `002` 均通过生产核验。CloudBase 静态唤醒地址已完成桌面与手机 Wi-Fi / 蜂窝入口链路验收，现作为国内简历主入口；云托管直连保留为诊断地址，Vercel 保留为全球备用。缩零冷启动窗口已经观察到，临时内容消失仍待单独复核。V14 与 V10 的提交、smoke、生产探针和手机结果仅保留为历史证据。V18 停在总体 NO-GO 的可行性门禁，没有实现真正加密。更多说明见 [产品说明](./项目文档/产品说明.md)、[技术设计](./项目文档/技术设计.md)、[V15–V18 扩展路线](./项目文档/V15-V18扩展路线.md) 和 [V18.0 加密可行性门禁记录](./项目文档/V18.0加密可行性门禁记录.md)。部署步骤见 [DEPLOYMENT.md](./DEPLOYMENT.md)。
