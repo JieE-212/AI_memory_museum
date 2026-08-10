@@ -33,7 +33,7 @@ check("backend network is internal", /backend:\n    internal: true/u.test(compos
 
 check("Caddy terminates TLS for the exact configured domain", /\{\$DOMAIN\}/u.test(caddy) && /email \{\$ACME_EMAIL\}/u.test(caddy) && /reverse_proxy app:3000/u.test(caddy) && /header_up Host \{host\}/u.test(caddy));
 check("environment template contains no model key or private path", /^DOMAIN=[^\r\n]+/mu.test(environment) && /^ACME_EMAIL=[^\r\n]+/mu.test(environment) && !/^(?:AI_API_KEY|DB_PATH|MEDIA_ROOT)=/mu.test(environment));
-check("deployment guide discloses shared temporary text and forbids private content", guide.includes("同一共享实例的其他访客看到") && guide.includes("绝不能输入私人或敏感内容") && guide.includes("不要把 `INTERVIEW_DEMO` 改为 `false`"));
+check("deployment guide documents global zero-write Demo and forbids private storage", guide.includes("所有非 `GET/HEAD` 请求会在读取正文前统一拒绝") && guide.includes("访客不能新增、修改或删除任何内容") && guide.includes("完整私人馆藏只能保留在自己的本地环境") && guide.includes("不要把 `INTERVIEW_DEMO` 改为 `false`"));
 check("deployment guide requires a bare domain and keeps Vercel as fallback", guide.includes("裸 ASCII/Punycode 完整域名") && guide.includes("Vercel 地址继续作为全球备用"));
 
 console.log(`Tencent deployment asset checks passed: ${assertions} assertions.`);

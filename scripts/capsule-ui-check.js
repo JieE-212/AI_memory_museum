@@ -9,6 +9,7 @@ const html = read("public/index.html");
 const css = read("public/capsules.css");
 const privacyCss = read("public/share-privacy.css");
 const app = read("public/assets/app.js");
+const lazyFeatures = read("public/assets/lazy-features.js");
 const capsules = read("public/assets/capsules.js");
 const cryptoSource = read("public/assets/capsule-crypto.js");
 const privacySource = read("public/assets/share-privacy.js");
@@ -60,7 +61,7 @@ ok(/id="capsulePassphraseConfirm"[^>]*autocomplete="new-password"[^>]*spellcheck
 ok(html.includes('id="capsuleTimezone" type="text" readonly'), "封存时区自动展示且不由自由文本伪造");
 ok(html.includes('id="capsuleOpensOn" type="date"'), "开启日使用原生日期输入");
 ok(html.includes("开启日期只是一道仪式门槛") && html.includes("并不是不可破解的密码学时间锁"), "页面明确日期不是密码学时间锁");
-for (const excluded of ["原图", "EXIF/GPS", "未确认文字稿", "Agent 整理日志", "内部 ID", "未勾选内容"]) {
+for (const excluded of ["原图", "EXIF/GPS", "未确认文字稿", "整理执行日志", "内部 ID", "未勾选内容"]) {
   ok(html.includes(excluded), `隐私说明明确物理排除${excluded}`);
 }
 for (const layer of ["第一层 · 无需口令即可看到", "第二层 · 输入口令后才能看到", "第三层 · 最后核对"]) {
@@ -71,11 +72,16 @@ ok(html.includes('id="sharePrivacyContent" tabindex="-1"') && html.includes('id=
 ok(html.includes("放弃本次分享并清空草稿") && privacySource.includes("下载后无法撤回"), "页面明确取消清理与下载后不可撤回边界");
 
 ok(
-  html.indexOf('/assets/capsule-crypto.js') < html.indexOf('/assets/share-privacy.js') &&
-  html.indexOf('/assets/share-privacy.js') < html.indexOf('/assets/capsules.js'),
-  "资源按加密模块、隐私编辑台、胶囊控制器顺序加载"
+  !html.includes('/assets/capsule-crypto.js') && !html.includes('/assets/share-privacy.js') && !html.includes('/assets/capsules.js'),
+  "胶囊三段脚本不进入首屏静态资源"
 );
-ok(html.indexOf('/assets/capsules.js') < html.indexOf('/assets/app.js'), "胶囊控制器先于主应用加载");
+ok(
+  ["capsule-crypto.js", "share-privacy.js", "capsules.js"].every((name) => app.includes(`lazyFeatures.loadScript("/assets/${name}"`)) &&
+  app.indexOf('lazyFeatures.loadScript("/assets/capsule-crypto.js"') < app.indexOf('lazyFeatures.loadScript("/assets/share-privacy.js"') &&
+  app.indexOf('lazyFeatures.loadScript("/assets/share-privacy.js"') < app.indexOf('lazyFeatures.loadScript("/assets/capsules.js"'),
+  "首次展开时仍严格按加密、隐私、胶囊控制器顺序加载"
+);
+ok(app.includes("capsuleModulePromise = null") && lazyFeatures.includes("promises.delete(source)") && lazyFeatures.includes("script.remove()"), "胶囊懒加载失败后可由用户重试");
 equal((html.match(/\/share-privacy\.css(?:\?[^"']*)?/g) || []).length, 1, "分享隐私样式只加载一次");
 ok(app.includes("TimeIsleCapsules?.createController") && app.includes("capsulesController?.setDemo(demo)"), "主应用接入胶囊控制器与 Demo 状态");
 ok(app.includes("capsulesController?.refresh()"), "馆藏变化会刷新胶囊工作区");

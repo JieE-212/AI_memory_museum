@@ -2,8 +2,9 @@
 
 (function initializeWakeupModule(scope) {
   const DEFAULT_CONFIG = Object.freeze({
-    primaryUrl: "https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com/#reflect",
-    fallbackUrl: "https://ai-memory-museum-demo.vercel.app/#reflect",
+    primaryUrl: "https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com/#collection",
+    technicalUrl: "https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com/#data-technical",
+    fallbackUrl: "https://ai-memory-museum-demo.vercel.app/#collection",
     probeUrl: "https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com/assets/time-isle-192.png",
     attemptDelaysMs: Object.freeze([0, 2200, 4800]),
     probeTimeoutMs: 7000,
@@ -76,7 +77,7 @@
     function finishReady(token) {
       elements.button.disabled = true;
       elements.button.textContent = "正在进入";
-      setState("ready", "展馆已经苏醒", "连接准备完成，正在带你进入讲解与回顾。", "已确认展馆静态资源可用");
+      setState("ready", "展馆已经苏醒", "连接准备完成，正在带你进入馆藏首页。", "已确认展馆静态资源可用");
       schedule(() => {
         if (token !== cycle) return;
         running = false;
@@ -148,7 +149,7 @@
       clearPending();
       if (!reset) return;
       elements.button.disabled = false;
-      elements.button.textContent = "唤醒并进入";
+      elements.button.textContent = "进入只读安全体验";
       setState("idle", "展馆正在休息", "点击下方按钮后开始；页面不会在后台持续保活。", "尚未发起连接");
     }
 
@@ -179,7 +180,7 @@
     const button = scope.document.getElementById("wakeupButton");
     const directLink = scope.document.getElementById("directLink");
     const fallbackLink = scope.document.getElementById("fallbackLink");
-    directLink.href = DEFAULT_CONFIG.primaryUrl;
+    directLink.href = DEFAULT_CONFIG.technicalUrl;
     fallbackLink.href = DEFAULT_CONFIG.fallbackUrl;
     button.addEventListener("click", () => controller.start());
     scope.addEventListener("pagehide", () => controller.stop({ reset: false }));

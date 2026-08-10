@@ -10,7 +10,7 @@ const wakeupUrl = pathToFileURL(path.join(root, "deploy", "cloudbase", "wakeup",
 const probePng = fs.readFileSync(path.join(root, "public", "assets", "time-isle-192.png"));
 const primaryOrigin = "https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com";
 
-test("CloudBase 唤醒入口保持有限尝试、明确兜底与三档响应式", async ({ page }) => {
+test("CloudBase 唤醒入口保持有限尝试、明确兜底与四档响应式", async ({ page }) => {
   const errors = [];
   const probeRequests = [];
   let probeReady = false;
@@ -39,7 +39,10 @@ test("CloudBase 唤醒入口保持有限尝试、明确兜底与三档响应式"
 
   await page.goto(wakeupUrl, { waitUntil: "load" });
   await expect(page.getByRole("heading", { name: "让展馆醒来，再从容进入。" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "唤醒并进入" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "进入只读安全体验" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "查看项目技术证据" })).toHaveAttribute("href", `${primaryOrigin}/#data-technical`);
+  await expect(page.getByText("公开只读面试 Demo", { exact: false })).toBeVisible();
+  await expect(page.getByText("设备语义模型也不会自动下载", { exact: false })).toBeVisible();
   await page.waitForTimeout(300);
   expect(probeRequests).toHaveLength(0);
 
@@ -51,17 +54,17 @@ test("CloudBase 唤醒入口保持有限尝试、明确兜底与三档响应式"
   expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
   expect(layout.buttonHeights.every((height) => height >= 44)).toBe(true);
 
-  await page.getByRole("button", { name: "唤醒并进入" }).click();
+  await page.getByRole("button", { name: "进入只读安全体验" }).click();
   await expect(page.getByRole("status")).toContainText("展馆暂时没有回应", { timeout: 25_000 });
   expect(probeRequests).toHaveLength(3);
   await page.waitForTimeout(500);
   expect(probeRequests).toHaveLength(3);
   await expect(page.getByRole("button", { name: "再次唤醒" })).toBeEnabled();
-  await expect(page.getByRole("link", { name: "打开 Vercel 备用入口" })).toHaveAttribute("href", "https://ai-memory-museum-demo.vercel.app/#reflect");
+  await expect(page.getByRole("link", { name: "打开 Vercel 备用入口" })).toHaveAttribute("href", "https://ai-memory-museum-demo.vercel.app/#collection");
 
   probeReady = true;
   await page.getByRole("button", { name: "再次唤醒" }).click();
-  await page.waitForURL(`${primaryOrigin}/#reflect`, { timeout: 10_000 });
+  await page.waitForURL(`${primaryOrigin}/#collection`, { timeout: 10_000 });
   expect(probeRequests).toHaveLength(4);
   const expectedColdStartErrors = errors.filter((message) => message.includes("status of 503"));
   const unexpectedErrors = errors.filter((message) => !message.includes("status of 503"));

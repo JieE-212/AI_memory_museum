@@ -111,6 +111,7 @@
       activeRequest = new AbortController();
       setBusy(true);
       setStatus(`正在校验并恢复 ${file.name}；任何损坏都会整批取消…`);
+      let restoredResult = null;
       try {
         const response = await fetchImpl("/api/archive/restore", {
           method: "POST",
@@ -121,12 +122,22 @@
         const result = await readJson(response);
         if (!response.ok) throw new Error(result.error || "完整备份恢复失败。");
         if (run !== session) return;
-        await options.onRestored?.(result);
+        restoredResult = result;
+        try {
+          await options.onRestored?.(result);
+        } catch (refreshError) {
+          if (run !== session) return;
+          setStatus(`备份已经恢复完成，但馆藏列表刷新失败：${message(refreshError)}。请刷新页面查看，不要重复恢复。`, false, true);
+          return;
+        }
         const mediaNote = result.media?.links ? `、${result.media.links} 条照片关联` : "";
         const puzzleNote = result.archaeology?.events ? `、${result.archaeology.events} 组时光拼图` : "";
         setStatus(`已原子恢复 ${result.imported || 0} 件展品${mediaNote}${puzzleNote}。`, false, true);
       } catch (error) {
-        if (run === session && error?.name !== "AbortError") setStatus(`恢复失败，未保留不完整数据：${message(error)}`, true);
+        if (run === session && error?.name !== "AbortError") {
+          if (restoredResult) setStatus(`备份已经恢复完成，但页面后续处理失败：${message(error)}。请刷新页面查看，不要重复恢复。`, false, true);
+          else setStatus(`恢复失败，未保留不完整数据：${message(error)}`, true);
+        }
       } finally {
         if (run === session) {
           activeRequest = null;

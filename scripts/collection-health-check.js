@@ -152,7 +152,7 @@ async function checkCuratorAgentClassification() {
   equal(blocker.summary.status, "blocker", "curator-agent structural failure blocks a healthy conclusion");
   equal(blocker.summary.database.status, "blocker", "curator-agent structural failure is a database blocker");
   equal(blocker.issues[0]?.code, "DATABASE_CURATOR_AGENT_STRUCTURE", "the blocker keeps a fixed non-sensitive code");
-  equal(blocker.issues[0]?.message, "策展助手的运行、步骤、提案或人工决定结构需要核对。", "the blocker uses fixed safe copy");
+  equal(blocker.issues[0]?.message, "确定性策展工作流的运行、步骤、提案或人工决定结构需要核对。", "the blocker uses fixed safe copy");
   blockerService.destroy();
 }
 

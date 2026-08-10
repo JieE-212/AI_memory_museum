@@ -44,6 +44,7 @@ throws("local mode cannot bind all IPv4 interfaces", () => resolveRuntimeDeploym
 throws("local mode cannot bind all IPv6 interfaces", () => resolveRuntimeDeployment({ BIND_HOST: "::" }), TypeError);
 throws("an arbitrary bind hostname fails fast", () => resolveRuntimeDeployment({ BIND_HOST: "memory.example" }), TypeError);
 throws("standalone public mode requires Demo protections", () => resolveRuntimeDeployment({ PUBLIC_DEPLOYMENT: "true", ALLOWED_HOSTS: "memory.example" }, { interviewDemo: false }), TypeError);
+throws("Vercel public mode also fails closed without Demo protections", () => resolveRuntimeDeployment({ VERCEL: "1" }, { interviewDemo: false }), TypeError);
 throws("standalone public mode requires an exact host allowlist", () => resolveRuntimeDeployment({ PUBLIC_DEPLOYMENT: "true", ALLOWED_HOSTS: "  " }, { interviewDemo: true }), TypeError);
 throws("a non-numeric port fails fast", () => resolveRuntimeDeployment({ PORT: "three-thousand" }), TypeError);
 throws("port zero fails fast", () => resolveRuntimeDeployment({ PORT: "0" }), TypeError);

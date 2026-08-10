@@ -231,7 +231,7 @@
 }
 
 .photo-retry {
-  min-height: 32px;
+  min-height: 44px;
   margin-top: 6px;
   padding: 4px 9px;
   border: 1px solid var(--danger);
@@ -329,7 +329,7 @@
 }
 
 .photo-editor-actions button {
-  min-height: 38px;
+  min-height: 44px;
   padding: 7px 11px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-small);
@@ -590,7 +590,7 @@
   }
 
   .memory-dialog:has(.memory-gallery) .dialog-header {
-    position: sticky;
+    position: static;
     z-index: 3;
     top: 0;
     padding-top: max(17px, env(safe-area-inset-top));
@@ -604,7 +604,7 @@
   }
 
   .memory-dialog:has(.memory-gallery) .dialog-actions {
-    position: sticky;
+    position: static;
     z-index: 3;
     bottom: 0;
     padding-bottom: max(16px, env(safe-area-inset-bottom));

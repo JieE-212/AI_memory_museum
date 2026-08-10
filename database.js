@@ -1430,12 +1430,14 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
   }
 
   function searchClues(query, options = {}) {
-    const limit = Math.min(50, Math.max(1, Number(options.limit) || 12));
+    const maximum = options.allowExpandedLimit === true ? 5000 : 50;
+    const limit = Math.min(maximum, Math.max(1, Number(options.limit) || 12));
     const mode = ["keyword", "semantic", "hybrid"].includes(options.mode) ? options.mode : "hybrid";
     const keywordTerms = buildSearchTerms(query);
     const ruleExpansionTerms = mode === "keyword" ? [] : buildRuleExpansionTerms(keywordTerms, query);
     const response = clueDatabase.searchClues(keywordTerms.join(" "), {
       limit,
+      allowExpandedLimit: options.allowExpandedLimit === true,
       ruleExpansions: ruleExpansionTerms
     });
     return {

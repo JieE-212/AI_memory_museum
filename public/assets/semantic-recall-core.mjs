@@ -148,8 +148,11 @@ function clip(value, maximum) {
 }
 
 function isVector(value) {
-  return (Array.isArray(value) || value instanceof Float32Array) && value.length === SEMANTIC_RECALL_DIMENSIONS &&
-    Array.from(value).every(Number.isFinite);
+  if ((!Array.isArray(value) && !(value instanceof Float32Array)) || value.length !== SEMANTIC_RECALL_DIMENSIONS) return false;
+  for (let index = 0; index < value.length; index += 1) {
+    if (!Number.isFinite(value[index])) return false;
+  }
+  return true;
 }
 
 function withinDocumentTextLimits(document) {

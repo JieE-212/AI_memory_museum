@@ -43,7 +43,7 @@ async function main() {
   check(dataStart >= 0 && installStart > dataStart && installStart < html.indexOf("</main>"), "安装入口只位于数据与项目页");
   check(/<details class="pwa-install-panel" id="pwaInstallPanel" hidden>/u.test(html), "安装入口默认隐藏且渐进披露");
   check(html.includes('id="pwaInstallStatus" role="status" aria-live="polite" aria-atomic="true"'), "安装状态通过单一 live region 宣告");
-  check(appScript > html.indexOf(`/assets/capsules.js?v=${pkg.version}`) && appScript < html.indexOf(`/assets/app.js?v=${pkg.version}`), "PWA 模块独立且在主应用前载入");
+  check(appScript >= 0 && appScript < html.indexOf(`/assets/app.js?v=${pkg.version}`), "PWA 模块独立且在主应用前载入");
 
   check(css.includes("min-height: 44px;") && css.includes("min-height: 52px;"), "安装入口保持触控边界");
   check(css.includes("@media (display-mode: standalone)") && ["safe-area-inset-top", "safe-area-inset-right", "safe-area-inset-left"].every((token) => css.includes(token)), "standalone 平板布局覆盖顶部与横向安全区");
@@ -68,7 +68,7 @@ async function main() {
   const shellBlock = /const SHELL_ASSETS = Object\.freeze\(\[([\s\S]*?)\]\);/u.exec(worker)?.[1] || "";
   check(shellBlock.includes("OFFLINE_URL") && shellBlock.includes(`"/pwa.css?v=${pkg.version}"`), "Service Worker 只预缓存离线边界壳");
   check(!/index\.html|assets\/app|manifest\.webmanifest|\/api\//u.test(shellBlock), "预缓存白名单不含主应用、Manifest 或 API");
-  check(worker.includes('request.mode === "navigate"') && worker.includes("fetch(request).catch(() => caches.match(OFFLINE_URL))"), "断网导航明确回退独立离线页");
+  check(worker.includes('request.mode === "navigate"') && worker.includes("[502, 503, 504]") && worker.includes("async function matchOffline()"), "断网与网关失败导航明确回退独立离线页");
   check(worker.includes('request.method !== "GET"') && worker.includes("url.origin !== self.location.origin"), "写请求与跨源请求完全旁路");
   check(worker.includes("PRIVATE_PATH_PREFIXES") && worker.includes('"/api/"'), "API 与媒体声音接口显式旁路");
   check(worker.includes("CACHEABLE_PATHS.has") && !worker.includes("cache.put") && !worker.includes("skipWaiting") && !worker.includes("clients.claim"), "Service Worker 不动态缓存响应也不强制接管旧页面");
@@ -81,7 +81,7 @@ async function main() {
 
   check(staticAssetPolicy.includes('".webmanifest": "application/manifest+json; charset=utf-8"'), "本地服务返回正确 Manifest 类型");
   check(staticAssetPolicy.includes('["index.html", "sw.js", "manifest.webmanifest"].includes(fileName)'), "本地服务禁止缓存 Worker 与 Manifest");
-  check(staticAssetPolicy.includes('serviceWorkerAllowed: fileName === "sw.js"') && server.includes('response.setHeader("Service-Worker-Allowed", "/")'), "本地服务显式允许根作用域");
+  check(staticAssetPolicy.includes('serviceWorkerAllowed: fileName === "sw.js"') && read("lib/static-response.js").includes('response.setHeader("Service-Worker-Allowed", "/")'), "本地服务显式允许根作用域");
   check(server.includes("worker-src 'self'; manifest-src 'self'"), "本地 CSP 显式限制 Worker 与 Manifest 来源");
   check(mediaApi.includes('response.setHeader("Cache-Control", "private, no-store")') && !mediaApi.includes("immutable"), "所有私人图片变体统一禁用浏览器缓存");
   const swHeaders = vercel.headers.find((entry) => entry.source === "/sw.js")?.headers || [];
@@ -98,7 +98,7 @@ async function checkChromiumInstallFlow() {
   await Promise.resolve();
   equal(harness.registerCalls.length, 1, "安全来源只注册一次 Service Worker");
   deepEqual(harness.registerCalls[0], { url: "/sw.js", options: { scope: "/", updateViaCache: "none" } }, "注册参数固定且可审计");
-  check(harness.elements.panel.hidden, "收到浏览器安装资格前入口不闪烁");
+  check(!harness.elements.panel.hidden && harness.elements.button.hidden && !harness.elements.instructions.hidden, "收到浏览器安装资格前先提供真实手动安装说明");
   let prevented = 0;
   let prompted = 0;
   await harness.window.dispatch("beforeinstallprompt", {
@@ -128,7 +128,8 @@ function checkIosManualFlow() {
 function checkUnsupportedOriginFlow() {
   const harness = createHarness({ location: { protocol: "http:", hostname: "192.168.1.2" } });
   const controller = pwa.createInstallController(harness.options);
-  check(harness.elements.panel.hidden && harness.registerCalls.length === 0, "不安全来源静默隐藏入口且不注册 Worker");
+  check(!harness.elements.panel.hidden && harness.elements.button.hidden && !harness.elements.instructions.hidden && harness.registerCalls.length === 0, "不安全来源保留手动安装说明但不注册 Worker");
+  check(harness.elements.status.textContent.includes("不能直接发起安装"), "不安全来源明确说明直接安装不可用");
   controller.destroy();
 }
 
@@ -146,14 +147,18 @@ async function checkWorkerRuntime() {
   const deletedCaches = [];
   const matched = [];
   const fetches = [];
+  let offlineAvailable = true;
+  let cacheMatchFailure = false;
+  let navigationResult = "throw";
   const cachesApi = {
     open: async () => ({ addAll: async (assets) => { addedAssets.push(...assets); } }),
-    keys: async () => ["unrelated-cache", "time-isle-public-shell-v7.0.0", "time-isle-public-shell-v7.2.0", "time-isle-public-shell-v7.3.0", "time-isle-public-shell-v8.0.0", "time-isle-public-shell-v9.0.0", "time-isle-public-shell-v10.0.0", `time-isle-public-shell-v${pkg.version}`],
+    keys: async () => ["unrelated-cache", "time-isle-public-shell-v7.0.0", "time-isle-public-shell-v7.2.0", "time-isle-public-shell-v7.3.0", "time-isle-public-shell-v8.0.0", "time-isle-public-shell-v9.0.0", "time-isle-public-shell-v10.0.0", "time-isle-public-shell-v17.1.1", `time-isle-public-shell-v${pkg.version}`],
     delete: async (name) => { deletedCaches.push(name); return true; },
     match: async (input) => {
+      if (cacheMatchFailure) throw new Error("cache storage unavailable");
       const pathname = typeof input === "string" ? input : new URL(input.url).pathname;
       matched.push(pathname);
-      if (pathname === "/offline.html") return "offline-response";
+      if (pathname === "/offline.html") return offlineAvailable ? "offline-response" : undefined;
       if (pathname === "/pwa.css") return "cached-pwa-css";
       return undefined;
     }
@@ -164,10 +169,13 @@ async function checkWorkerRuntime() {
   };
   const fetchImpl = async (request) => {
     fetches.push(request.url);
-    if (request.mode === "navigate") throw new Error("offline");
+    if (request.mode === "navigate") {
+      if (navigationResult === "throw") throw new Error("offline");
+      return navigationResult;
+    }
     return "network-response";
   };
-  vm.runInNewContext(worker, { self, caches: cachesApi, fetch: fetchImpl, URL, Set, Object, Promise }, { filename: "public/sw.js" });
+  vm.runInNewContext(worker, { self, caches: cachesApi, fetch: fetchImpl, URL, Set, Object, Promise, Response }, { filename: "public/sw.js" });
 
   let installWork;
   listeners.get("install")({ waitUntil: (promise) => { installWork = promise; } });
@@ -177,17 +185,36 @@ async function checkWorkerRuntime() {
   let activateWork;
   listeners.get("activate")({ waitUntil: (promise) => { activateWork = promise; } });
   await activateWork;
-  deepEqual(deletedCaches, ["time-isle-public-shell-v7.0.0", "time-isle-public-shell-v7.2.0", "time-isle-public-shell-v7.3.0", "time-isle-public-shell-v8.0.0", "time-isle-public-shell-v9.0.0", "time-isle-public-shell-v10.0.0"], "Worker 激活只删除自身旧版本缓存");
+  deepEqual(deletedCaches, ["time-isle-public-shell-v7.0.0", "time-isle-public-shell-v7.2.0", "time-isle-public-shell-v7.3.0", "time-isle-public-shell-v8.0.0", "time-isle-public-shell-v9.0.0", "time-isle-public-shell-v10.0.0", "time-isle-public-shell-v17.1.1"], "Worker 激活只删除自身旧版本缓存");
 
   const offlineNavigation = await dispatchWorkerFetch(listeners, { method: "GET", mode: "navigate", url: "https://demo.example/#collection" });
   equal(await offlineNavigation, "offline-response", "断网导航返回独立离线页");
   check(matched.includes("/offline.html"), "断网导航只读取离线页缓存");
+
+  navigationResult = { status: 503, marker: "gateway" };
+  equal(await dispatchWorkerFetch(listeners, { method: "GET", mode: "navigate", url: "https://demo.example/#collection" }), "offline-response", "503 导航在离线页存在时回退边界页");
+  navigationResult = { status: 404, marker: "not-found" };
+  const notFound = await dispatchWorkerFetch(listeners, { method: "GET", mode: "navigate", url: "https://demo.example/missing" });
+  equal(notFound.marker, "not-found", "404 导航保留真实响应");
+  offlineAvailable = false;
+  navigationResult = { status: 503, marker: "gateway-no-cache" };
+  const gatewayWithoutCache = await dispatchWorkerFetch(listeners, { method: "GET", mode: "navigate", url: "https://demo.example/#collection" });
+  equal(gatewayWithoutCache.marker, "gateway-no-cache", "离线页缺失时保留原 503 响应");
+  cacheMatchFailure = true;
+  navigationResult = { status: 504, marker: "gateway-cache-error" };
+  const gatewayWithCacheFailure = await dispatchWorkerFetch(listeners, { method: "GET", mode: "navigate", url: "https://demo.example/#collection" });
+  equal(gatewayWithCacheFailure.marker, "gateway-cache-error", "CacheStorage 失败时仍保留原 504 响应");
+  cacheMatchFailure = false;
+  navigationResult = "throw";
+  const uncachedOffline = await dispatchWorkerFetch(listeners, { method: "GET", mode: "navigate", url: "https://demo.example/#collection" });
+  equal(uncachedOffline.status, 503, "断网且离线页缺失时返回最小 503 边界");
+  check((await uncachedOffline.text()).includes("私人馆藏没有被放进离线缓存"), "最小 503 边界仍说明私人数据未缓存");
   equal(await dispatchWorkerFetch(listeners, { method: "GET", mode: "cors", url: "https://demo.example/api/memories" }), undefined, "API GET 完全旁路 Worker");
   equal(await dispatchWorkerFetch(listeners, { method: "POST", mode: "cors", url: "https://demo.example/api/memories" }), undefined, "写请求完全旁路 Worker");
   equal(await dispatchWorkerFetch(listeners, { method: "GET", mode: "cors", url: "https://cdn.example/photo.webp" }), undefined, "跨源媒体完全旁路 Worker");
   equal(await dispatchWorkerFetch(listeners, { method: "GET", mode: "cors", url: "https://demo.example/assets/app.js" }), undefined, "主应用脚本不进入离线缓存策略");
   equal(await dispatchWorkerFetch(listeners, { method: "GET", mode: "cors", url: `https://demo.example/pwa.css?v=${pkg.version}` }), "cached-pwa-css", "唯一公开壳样式可从缓存读取");
-  equal(fetches.length, 1, "只有导航尝试网络；旁路请求由浏览器默认处理");
+  equal(fetches.length, 6, "只有六次导航尝试网络；旁路请求由浏览器默认处理");
 }
 
 function dispatchWorkerFetch(listeners, request) {

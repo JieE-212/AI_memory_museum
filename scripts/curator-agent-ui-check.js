@@ -8,6 +8,7 @@ const html = read("public/index.html");
 const css = read("public/curator-agent.css");
 const source = read("public/assets/curator-agent.js");
 const app = read("public/assets/app.js");
+const lazyFeatures = read("public/assets/lazy-features.js");
 const capsules = read("public/assets/capsules.js");
 require(path.join(root, "public", "assets", "curator-agent.js"));
 
@@ -74,12 +75,13 @@ async function main() {
   equal(demo.requests.length, 1, "Demo 提交表单不会产生 POST 或 DELETE");
 
   check((html.match(/class="nav-button/g) || []).length === 4 && !html.includes('data-view="curator-agent"'), "策展助手不增加第五项导航");
-  check(html.indexOf('id="curatorAgentButton"') < html.indexOf('id="exhibitionStudioButton"') && html.includes("请策展助手提案") && html.includes("自己挑选展品"), "馆藏回顾首先提供助手提案并保留手工策展");
+  check(html.indexOf('id="moreRecallDetails"') < html.indexOf('id="curatorAgentButton"') && html.indexOf('id="curatorAgentButton"') < html.indexOf('id="exhibitionStudioButton"') && html.includes("运行确定性策展工作流") && html.includes("自己挑选展品"), "更多回看方式内先提供确定性工作流并保留手工策展");
   check(html.includes('id="curatorAgentDialog"') && !html.includes('<dialog class="memory-dialog curator-agent-dialog" id="curatorAgentDialog" open'), "策展工作区默认关闭");
   check(html.includes("最多 6 步 · 4 次只读查阅 · 2 秒执行 · 6 件来源"), "主界面始终展示清晰执行范围");
   check(html.includes('<details class="curator-agent-decisions"') && html.includes('<details class="curator-agent-technical"'), "决定与技术详情默认渐进披露");
-  check(html.indexOf("/curator-agent.css") < html.indexOf("/assets/curator-agent.js") && html.indexOf("/assets/curator-agent.js") < html.indexOf("/assets/app.js"), "策展资源在主应用前按序载入");
-  check(app.includes("TimeIsleCuratorAgent?.createController") && app.includes("demo: demo.interviewDemo") && app.includes("onOpenMemory: openMemory") && app.includes("onOpenShare:"), "主应用传入 Demo、展品回看与分享桥接");
+  check(html.includes("/curator-agent.css") && !html.includes("/assets/curator-agent.js") && app.includes('lazyFeatures.loadScript("/assets/curator-agent.js"'), "策展样式常驻且控制器只在首次展开时加载");
+  check(app.includes("TimeIsleCuratorAgent?.createController") && app.includes("state.demo?.interviewDemo !== false") && app.includes("onOpenMemory: openMemory") && app.includes("onOpenShare:"), "主应用以失信默认只读方式传入 Demo、展品回看与分享桥接");
+  check(app.includes("curatorModulePromise = null") && lazyFeatures.includes("promises.delete(source)") && lazyFeatures.includes("script.remove()"), "策展懒加载失败后可由用户重试");
   check(capsules.includes("async function openForExhibition") && capsules.includes("默认全不选") && capsules.includes("elements.createPanel.open = true"), "发布后只预选展览并继续走原隐私确认流程");
   check(source.includes('"If-Match"') && source.includes('"Idempotency-Key"') && source.includes("CURATOR_AGENT_SOURCE_STALE"), "决定请求覆盖并发、幂等和来源过期边界");
   check(source.includes("requestClose") && source.includes('/cancel`') && source.includes("RUNNING_STATUSES.has"), "关闭运行中对话框会尝试取消");

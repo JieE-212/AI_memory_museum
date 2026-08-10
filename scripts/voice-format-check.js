@@ -28,6 +28,8 @@ equal(detectVoiceMimeType(webm), "audio/webm", "WebM 探测不依赖文件名");
 const observedWebm = inspectVoice(makeWebm({ durationMs: null, clusterTimestamp: 100 }));
 equal(observedWebm.durationMs, 120, "缺少 Duration 时应从 Cluster 与 Opus 包推导时长");
 equal(inspectVoice(makeWebm({ unknownSegmentSize: true })).mimeType, "audio/webm", "应接受浏览器常见的未知长度 Segment");
+equal(inspectVoice(makeWebm({ unknownSegmentSize: true, unknownClusterSize: true })).mimeType, "audio/webm", "应接受 Chromium MediaRecorder 常见的流式未知长度 Cluster");
+equal(inspectVoice(makeWebm({ unknownSegmentSize: true, unknownClusterSize: true, multipleUnknownClusters: true })).mimeType, "audio/webm", "应按元素边界拆分多个流式未知长度 Cluster");
 equal(inspectVoice(new Uint8Array(webm)).codec, "opus", "Uint8Array 输入应受支持");
 equal(inspectVoice(webm, { declaredMimeType: "application/octet-stream" }).mimeType, "audio/webm", "通用二进制声明应允许真字节判型");
 
@@ -101,8 +103,14 @@ function makeWebm(options = {}) {
   if (options.includeAudioBlock !== false) {
     clusterParts.push(ebmlElement("a3", Buffer.from([0x81, 0x00, 0x00, 0x80, 0xf8])));
   }
-  const cluster = ebmlElement("1f43b675", Buffer.concat(clusterParts));
-  const segmentPayload = Buffer.concat([info, trackElement, cluster]);
+  const clusterPayload = Buffer.concat(clusterParts);
+  const cluster = options.unknownClusterSize
+    ? Buffer.concat([Buffer.from("1f43b675", "hex"), Buffer.from([0xff]), clusterPayload])
+    : ebmlElement("1f43b675", clusterPayload);
+  const extraCluster = options.multipleUnknownClusters
+    ? Buffer.concat([Buffer.from("1f43b675", "hex"), Buffer.from([0xff]), clusterPayload])
+    : Buffer.alloc(0);
+  const segmentPayload = Buffer.concat([info, trackElement, cluster, extraCluster]);
   const segment = options.unknownSegmentSize
     ? Buffer.concat([Buffer.from("18538067", "hex"), Buffer.from([0xff]), segmentPayload])
     : ebmlElement("18538067", segmentPayload);

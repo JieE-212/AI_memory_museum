@@ -11,8 +11,9 @@ const { setTimeout: delay } = require("node:timers/promises");
 const root = path.resolve(__dirname, "..");
 const authority = "demo.tencent.example";
 const marker = `${Date.now()}-${process.pid}`;
-const dbPath = path.join(os.tmpdir(), `ai-memory-museum-public-deployment-${marker}.sqlite`);
-const mediaRoot = path.join(os.tmpdir(), `ai-memory-museum-public-deployment-media-${marker}`);
+const tempRoot = path.join(os.tmpdir(), `ai-memory-museum-public-deployment-${marker}`);
+const dbPath = path.join(tempRoot, "ai-memory-museum-public-deployment.sqlite");
+const mediaRoot = path.join(tempRoot, "ai-memory-museum-public-deployment-media");
 let assertions = 0;
 
 run().catch((error) => {
@@ -25,10 +26,13 @@ async function run() {
   try {
     server = await startServer();
     const health = await requestJson(server.port, { path: "/api/health" });
-    check("standalone public health is available through the exact host", health.status === 200 && health.payload.ok === true && health.payload.version === "17.0.0" && health.payload.schemaVersion === 19);
+    check("standalone public health is available through the exact host", health.status === 200 && health.payload.ok === true && health.payload.version === "17.1.2" && health.payload.schemaVersion === 19);
 
     const status = await requestJson(server.port, { path: "/api/demo/status" });
-    check("standalone public runtime is the protected seeded Demo", status.status === 200 && status.payload.interviewDemo === true && status.payload.aiMode === "mock-fallback" && status.payload.seededExamples === 4 && status.payload.seededExhibitions === 1 && status.payload.seededTimeCalibrations === 1);
+    check("standalone public runtime is the protected seeded Demo", status.status === 200 && status.payload.interviewDemo === true && status.payload.aiMode === "public-mock" && status.payload.seededExamples === 4 && status.payload.seededExhibitions === 1 && status.payload.seededTimeCalibrations === 1);
+
+    const trust = await requestJson(server.port, { path: "/api/runtime/trust" });
+    check("standalone public runtime exposes one truthful read-only trust contract", trust.status === 200 && trust.payload.appVersion === "17.1.2" && trust.payload.schemaVersion === 19 && trust.payload.audience === "public-demo" && trust.payload.deployment?.kind === "public-container" && trust.payload.deployment?.public === true && trust.payload.deployment?.tenancy === "shared-anonymous-read-only" && trust.payload.storage?.visitorWritesAllowed === false && trust.payload.externalAi?.allowed === false && trust.payload.encryptionAtRest?.enabled === false);
 
     const unknownHost = await requestJson(server.port, { host: "attacker.example", path: "/api/health" });
     check("standalone public runtime rejects an unlisted host", unknownHost.status === 421 && unknownHost.payload.code === "HOST_NOT_ALLOWED");
@@ -41,9 +45,9 @@ async function run() {
       origin: `http://${authority}`,
       body: { id: "insecure-origin-probe", title: "不应保存", rawContent: "不应被读取。" }
     });
-    check("standalone public writes reject an HTTP Origin behind the HTTPS boundary", insecureOrigin.status === 403 && insecureOrigin.payload.code === "ORIGIN_MISMATCH");
+    check("standalone public writes still reject an insecure Origin before reaching any body-capable route", insecureOrigin.status === 403 && insecureOrigin.payload.code === "ORIGIN_MISMATCH");
 
-    const created = await requestJson(server.port, {
+    const blockedCreate = await requestJson(server.port, {
       method: "POST",
       path: "/api/memories",
       origin: `https://${authority}`,
@@ -56,11 +60,11 @@ async function run() {
         exhibitText: "用于确认核心文本仍受容量保护地临时可写。"
       }
     });
-    check("standalone public Demo preserves the bounded temporary text experience", created.status === 201 && created.payload.memory?.id === "public-deployment-probe");
+    check("standalone public Demo rejects same-origin memory creation before reading its body", blockedCreate.status === 403 && blockedCreate.payload.code === "INTERVIEW_DEMO_READ_ONLY" && blockedCreate.payload.bodyBytesRead === 0 && blockedCreate.payload.persistence?.wrote === false);
 
     const healthBefore = await requestJson(server.port, { path: "/api/health" });
     const lockBefore = await requestJson(server.port, { path: "/api/museum-lock" });
-    check("temporary probe increments only the expected memory count", healthBefore.payload.stats.memories === 5);
+    check("public Demo remains at the four fixed fictional memories", healthBefore.payload.stats.memories === 4);
 
     const lockProbe = await requestJson(server.port, {
       method: "POST",
@@ -69,7 +73,7 @@ async function run() {
       contentType: "text/plain; charset=utf-8",
       body: "TENCENT_LOCK_ZERO_WRITE_PROBE_DO_NOT_READ"
     });
-    check("standalone public lock probe is rejected before reading its body", lockProbe.status === 403 && lockProbe.payload.code === "MUSEUM_LOCK_DEMO_READ_ONLY" && lockProbe.payload.bodyBytesRead === 0);
+    check("standalone public lock probe is rejected by the global Demo guard before reading its body", lockProbe.status === 403 && lockProbe.payload.code === "INTERVIEW_DEMO_READ_ONLY" && lockProbe.payload.bodyBytesRead === 0 && lockProbe.payload.persistence?.wrote === false);
 
     const drillProbe = await requestJson(server.port, {
       method: "POST",
@@ -78,7 +82,7 @@ async function run() {
       contentType: "text/plain",
       body: "A".repeat(2048)
     });
-    check("standalone public recovery probe is rejected before reading its body", drillProbe.status === 403 && drillProbe.payload.code === "MUSEUM_LOCK_DEMO_READ_ONLY" && drillProbe.payload.bodyBytesRead === 0);
+    check("standalone public recovery probe is rejected by the global Demo guard before reading its body", drillProbe.status === 403 && drillProbe.payload.code === "INTERVIEW_DEMO_READ_ONLY" && drillProbe.payload.bodyBytesRead === 0 && drillProbe.payload.persistence?.wrote === false);
 
     const healthAfter = await requestJson(server.port, { path: "/api/health" });
     const lockAfter = await requestJson(server.port, { path: "/api/museum-lock" });
@@ -89,7 +93,7 @@ async function run() {
     server = await startServer();
     const restartedHealth = await requestJson(server.port, { path: "/api/health" });
     const restartedMemories = await requestJson(server.port, { path: "/api/memories" });
-    check("standalone public restart discards visitor text and restores four seeds", restartedHealth.payload.stats.memories === 4 && restartedMemories.payload.memories.length === 4 && !restartedMemories.payload.memories.some((memory) => memory.id === "public-deployment-probe"));
+    check("standalone public restart still exposes exactly four fixed seeds", restartedHealth.payload.stats.memories === 4 && restartedMemories.payload.memories.length === 4 && !restartedMemories.payload.memories.some((memory) => memory.id === "public-deployment-probe"));
 
     console.log(`Public deployment checks passed: ${assertions} assertions.`);
   } finally {
@@ -110,8 +114,9 @@ async function startServer() {
       PUBLIC_DEPLOYMENT: "true",
       INTERVIEW_DEMO: "true",
       DEMO_MODE: "",
-      BIND_HOST: "127.0.0.1",
+      BIND_HOST: "0.0.0.0",
       ALLOWED_HOSTS: authority,
+      DEPLOYMENT_PLATFORM: "public-container",
       PORT: String(port),
       DB_PATH: dbPath,
       MEDIA_ROOT: mediaRoot,
@@ -220,9 +225,13 @@ function stopServer(child) {
 }
 
 function cleanup() {
-  for (const target of [dbPath, `${dbPath}-shm`, `${dbPath}-wal`, mediaRoot]) {
-    fs.rmSync(target, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  const resolved = path.resolve(tempRoot);
+  const relative = path.relative(path.resolve(os.tmpdir()), resolved);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative) || !path.basename(resolved).startsWith("ai-memory-museum-public-deployment-")) {
+    throw new Error(`Refusing to clean an unsafe public-deployment temp path: ${resolved}`);
   }
+  fs.rmSync(resolved, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  if (fs.existsSync(resolved)) throw new Error(`Public-deployment temp cleanup did not finish: ${resolved}`);
 }
 
 function canonical(value) {

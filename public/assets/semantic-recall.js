@@ -6,7 +6,7 @@
   "use strict";
 
   const SNAPSHOT_PATH = "/api/semantic-recall/snapshot";
-  const WORKER_PATH = "/assets/semantic-recall-worker.js?v=17.0.0";
+  const WORKER_PATH = "/assets/semantic-recall-worker.js?v=17.1.2";
   const PHASES = new Set(["idle", "loading", "ready", "querying", "error"]);
 
   function createController(options = {}) {

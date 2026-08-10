@@ -1,6 +1,6 @@
 # 腾讯云 Lighthouse 香港公开 Demo
 
-这套配置用于把时屿部署为中国网络更易访问的匿名面试 Demo。它不是私人云馆藏：容器固定启用 `INTERVIEW_DEMO=true`，启动时只播种虚构数据，但访客仍可在事务硬上限内新增临时普通文字；这些文字在容器重启前可能被同一共享实例的其他访客看到，因此绝不能输入私人或敏感内容。SQLite 与临时媒体位于 512 MiB `tmpfs`，实例或容器重启后重新播种，只有 Caddy 的 TLS 与运行配置状态持久化。
+这套配置用于把时屿部署为中国网络更易访问的匿名面试 Demo。它不是私人云馆藏：容器固定启用 `INTERVIEW_DEMO=true`，只播种虚构数据，所有非 `GET/HEAD` 请求会在读取正文前统一拒绝，访客不能新增、修改或删除任何内容。SQLite 与临时媒体位于 512 MiB `tmpfs`，实例或容器重启后重新播种，只有 Caddy 的 TLS 与运行配置状态持久化。
 
 ## 推荐资源
 
@@ -58,16 +58,19 @@ Docker 构建阶段会运行 `npm run build`。应用容器以非 root 用户、
 docker compose --env-file deploy/tencent/tencent.env -f deploy/tencent/compose.yml logs --tail=100 app caddy
 curl -fsS https://你的公开域名/api/version
 curl -fsS https://你的公开域名/api/health
+curl -fsS https://你的公开域名/api/runtime/trust
 curl -fsS https://你的公开域名/api/demo/status
 ```
 
 必须确认：
 
-- `version: 14.0.0`、`schemaVersion: 19`、`mode: interview-demo`。
-- `storage: ephemeral-sqlite`、`aiMode: mock-fallback`。
+- `/api/version` 必须等于本次 [`release/v17.1.2.json`](../../release/v17.1.2.json) 声明的版本；不能继续使用历史硬编码版本。
+- `schemaVersion: 19`、`mode: interview-demo`。
+- `storage: ephemeral-sqlite`、`aiMode: public-mock`；固定问题的实际回答引擎仍在执行回执中标为 `local-rules`。
+- `/api/runtime/trust` 显示 `public-demo`、全局零写入、正文前拒绝、外部 AI 禁用和静态加密关闭，且不泄露 Key 或完整认证 URL。
 - 4 件示例、1 场展览、1 项时间校准。
-- 策展 sample 为 `synthetic / demo`，调用前后持久化 runs 为 0。
-- 锁馆与结构演练的虚构 `text/plain` 探针均返回 403、`bodyBytesRead=0`，前后 stats 与锁状态不变。
+- 确定性策展工作流 sample 为 `synthetic / demo`，调用前后持久化 runs 为 0。
+- 代表性 POST / PUT / PATCH / DELETE 的虚构 `text/plain` 探针均返回 403、`bodyBytesRead=0`，前后 stats、媒体、声音与锁状态不变。
 - 手机 Wi-Fi、移动/联通/电信蜂窝网络至少完成可用性抽测。
 
 腾讯域名通过验收后再更新简历；Vercel 地址继续作为全球备用，不要提前把尚未上线的腾讯地址写成已发布。
@@ -81,4 +84,6 @@ git pull --ff-only
 docker compose --env-file deploy/tencent/tencent.env -f deploy/tencent/compose.yml up -d --build
 ```
 
-每次更新都必须重新检查版本、健康、Demo 状态及零写边界。若新容器未通过健康检查，先查看日志并回到上一个 Git 提交重新构建；不要通过关闭 `INTERVIEW_DEMO` 或放宽 `ALLOWED_HOSTS` 绕过失败。
+每次更新都必须重新检查版本、健康、运行时信任合同及零写边界。若新容器未通过健康检查，先查看日志并回到上一个 Git 提交重新构建；不要通过关闭 `INTERVIEW_DEMO` 或放宽 `ALLOWED_HOSTS` 绕过失败。
+
+> 当前 Lighthouse 方案仍是未发布的备用资产。CloudBase 与 Vercel 入口不依赖它；不要购买服务器或把该方案写成已上线事实。

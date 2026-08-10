@@ -37,6 +37,7 @@
     let busyLoad = false;
     let busyAction = false;
     const sessionHidden = new Set();
+    const nextCursorByKind = new Map();
     const requests = new Map();
     const listeners = [];
     const intentController = global.TimeIsleRevisitIntents?.createController({
@@ -89,8 +90,9 @@
 
       try {
         for (const candidate of candidates) {
-          const payload = await requestJson("load", revisitUrl(candidate), {}, run);
+          const payload = await requestJson("load", revisitUrl(candidate, options.cursor || ""), {}, run);
           if (!isCurrent(run, generation)) return null;
+          nextCursorByKind.set(candidate, String(payload?.nextCursor || ""));
           const revisit = normalizeRevisit(payload, candidate, sessionHidden);
           if (!revisit) continue;
           activeKind = revisit.kind;
@@ -209,8 +211,9 @@
     }
 
     function renderAccess() {
+      elements.modeGroup.setAttribute("aria-busy", String(busyLoad));
       elements.modeGroup.querySelectorAll("[data-revisit-kind]").forEach((button) => {
-        button.disabled = busyAction;
+        button.disabled = busyAction || busyLoad;
       });
       elements.content.querySelectorAll("button").forEach((button) => {
         button.disabled = button.matches("[data-intent-demo-disabled]") || busyAction || busyLoad;
@@ -223,6 +226,7 @@
       const kind = normalizeKind(button.dataset.revisitKind);
       if (!kind) return;
       activeKind = kind;
+      nextCursorByKind.set(kind, "");
       current = null;
       renderModes();
       renderInitial();
@@ -230,12 +234,14 @@
 
     function handleContentClick(event) {
       if (event.target.closest("[data-revisit-start]")) {
+        nextCursorByKind.set(activeKind, "");
         load(activeKind, { userInitiated: true }).then((result) => {
           if (result) elements.content.querySelector("[data-revisit-title]")?.focus({ preventScroll: true });
         });
         return;
       }
       if (event.target.closest("[data-revisit-retry]")) {
+        nextCursorByKind.set(activeKind, "");
         load(activeKind, { userInitiated: true }).then((result) => {
           if (result) elements.content.querySelector("[data-revisit-title]")?.focus({ preventScroll: true });
         });
@@ -276,7 +282,7 @@
       const revisit = current;
       hideCurrent(revisit, "这件只在当前会话略过，正在按同一方式找下一件…");
       busyAction = false;
-      const next = await load(revisit.kind, { userInitiated: true });
+      const next = await load(revisit.kind, { userInitiated: true, cursor: nextCursorByKind.get(revisit.kind) || "" });
       if (next) elements.content.querySelector("[data-revisit-title]")?.focus({ preventScroll: true });
     }
 
@@ -301,12 +307,14 @@
       const kind = revisit.kind;
       const run = session;
       let writeError = "";
+      let wrote = false;
       try {
         if (!demo) {
           await requestJson("mutation", `/api/revisits/${encodeURIComponent(revisit.memory.id)}/${action}`, {
             method: "POST",
             body: JSON.stringify(requestContext(kind))
           }, run);
+          wrote = true;
         }
       } catch (error) {
         if (!isExpectedCancellation(error)) writeError = message(error);
@@ -316,20 +324,22 @@
         renderModes();
       }
 
-      const next = await load(kind, { userInitiated: true });
+      if (wrote) nextCursorByKind.set(kind, "");
+      const next = await load(kind, { userInitiated: true, cursor: wrote ? "" : nextCursorByKind.get(kind) || "" });
       if (!isCurrentSession(run)) return;
       if (writeError) setStatus(`当前记忆已在本次会话中略过，但回访记录未能写入：${writeError}`, true);
       if (focusNext && next) elements.content.querySelector("[data-revisit-title]")?.focus({ preventScroll: true });
     }
 
-    function revisitUrl(kind) {
+    function revisitUrl(kind, cursor = "") {
       const context = requestContext(kind);
       const query = new URLSearchParams({
         kind,
         localDate: context.localDate,
         timezone: context.timezone,
-        limit: String(Math.min(20, sessionHidden.size + 1))
+        limit: "1"
       });
+      if (cursor) query.set("cursor", cursor);
       return `/api/revisits?${query.toString()}`;
     }
 
@@ -345,6 +355,7 @@
       current = null;
       busyLoad = false;
       busyAction = false;
+      nextCursorByKind.clear();
       intentController?.invalidate();
       renderModes();
       renderInitial();
@@ -356,6 +367,7 @@
       demo = next;
       intentController?.setDemo(next);
       sessionHidden.clear();
+      nextCursorByKind.clear();
       const reload = loaded;
       invalidate();
       if (reload) load();

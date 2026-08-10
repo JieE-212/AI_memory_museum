@@ -21,14 +21,15 @@ const expectedKeys = [
   "NODE_ENV",
   "PUBLIC_DEPLOYMENT",
   "INTERVIEW_DEMO",
+  "DEPLOYMENT_PLATFORM",
   "BIND_HOST",
   "PORT",
   "ALLOWED_HOSTS",
   "DB_PATH",
   "MEDIA_ROOT"
 ];
-check("environment template contains only the eight reviewed runtime variables", canonical([...environment.keys()].sort()) === canonical([...expectedKeys].sort()));
-check("environment template hard-codes the protected public Demo boundary", environment.get("NODE_ENV") === "production" && environment.get("PUBLIC_DEPLOYMENT") === "true" && environment.get("INTERVIEW_DEMO") === "true");
+check("environment template contains only the nine reviewed runtime variables", canonical([...environment.keys()].sort()) === canonical([...expectedKeys].sort()));
+check("environment template hard-codes the protected public Demo boundary", environment.get("NODE_ENV") === "production" && environment.get("PUBLIC_DEPLOYMENT") === "true" && environment.get("INTERVIEW_DEMO") === "true" && environment.get("DEPLOYMENT_PLATFORM") === "cloudbase");
 check("environment template binds the CloudBase container on port 3000", environment.get("BIND_HOST") === "0.0.0.0" && environment.get("PORT") === "3000");
 check("host allowlist placeholder fails closed until explicitly replaced", environment.get("ALLOWED_HOSTS") === "REPLACE_WITH_EXACT_CLOUDBASE_HOST" && environment.get("ALLOWED_HOSTS").includes("_"));
 check("Demo database and media stay on temporary storage", environment.get("DB_PATH") === "/tmp/ai-memory-museum-cloudbase-demo.sqlite" && environment.get("MEDIA_ROOT") === "/tmp/ai-memory-museum-cloudbase-demo-media");
@@ -48,10 +49,10 @@ check("guide identifies the manifest as review-only rather than a CLI import", g
 check("guide requires exact HTTPS host configuration", guide.includes("环境 ID 和公开 hostname 不是同一个值") && guide.includes("不要填写 `https://`") && guide.includes("不能只改路由而忘记同步白名单"));
 check("guide requires root routing, scale-to-zero, one instance and TCP health", guide.includes("最小实例数为 `0`、最大实例数为 `1`") && guide.includes("根路由 `/`") && guide.includes("健康检查必须使用 `TCP:3000`"));
 check("guide fixes the reviewed CloudBase CPU and memory size", guide.includes("0.5 核 / 1 GiB") && guide.includes("约覆盖 50 小时实例存活时间"));
-check("guide discloses shared ephemeral visitor data", guide.includes("访客提交的有限临时内容在实例存活期间可能被其他访客看到") && guide.includes("缩容到 0") && guide.includes("不要输入真实姓名"));
+check("guide discloses a shared but globally read-only Demo", guide.includes("共享但全局只读") && guide.includes("所有非 `GET/HEAD` 请求") && guide.includes("不要输入真实姓名"));
 check("guide forbids AI keys and private persistence", guide.includes("不配置 `AI_API_KEY`") && guide.includes("不挂载持久卷") && guide.includes("不要添加持久磁盘、云数据库或第二个服务实例"));
 check("guide keeps the free trial behind a hard resource-point boundary", guide.includes("每月提供 3000 资源点") && guide.includes("“按量付费”必须始终保持关闭") && guide.includes("要求打开按量付费、充值或升级个人版") && guide.includes("停止条件"));
-check("guide records mobile entry acceptance without overstating coverage", guide.includes("电脑、手机 Wi-Fi 和手机蜂窝网络") && guide.includes("国内简历主入口") && guide.includes("手机 Wi-Fi / 蜂窝入口链路验收") && guide.includes("不冒充记录、馆藏、回望或录音等全部移动端功能逐项验收"));
+check("guide records mobile entry acceptance without overstating coverage", guide.includes("电脑、手机 Wi-Fi 和手机蜂窝网络") && guide.includes("国内简历主入口") && guide.includes("手机 Wi-Fi / 蜂窝入口链路验收") && guide.includes("不冒充全部移动端功能逐项验收"));
 
 console.log(`CloudBase deployment asset checks passed: ${assertions} assertions.`);
 

@@ -193,9 +193,9 @@
       if (demo && !fileState) await loadSample();
     }
 
-    function close() {
+    function close(options = {}) {
       if (elements.dialog.open) elements.dialog.close();
-      opener?.focus?.({ preventScroll: true });
+      if (options.restoreFocus !== false) opener?.focus?.({ preventScroll: true });
       opener = null;
     }
 
@@ -362,8 +362,9 @@
       try { item = JSON.parse(article.dataset.item || "{}"); } catch { return; }
       const compose = event.target.closest("[data-inbox-compose]");
       if (compose) {
-        onCompose(item);
-        close();
+        const composed = onCompose(item);
+        if (composed === false) return;
+        close({ restoreFocus: false });
         return;
       }
       const dismiss = event.target.closest("[data-inbox-dismiss]");

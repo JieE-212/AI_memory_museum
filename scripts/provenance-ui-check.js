@@ -61,8 +61,8 @@ equal(request.sourceKey, candidate.sourceKey, "source identity is preserved");
 equal(provenance.toSourceRequest(candidate, "invented").relationKind, "supports", "unknown relations cannot pass through");
 
 ok(html.includes(`/provenance.css?v=${pkg.version}`), "passport stylesheet is loaded");
-ok(html.includes(`/assets/provenance.js?v=${pkg.version}`), "passport controller is loaded");
-ok(html.indexOf("/assets/provenance.js") < html.indexOf("/assets/app.js"), "controller loads before the app");
+ok(!html.includes("/assets/provenance.js"), "passport controller stays off the cold path");
+ok(app.includes('lazyFeatures.loadScript("/assets/provenance.js"'), "passport controller loads when project-behind details are opened");
 ok(app.includes("TimeIsleProvenance?.renderPanel(memory)"), "memory detail renders the passport entry");
 ok(app.includes("provenanceController?.open(memory, elements.dialogBody)"), "memory detail hydrates the passport on demand");
 ok(app.includes("provenanceController?.close()"), "dialog cleanup aborts the passport session");

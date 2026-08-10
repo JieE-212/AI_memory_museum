@@ -7,10 +7,13 @@ const { defineConfig } = require("@playwright/test");
 const runToken = safeRunToken(process.env.BROWSER_GATE_RUN_TOKEN || "manual");
 const tempRoot = path.join(os.tmpdir(), `ai-memory-museum-browser-gate-${runToken}`);
 const baseURL = validBaseURL(process.env.BROWSER_GATE_BASE_URL) || "http://127.0.0.1:43117";
+const artifactRoot = process.env.BROWSER_GATE_ARTIFACT_DIR
+  ? path.resolve(process.env.BROWSER_GATE_ARTIFACT_DIR)
+  : path.join(tempRoot, "results");
 
 module.exports = defineConfig({
   testDir: path.join(__dirname, "specs"),
-  outputDir: path.join(tempRoot, "results"),
+  outputDir: artifactRoot,
   timeout: 45_000,
   expect: { timeout: 8_000 },
   fullyParallel: false,
@@ -25,6 +28,9 @@ module.exports = defineConfig({
     locale: "zh-CN",
     reducedMotion: "reduce",
     serviceWorkers: "block",
+    launchOptions: {
+      args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"]
+    },
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
     video: "off"
@@ -32,7 +38,8 @@ module.exports = defineConfig({
   projects: [
     { name: "desktop-1265", use: { viewport: { width: 1265, height: 720 } } },
     { name: "mobile-390", use: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } },
-    { name: "mobile-320", use: { viewport: { width: 320, height: 700 }, isMobile: true, hasTouch: true } }
+    { name: "mobile-320", use: { viewport: { width: 320, height: 700 }, isMobile: true, hasTouch: true } },
+    { name: "mobile-landscape-844", use: { viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true } }
   ]
 });
 

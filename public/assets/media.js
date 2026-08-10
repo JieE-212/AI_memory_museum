@@ -52,6 +52,7 @@
     let session = 0;
     let uploadQueue = Promise.resolve();
     let mediaMutation = false;
+    let externalBusy = false;
     let destroyed = false;
     const removedAssetIds = new Set();
     const listeners = [];
@@ -324,7 +325,7 @@
     }
 
     function retryItem(localId) {
-      if (demo || mediaMutation) return;
+      if (demo || isInteractionBusy()) return;
       const item = findItem(localId);
       if (!item || item.status !== "error" || !item.file) return;
       item.status = "local";
@@ -337,7 +338,7 @@
     }
 
     async function removeItem(localId) {
-      if (demo || mediaMutation) return;
+      if (demo || isInteractionBusy()) return;
       const index = mediaItems.findIndex((item) => item.localId === localId);
       if (index < 0) return;
       const [item] = mediaItems.splice(index, 1);
@@ -364,7 +365,7 @@
     }
 
     function updateSelected(field, value) {
-      if (demo || mediaMutation) return;
+      if (demo || isInteractionBusy()) return;
       const item = findItem(selectedLocalId);
       if (!item) return;
       item[field] = String(value || "");
@@ -372,7 +373,7 @@
     }
 
     function setCover(localId) {
-      if (demo || mediaMutation) return;
+      if (demo || isInteractionBusy()) return;
       const item = findItem(localId);
       if (!item) return;
       mediaItems.forEach((entry) => { entry.role = entry === item ? "cover" : "gallery"; });
@@ -382,7 +383,7 @@
     }
 
     function moveSelected(offset) {
-      if (demo || mediaMutation) return;
+      if (demo || isInteractionBusy()) return;
       const index = mediaItems.findIndex((item) => item.localId === selectedLocalId);
       const target = index + offset;
       if (index < 0 || target < 0 || target >= mediaItems.length) return;
@@ -425,19 +426,19 @@
         elements.photoCapturedAt.value = toDateTimeLocal(selected.capturedAt);
         elements.photoBackNote.value = selected.backNote || "";
         renderPhotoHints(selected);
-        elements.photoSetCoverButton.disabled = demo || mediaMutation || selected.role === "cover";
-        elements.photoMoveLeftButton.disabled = demo || mediaMutation || selected.position === 0;
-        elements.photoMoveRightButton.disabled = demo || mediaMutation || selected.position === mediaItems.length - 1;
-        elements.photoRemoveButton.disabled = demo || mediaMutation;
+        elements.photoSetCoverButton.disabled = demo || isInteractionBusy() || selected.role === "cover";
+        elements.photoMoveLeftButton.disabled = demo || isInteractionBusy() || selected.position === 0;
+        elements.photoMoveRightButton.disabled = demo || isInteractionBusy() || selected.position === mediaItems.length - 1;
+        elements.photoRemoveButton.disabled = demo || isInteractionBusy();
       } else {
         elements.photoHint.hidden = true;
         elements.photoHint.innerHTML = "";
       }
 
       const atLimit = mediaItems.length >= policy.maxPhotosPerMemory;
-      elements.photoInput.disabled = demo || mediaMutation || atLimit;
-      elements.photoEditor.disabled = demo || mediaMutation;
-      elements.privacyMode.disabled = demo || mediaMutation || mediaItems.length > 0;
+      elements.photoInput.disabled = demo || isInteractionBusy() || atLimit;
+      elements.photoEditor.disabled = demo || isInteractionBusy();
+      elements.privacyMode.disabled = demo || isInteractionBusy() || mediaItems.length > 0;
       const fileLabel = documentRef.querySelector(`label[for="${cssEscape(ids.photoInput)}"]`);
       if (fileLabel) {
         const disabled = elements.photoInput.disabled;
@@ -450,7 +451,7 @@
     }
 
     function renderPhotoHints(item) {
-      const markup = global.TimeIsleMediaIntelligence?.renderExifHints(item, { demo, busy: mediaMutation }) || "";
+      const markup = global.TimeIsleMediaIntelligence?.renderExifHints(item, { demo, busy: isInteractionBusy() }) || "";
       elements.photoHint.innerHTML = markup;
       elements.photoHint.hidden = !markup;
     }
@@ -667,6 +668,16 @@
       config.onBusyChange?.(mediaMutation);
     }
 
+    function setExternalBusy(value) {
+      externalBusy = Boolean(value);
+      render();
+      return externalBusy;
+    }
+
+    function isInteractionBusy() {
+      return mediaMutation || externalBusy;
+    }
+
     function setStatus(message, type = "notice") {
       elements.photoStatus.textContent = message || "";
       elements.photoStatus.classList.toggle("is-error", type === "error");
@@ -694,7 +705,7 @@
         count: mediaItems.length,
         selectedLocalId,
         demo,
-        busy: mediaMutation || mediaItems.some((item) => item.status === "uploading"),
+        busy: isInteractionBusy() || mediaItems.some((item) => item.status === "uploading"),
         ready: mediaItems.every((item) => item.status === "ready"),
         hasErrors: mediaItems.some((item) => item.status === "error"),
         items: mediaItems.map((item) => ({
@@ -794,6 +805,7 @@
       render,
       setPolicy,
       setDemo,
+      setExternalBusy,
       destroy
     });
   }

@@ -1,0 +1,112 @@
+name: V17.1 quality and evidence
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  root-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: git diff --check
+      - run: npm test
+
+  root-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: git diff --check
+      - run: npm test
+
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tests/browser/package-lock.json
+      - run: npm --prefix tests/browser ci
+      - run: npm --prefix tests/browser exec -- playwright install --with-deps chromium
+      - run: npm --prefix tests/browser test -- core.spec.cjs writable.spec.cjs wakeup.spec.cjs
+        env:
+          BROWSER_GATE_ARTIFACT_DIR: ${{ github.workspace }}/artifacts/playwright
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-gate-evidence
+          path: artifacts/playwright
+          if-no-files-found: ignore
+
+  semantic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tests/browser/package-lock.json
+      - run: npm --prefix tests/browser ci
+      - run: npm --prefix tests/browser exec -- playwright install --with-deps chromium
+      - run: npm run test:semantic-eval
+        env:
+          SEMANTIC_EVAL_REPORT_PATH: ${{ github.workspace }}/artifacts/semantic-recall-evidence.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: semantic-recall-evidence
+          path: artifacts/semantic-recall-evidence.json
+          if-no-files-found: error
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --tag time-isle:17.1.2 .
+
+  evidence:
+    if: always()
+    needs: [root-linux, root-windows, browser, semantic, container]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Generate candidate evidence manifest
+        run: node scripts/release-evidence-check.js --write artifacts/release-evidence-v17.1.2.json --require-passed-gates
+        env:
+          EVIDENCE_ROOT_LINUX: ${{ needs.root-linux.result }}
+          EVIDENCE_ROOT_WINDOWS: ${{ needs.root-windows.result }}
+          EVIDENCE_BROWSER: ${{ needs.browser.result }}
+          EVIDENCE_SEMANTIC: ${{ needs.semantic.result }}
+          EVIDENCE_CONTAINER: ${{ needs.container.result }}
+          EVIDENCE_RELEASE_COMMIT: ${{ github.sha }}
+          GITHUB_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-evidence-v17.1.2
+          path: artifacts/release-evidence-v17.1.2.json
+          if-no-files-found: error

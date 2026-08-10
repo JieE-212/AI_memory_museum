@@ -12,22 +12,23 @@ const robots = read("deploy/cloudbase/wakeup/robots.txt");
 const guide = read("deploy/cloudbase/README.md");
 const { DEFAULT_CONFIG, createWakeupController } = require(path.join(wakeupRoot, "wakeup.js"));
 const PRIMARY_ORIGIN = "https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com";
-const PRIMARY_URL = `${PRIMARY_ORIGIN}/#reflect`;
-const FALLBACK_URL = "https://ai-memory-museum-demo.vercel.app/#reflect";
+const PRIMARY_URL = `${PRIMARY_ORIGIN}/#collection`;
+const TECHNICAL_URL = `${PRIMARY_ORIGIN}/#data-technical`;
+const FALLBACK_URL = "https://ai-memory-museum-demo.vercel.app/#collection";
 let assertions = 0;
 
 check("wakeup package contains only four reviewed static files", canonical(fs.readdirSync(wakeupRoot).sort()) === canonical(["index.html", "robots.txt", "wakeup.css", "wakeup.js"]));
 check("wakeup page declares a narrow noindex document", html.includes('<html lang="zh-CN">') && html.includes('name="robots" content="noindex, nofollow, noarchive"') && robots.trim() === "User-agent: *\nDisallow: /");
 check("wakeup page uses only local external CSS and JavaScript", html.includes('href="./wakeup.css?v=1"') && html.includes('src="./wakeup.js?v=1"') && !/<style\b/iu.test(html) && !/<script(?![^>]*\bsrc=)[^>]*>/iu.test(html) && !/\sstyle\s*=/iu.test(html) && !/\son[a-z]+\s*=/iu.test(html));
 check("wakeup page has no input, form, iframe or automatic navigation", !/<(?:input|form|iframe)\b/iu.test(html) && !/http-equiv="refresh"/iu.test(html) && !/rel="(?:preload|prefetch|preconnect)"/iu.test(html));
-check("wakeup page exposes one polite atomic status and explicit actions", (html.match(/role="status"/gu) || []).length === 1 && html.includes('aria-live="polite"') && html.includes('aria-atomic="true"') && html.includes('id="wakeupButton"') && html.includes('id="directLink"') && html.includes('id="fallbackLink"'));
-check("wakeup page fixes the primary and fallback destinations", html.includes(`href="${PRIMARY_URL}"`) && html.includes(`href="${FALLBACK_URL}"`) && (html.match(/rel="noreferrer"/gu) || []).length === 2);
+check("wakeup page exposes one polite atomic status and two explicit routes", (html.match(/role="status"/gu) || []).length === 1 && html.includes('aria-live="polite"') && html.includes('aria-atomic="true"') && html.includes('id="wakeupButton"') && html.includes('id="directLink"') && html.includes('id="fallbackLink"') && html.includes("进入只读安全体验") && html.includes("查看项目技术证据"));
+check("wakeup page fixes the collection, technical and fallback destinations", html.includes(`href="${TECHNICAL_URL}"`) && html.includes(`href="${FALLBACK_URL}"`) && (html.match(/rel="noreferrer"/gu) || []).length === 2);
 check("wakeup CSP permits only the fixed image probe origin", html.includes("default-src 'none'") && html.includes("script-src 'self'") && html.includes("style-src 'self'") && html.includes(`img-src ${PRIMARY_ORIGIN}`) && html.includes("connect-src 'none'") && html.includes("form-action 'none'") && !html.includes("unsafe-inline") && !html.includes("unsafe-eval") && !html.includes("*;"));
-check("wakeup copy discloses resource and privacy boundaries", html.includes("最小实例为 0") && html.includes("最多进行 3 次") && html.includes("不会保存浏览记录") && html.includes("请勿输入真实姓名") && html.includes("Vercel 备用入口"));
+check("wakeup copy discloses resource and privacy boundaries", html.includes("最小实例为 0") && html.includes("最多进行 3 次") && html.includes("不会保存浏览记录") && html.includes("公开只读面试 Demo") && html.includes("设备语义模型也不会自动下载") && html.includes("Vercel 备用入口"));
 check("CloudBase guide keeps the static and container origins separate", guide.includes("time-isle-wakeup-002") && guide.includes("独立 hostname") && guide.includes("不修改云托管根路由") && guide.includes("最多请求 3 次") && guide.includes("国内简历主入口") && guide.includes("入口链路验收"));
 check("wakeup CSS stays clean, responsive and motion-aware", !/gradient\s*\(/iu.test(css) && !/@import/iu.test(css) && css.includes("min-width: 320px") && css.includes("min-height: 48px") && css.includes("@media (max-width: 600px)") && css.includes("@media (prefers-reduced-motion: reduce)") && css.includes("env(safe-area-inset-bottom)") && css.includes(":focus-visible"));
 
-check("wakeup configuration is fixed and bounded", DEFAULT_CONFIG.primaryUrl === PRIMARY_URL && DEFAULT_CONFIG.fallbackUrl === FALLBACK_URL && DEFAULT_CONFIG.probeUrl === `${PRIMARY_ORIGIN}/assets/time-isle-192.png` && canonical(DEFAULT_CONFIG.attemptDelaysMs) === canonical([0, 2200, 4800]) && DEFAULT_CONFIG.probeTimeoutMs === 7000 && DEFAULT_CONFIG.expectedWidth === 192 && DEFAULT_CONFIG.expectedHeight === 192);
+check("wakeup configuration is fixed and bounded", DEFAULT_CONFIG.primaryUrl === PRIMARY_URL && DEFAULT_CONFIG.technicalUrl === TECHNICAL_URL && DEFAULT_CONFIG.fallbackUrl === FALLBACK_URL && DEFAULT_CONFIG.probeUrl === `${PRIMARY_ORIGIN}/assets/time-isle-192.png` && canonical(DEFAULT_CONFIG.attemptDelaysMs) === canonical([0, 2200, 4800]) && DEFAULT_CONFIG.probeTimeoutMs === 7000 && DEFAULT_CONFIG.expectedWidth === 192 && DEFAULT_CONFIG.expectedHeight === 192);
 check("wakeup source avoids keepalive, storage and telemetry channels", !/(?:setInterval|WebSocket|EventSource|sendBeacon|fetch\s*\(|XMLHttpRequest|serviceWorker|localStorage|sessionStorage|indexedDB|caches\.)/u.test(script));
 check("wakeup source does not derive targets from visitor-controlled state", !/(?:location\.(?:search|hash)|URLSearchParams|document\.cookie|message\s*\(|postMessage)/u.test(script) && script.includes('referrerPolicy = "no-referrer"') && !script.includes("crossOrigin"));
 

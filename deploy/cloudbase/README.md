@@ -1,10 +1,10 @@
 # CloudBase 云托管公开 Demo
 
-这套配置用于把时屿部署到腾讯云 CloudBase 云托管，作为面试官和朋友可直接打开的匿名公开 Demo。它不是私人云备忘录：应用固定运行在 `INTERVIEW_DEMO=true`，使用虚构播种内容和模拟 AI 回退，不连接私人馆藏，也不配置付费 AI 密钥。
+这套配置用于把时屿部署到腾讯云 CloudBase 云托管，作为面试官和朋友可直接打开的匿名公开 Demo。它不是私人云备忘录：应用固定运行在 `INTERVIEW_DEMO=true`，只展示虚构播种内容，所有非 `GET/HEAD` 请求会在读取正文前统一拒绝，不连接私人馆藏，也不配置付费 AI 密钥。
 
-公开 Demo 仍是一个共享实例。访客提交的有限临时内容在实例存活期间可能被其他访客看到，而且可能在缩容到 0、重新部署、异常迁移或重启时随时消失。不要输入真实姓名、联系方式、简历隐私、私人照片、录音、日记或任何敏感内容。
+公开 Demo 是共享但全局只读的实例。访客不能新增、修改或删除内容；缩容、重启或重新部署只会重新得到同一组固定虚构样例。页面仍会提醒不要输入真实姓名、联系方式、私人照片、录音、日记或任何敏感内容，防止用户把公开地址误认成私人云空间。
 
-当前免费体验环境每月提供 3000 资源点，控制台“套餐用量”页会分别记录云托管 CPU、内存与外网出流量；“按量付费”必须始终保持关闭。本项目选择 0.5 核 / 1 GiB，计算消耗约为 59.5 点/实例小时，3000 点在不计流量时约覆盖 50 小时实例存活时间。服务已配置自动启停；2026-07-22 实际观察到空闲后首次请求返回 nginx 503、约 5 秒后恢复，确认存在缩零冷启动窗口，但临时写入消失仍待独立验收。若平台要求升级套餐、开启超限按量或创建常驻实例，立即停止，不继续发布。
+当前免费体验环境每月提供 3000 资源点，控制台“套餐用量”页会分别记录云托管 CPU、内存与外网出流量；“按量付费”必须始终保持关闭。本项目选择 0.5 核 / 1 GiB，计算消耗约为 59.5 点/实例小时，3000 点在不计流量时约覆盖 50 小时实例存活时间。服务已配置自动启停；2026-07-22 实际观察到空闲后首次请求返回 nginx 503、约 5 秒后恢复，确认存在缩零冷启动窗口。若平台要求升级套餐、开启超限按量或创建常驻实例，立即停止，不继续发布。
 
 ## 当前发布记录（2026-07-22）
 
@@ -16,7 +16,7 @@
 - 费用状态：环境仍显示“体验版”，本次部署没有开启付费升级或常驻实例；`0.11 / 3000` 是 2026-07-20 V14 桌面验收时的历史套餐读数，不作为 V17 当前用量。
 - 已完成 V17 桌面公网验收：首页显示 `v17.0.0` 且控制台零错误；`/api/version`、`/api/health`、`/api/demo/status`、`/api/memories` 为 `17.0.0 / schema 19 / interview-demo / ephemeral-sqlite / mock-fallback / 4` 条播种记忆。设备语义快照为 4 件、`46979724` 字节、远程模型关闭、零持久化；多视角为合成只读、零外部模型、零持久化；隔离恢复探针返回 `403 / ISOLATED_RECOVERY_DEMO_READ_ONLY / bodyBytesRead: 0`，前后 stats 不变。资产清单、Worker 与 `24010842` 字节 ONNX 文件均可访问。
 - 静态入口已完成桌面 200 响应、无控制台错误、真实点击唤醒并自动进入 V17；页面加载后不会自动请求云托管探针，只有点击后才执行最多 3 次固定 PNG 探针。
-- 2026-07-22 用户已确认 V17 静态入口在手机 Wi-Fi 与蜂窝网络下均可达并能成功进入主应用；这是入口链路验收，不代表所有移动端功能逐项通过。临时写入消失仍应继续单独验证。
+- 2026-07-22 用户已确认 V17 静态入口在手机 Wi-Fi 与蜂窝网络下均可达并能成功进入主应用；这是入口链路验收，不代表所有移动端功能逐项通过。V17.1 候选版改为全局零写入，不再以“临时内容最终消失”作为验收方式。
 
 ## 本方案的边界
 
@@ -25,7 +25,7 @@
 - SQLite 与媒体目录固定写入 `/tmp`，不挂载持久卷、不连接 CloudBase 数据库，也不导入本地 `data/`。
 - 公网只通过 CloudBase 的 HTTPS 入口和根路由 `/` 访问，容器不自行签发证书。
 - 健康检查必须使用 `TCP:3000`，不能改成 HTTP。平台内部 HTTP 探针的 Host 通常不是公开域名，会被应用的精确 Host 边界按设计拒绝。
-- 不配置 `AI_API_KEY`、`OPENAI_API_KEY` 或其他模型密钥。匿名公网服务使用真实模型密钥会产生滥用和费用风险；Demo 的 `mock-fallback` 已足够展示交互。
+- 不配置 `AI_API_KEY`、`OPENAI_API_KEY` 或其他模型密钥。匿名公网服务使用真实模型密钥会产生滥用和费用风险；Demo 的 `public-mock` 输入边界与 `local-rules` 执行回执已足够展示交互。
 
 [console-settings.json](./console-settings.json) 是供人和自动化复核的控制台配置清单，不是 CloudBase CLI 可导入文件。不要尝试把它上传为平台配置。
 
@@ -71,12 +71,13 @@ example-123456.service.tcloudbase.com
 
 ## 3. 填写环境变量
 
-参考 [cloudbase.env.example](./cloudbase.env.example)，在服务版本的环境变量界面逐项填写以下 8 个值：
+参考 [cloudbase.env.example](./cloudbase.env.example)，在服务版本的环境变量界面逐项填写以下 9 个值：
 
 ```env
 NODE_ENV=production
 PUBLIC_DEPLOYMENT=true
 INTERVIEW_DEMO=true
+DEPLOYMENT_PLATFORM=cloudbase
 BIND_HOST=0.0.0.0
 PORT=3000
 ALLOWED_HOSTS=你的准确CloudBase公开hostname
@@ -96,9 +97,9 @@ ALLOWED_HOSTS=example-123456.service.tcloudbase.com,memory.example.com
 
 ## 4. 构建、发布与路由
 
-选择仓库当前准备发布的 Git 提交创建版本。构建日志中必须看到根目录 `Dockerfile` 执行 `npm run build` 并通过永久门禁；运行时应使用 Dockerfile 的非 root `node` 用户。
+选择 V17.1.2 的运行时发布提交 A（或指向 A 的 `v17.1.2` Annotated Tag）创建版本，不得误选随后只改文档的 B。构建日志中必须看到根目录 `Dockerfile` 执行 `npm run build` 并通过永久门禁；运行时应使用 Dockerfile 的非 root `node` 用户。
 
-发布一个版本，把 100% 流量指向该版本，并确认根路由 `/` 指向 `time-isle-demo`。不要额外开放容器端口，不要创建绕过 CloudBase HTTPS 入口的公网地址。
+发布一个版本，记录 CloudBase 服务版本 ID 与实际 source commit=A；健康检查和生产探针通过后再把 100% 流量指向该版本，并确认根路由 `/` 指向 `time-isle-demo`。不要额外开放容器端口，不要创建绕过 CloudBase HTTPS 入口的公网地址。
 
 首次启动失败时按这个顺序排查：
 
@@ -116,6 +117,7 @@ ALLOWED_HOSTS=example-123456.service.tcloudbase.com,memory.example.com
 ```bash
 curl -fsS https://你的公开hostname/api/version
 curl -fsS https://你的公开hostname/api/health
+curl -fsS https://你的公开hostname/api/runtime/trust
 curl -fsS https://你的公开hostname/api/demo/status
 curl -fsS https://你的公开hostname/api/memories
 ```
@@ -123,27 +125,28 @@ curl -fsS https://你的公开hostname/api/memories
 必须确认：
 
 - 页面根路径可打开，静态资源没有 404，刷新各 hash 页面仍正常。
-- `/api/version` 返回当前发布版本；V17 当前应为 `17.0.0`，V14 历史基线为 `14.0.0`。该接口不作为 schema 版本的核验来源。
-- `/api/health` 返回 `ok: true`、`schemaVersion: 19`，并确认 `mode: interview-demo`、`storage: ephemeral-sqlite` 与 `aiMode: mock-fallback`。
-- `/api/demo/status` 显示 `interviewDemo: true`、`aiMode: mock-fallback`，并包含 4 件播种记忆、1 场播种展览、1 项时间校准。
+- `/api/version` 返回与发布合同一致的版本。未来发布 V17.1.2 时应为 `17.1.2`；线上仍未切换前的 `17.0.0` 是历史生产事实。该接口不作为 schema 版本的核验来源。
+- `/api/health` 返回 `ok: true`、`schemaVersion: 19`，并确认 `mode: interview-demo`、`storage: ephemeral-sqlite` 与 `aiMode: public-mock`。
+- `/api/runtime/trust` 返回 `audience: public-demo`、`visitorWritesAllowed: false`、`blockedBeforeBodyRead: true`、外部 AI 禁用和 `encryptionAtRest.enabled: false`；响应不得出现 Key、认证头或完整认证 URL。
+- `/api/demo/status` 显示 `interviewDemo: true`、`aiMode: public-mock`，并包含 4 件播种记忆、1 场播种展览、1 项时间校准。
 - `/api/memories` 返回 4 条播种记忆；它与 `/api/health` 一起用于交叉核对当前数据库状态。
-- 仅用无隐私的临时文本验证一次新增；不要上传真实图片或录音。确认后等待一次缩容到 0 或重新部署，冷启动应恢复播种数据且临时内容消失。
-- 分别用电脑、手机 Wi-Fi 和手机蜂窝网络访问。至少验证首页、记录、馆藏、回望以及录音权限提示。
+- 以无隐私的合成正文探测代表性 POST / PUT / PATCH / DELETE，必须统一返回 403、`bodyBytesRead: 0`，并确认前后数据库、媒体、声音统计及四件展品完全不变。
+- 分别用电脑、手机 Wi-Fi 和手机蜂窝网络访问。至少验证馆藏、记录、找回、我的四视图与持续信任状态条；公开 Demo 不请求录音权限。
 
-CloudBase 静态地址现作为国内简历主入口，云托管应用直连保留为诊断备用，Vercel V17 保留为全球备用入口。当前 V17 已完成桌面 UI、接口、模型资产、静态唤醒链路与手机 Wi-Fi / 蜂窝入口链路验收；该手机结果只证明入口可达并能进入主应用，不冒充记录、馆藏、回望或录音等全部移动端功能逐项验收。缩零后的首次冷启动窗口已经观察到，临时内容消失仍是独立运维待办，完成前不得声称恢复场景已经验收。
+CloudBase 静态地址现作为国内简历主入口，云托管应用直连保留为诊断备用，Vercel V17 保留为全球备用入口。当前 V17 已完成桌面 UI、接口、模型资产、静态唤醒链路与手机 Wi-Fi / 蜂窝入口链路验收；该手机结果只证明入口可达并能进入主应用，不冒充全部移动端功能逐项验收。V17.1 发布后以“从未读取、从未写入”的机器探针验证 Demo，不再测试临时内容消失。
 
 ## 6. 更新与回退
 
-每次更新都从一个已通过仓库门禁的 Git 提交构建新版本，先保留旧版本，再切换流量。切换后重新检查版本、健康状态、Demo 状态、精确 Host 和临时数据边界。
+每次更新都从已通过仓库门禁的运行时提交构建新版本，先保留旧版本，再切换流量。V17.1.2 固定使用 A/Tag，B 不重建运行时、不切换生产流量。切换后重新检查版本、健康状态、Demo 状态、精确 Host 和临时数据边界。
 
 若新版本异常，把 100% 流量切回最后一个已验收版本；不要把最大实例数提高到 2，也不要把 `/tmp` 改成私人持久存储。免费体验到期前应在腾讯云费用中心和 CloudBase 套餐页确认续期规则，避免自动进入付费资源。
 
 ## 7. 独立静态唤醒入口
 
-静态入口的唯一部署源是 [`deploy/cloudbase/wakeup/`](./wakeup/)；该目录必须只包含 `index.html`、`wakeup.css`、`wakeup.js` 与 `robots.txt`。它部署在 CloudBase 静态网站托管的独立 hostname，不修改云托管根路由、`ALLOWED_HOSTS`、实例数量或 API 安全策略。
+静态入口的唯一部署源是运行时提交 A 中的 [`deploy/cloudbase/wakeup/`](./wakeup/)；该目录必须只包含 `index.html`、`wakeup.css`、`wakeup.js` 与 `robots.txt`。它部署在 CloudBase 静态网站托管的独立 hostname，不修改云托管根路由、`ALLOWED_HOSTS`、实例数量或 API 安全策略；文档提交 B 不作为静态构建源。
 
 入口不会在加载时唤醒服务。只有访客明确点击“唤醒并进入”后，页面才会按固定延迟最多请求 3 次云托管的公开 `time-isle-192.png`；只有返回图片且尺寸严格为 192×192 才跳转。503、超时、错误图片或解码失败都会继续有限退避，三次失败后停止。页面脚本不使用 `fetch`，不读取或写入 Cookie、Storage，不注册 Service Worker，也不建立 WebSocket、遥测或持续心跳；标准跨域图片请求仍可能按浏览器策略携带目标站自身 Cookie，因此不能把它描述为“无凭据请求”，也不能把图片可用性探针描述成 API 健康检查。
 
-控制台部署值固定为：项目名 `time-isle-wakeup`、框架“其他”、目标目录留空、安装命令留空、构建命令留空、构建产物 `./`、部署路径 `/`。部署前必须通过 `npm.cmd run build`、`node scripts/cloudbase-wakeup-check.js` 和 `npm.cmd run test:browser`；日志必须确认仅上传 4 个文件且失败数为 0。若静态托管要求按量付费、升级、充值、常驻实例或额外服务，立即停止。
+控制台部署值固定为：项目名 `time-isle-wakeup`、框架“其他”、目标目录留空、安装命令留空、构建命令留空、构建产物 `./`、部署路径 `/`。部署前必须通过 `npm.cmd run build`、`node scripts/cloudbase-wakeup-check.js` 和 `npm.cmd run test:browser`；日志必须确认仅上传 4 个文件且失败数为 0，并记录静态版本 ID 与 source commit=A。唤醒成功后进入 `#collection`，页面提供“进入只读安全体验”和“查看项目技术证据”两条路径，不自动下载设备语义模型。若静态托管要求按量付费、升级、充值、常驻实例或额外服务，立即停止。
 
-CloudBase 控制台同样提示静态默认域名只适合开发测试，并不提供正式商业 SLA。桌面与手机 Wi-Fi / 蜂窝入口链路现已通过，因此可把该地址写入简历；对外口径必须保留“共享临时 Demo”和“入口链路验收”边界，不得延伸为商业 SLA、持久存储或全部移动端功能逐项验收。
+CloudBase 控制台同样提示静态默认域名只适合开发测试，并不提供正式商业 SLA。桌面与手机 Wi-Fi / 蜂窝入口链路现已通过，因此可把该地址写入简历；对外口径必须保留“公开只读 Demo”和“入口链路验收”边界，不得延伸为商业 SLA、私人持久存储或全部移动端功能逐项验收。

@@ -179,6 +179,30 @@ async function checkApi() {
 
   const queryAlias = await invoke(api, "GET", "/api/search?query=%E8%A5%BF%E6%B9%96");
   equal(queryAlias.response.payload.query, "西湖", "兼容 query 参数");
+
+  const pagedStore = {
+    ...store,
+    searchClues() {
+      return {
+        usedFallback: false,
+        results: [
+          { memory: { id: "page_new", title: "较新", hall: "daily", date: "2026-06-02", importance: 2 }, score: 4 },
+          { memory: { id: "page_other", title: "别厅", hall: "friends", date: "2024-06-02", importance: 5 }, score: 3 },
+          { memory: { id: "page_old", title: "较早", hall: "daily", date: "2025-06-02", importance: 1 }, score: 2 }
+        ]
+      };
+    }
+  };
+  const pagedApi = makeApi(pagedStore);
+  const pageOne = await invoke(pagedApi, "GET", "/api/search?q=%E6%B9%96&hall=daily&sort=oldest&limit=1");
+  equal(pageOne.response.payload.total, 2, "搜索先按展厅筛选再分页");
+  equal(pageOne.response.payload.results[0].memory.id, "page_old", "搜索先排序再分页");
+  check(Boolean(pageOne.response.payload.nextCursor), "搜索第一页返回 opaque cursor");
+  const pageTwo = await invoke(pagedApi, "GET", `/api/search?q=%E6%B9%96&hall=daily&sort=oldest&limit=1&cursor=${encodeURIComponent(pageOne.response.payload.nextCursor)}`);
+  equal(pageTwo.response.payload.results[0].memory.id, "page_new", "搜索 cursor 继续下一件且无重复");
+  equal(pageTwo.response.payload.nextCursor, null, "搜索末页不再返回 cursor");
+  expectError(await invoke(pagedApi, "GET", `/api/search?q=%E6%B9%96&hall=friends&sort=oldest&limit=1&cursor=${encodeURIComponent(pageOne.response.payload.nextCursor)}`), 400, "CLUE_CURSOR_INVALID", "搜索 cursor 不可跨展厅复用");
+  expectError(await invoke(pagedApi, "GET", `/api/search?q=%E6%B2%B3&hall=daily&sort=oldest&limit=1&cursor=${encodeURIComponent(pageOne.response.payload.nextCursor)}`), 400, "CLUE_CURSOR_INVALID", "搜索 cursor 不可跨问题复用");
   expectError(await invoke(api, "POST", "/api/search?q=x"), 405, "CLUE_METHOD_NOT_ALLOWED", "搜索错误方法");
   expectError(await invoke(api, "GET", "/api/search?q=%20%20"), 400, "CLUE_QUERY_REQUIRED", "空搜索词");
   expectError(await invoke(api, "GET", `/api/search?q=${encodeURIComponent("记".repeat(161))}`), 400, "CLUE_QUERY_TOO_LONG", "过长搜索词");

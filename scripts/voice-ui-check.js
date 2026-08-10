@@ -117,6 +117,15 @@ async function main() {
   check(!cancellationHarness.controller.getState().recording, "取消后晚到的麦克风流不得开始录音");
   check(cancellationHarness.elements.voiceStatus.textContent.includes("已取消等待"), "晚到结果不得覆盖取消反馈");
 
+  const lateLeaveAttempt = cancellationHarness.elements.voiceRecordButton.dispatch("click", { target: cancellationHarness.elements.voiceRecordButton });
+  await Promise.resolve();
+  const permissionLeave = await cancellationHarness.controller.prepareForViewLeave("keep");
+  check(permissionLeave.permissionCancelled && !permissionLeave.activeRecording, "离页保护应立即取消仍在等待的权限请求");
+  resolveCancelledPermission({ getTracks: () => [{ stop: () => { lateTrackStops += 1; } }] });
+  await lateLeaveAttempt;
+  equal(lateTrackStops, 2, "离页后晚到的权限流也必须立即关闭");
+  check(!cancellationHarness.controller.getState().recording, "离页后晚到的权限流不得重新开启采集");
+
   const permissionQueue = [];
   ControlledRecorder.instances.length = 0;
   const raceHarness = createHarness({
@@ -148,6 +157,96 @@ async function main() {
   check(!raceHarness.controller.getState().recording && raceHarness.controller.getState().count === 0, "旧 stop 事件不得恢复或生成声音草稿");
   equal(raceHarness.elements.voiceStatus.textContent, "", "旧 stop 事件不得覆盖新会话状态");
 
+  ControlledRecorder.instances.length = 0;
+  let recordingTrackStops = 0;
+  let uploadNumber = 0;
+  const recordingHarness = createHarness({
+    demo: false,
+    secure: true,
+    MediaRecorder: ControlledRecorder,
+    navigator: {
+      mediaDevices: {
+        getUserMedia: async () => ({ getTracks: () => [{ stop: () => { recordingTrackStops += 1; } }] })
+      }
+    },
+    fetch: async (url, options = {}) => {
+      const method = options.method || "GET";
+      if (method === "GET" && url.endsWith("/voices")) return responseJson({
+        memoryId: "memory-recording",
+        voices: [makeVoice("confirmed", "原有声音仍在", "原有声音")],
+        count: 1,
+        policy: { maxBytes: 12 * 1024 * 1024, maxDurationMs: 180_000, maxVoicesPerMemory: 3, acceptedMimeTypes: ["audio/webm", "audio/mp4"] }
+      });
+      if (method === "POST" && url.startsWith("/api/voice/uploads?")) {
+        uploadNumber += 1;
+        return responseJson({ asset: {
+          id: `voice-recorded-${uploadNumber}`,
+          originalName: `recorded-${uploadNumber}.webm`,
+          mimeType: "audio/webm",
+          codec: "opus",
+          byteSize: 8,
+          durationMs: 1000,
+          contentUrl: `/api/voice/assets/voice-recorded-${uploadNumber}/content`
+        } });
+      }
+      return responseJson({ ok: true });
+    }
+  });
+  await recordingHarness.controller.loadMemory({ id: "memory-recording" });
+  equal(recordingHarness.controller.getState().count, 1, "录音离场测试先加载一段旧声音");
+
+  await recordingHarness.elements.voiceRecordButton.dispatch("click", { target: recordingHarness.elements.voiceRecordButton });
+  const keptRecorder = ControlledRecorder.instances.at(-1);
+  keptRecorder.emit("dataavailable", { data: new Blob(["keep"], { type: "audio/webm" }) });
+  const keepPromise = recordingHarness.controller.prepareForViewLeave("keep");
+  keptRecorder.emit("stop");
+  const kept = await keepPromise;
+  check(kept.activeRecording && kept.kept, "选择停止并保留后应等待录音片段真正进入列表");
+  equal(recordingHarness.controller.getState().count, 2, "停止并保留只新增当前片段，不丢失旧声音");
+  check(recordingHarness.controller.getState().items.some((item) => item.assetId === "voice-check"), "保留当前片段时旧声音必须仍在");
+
+  await recordingHarness.elements.voiceRecordButton.dispatch("click", { target: recordingHarness.elements.voiceRecordButton });
+  const discardedRecorder = ControlledRecorder.instances.at(-1);
+  discardedRecorder.emit("dataavailable", { data: new Blob(["discard"], { type: "audio/webm" }) });
+  const discardPromise = recordingHarness.controller.prepareForViewLeave("discard");
+  discardedRecorder.emit("stop");
+  const discarded = await discardPromise;
+  check(discarded.activeRecording && discarded.cancelled && !discarded.kept, "放弃并离开应只取消当前采集");
+  equal(recordingHarness.controller.getState().count, 2, "放弃当前采集不得删除之前的声音");
+  equal((await recordingHarness.controller.prepareForViewLeave("keep")).activeRecording, false, "重复停止应幂等且不制造片段");
+  equal(recordingHarness.controller.getState().count, 2, "幂等停止后声音数量保持不变");
+
+  await recordingHarness.elements.voiceRecordButton.dispatch("click", { target: recordingHarness.elements.voiceRecordButton });
+  const hiddenRecorder = ControlledRecorder.instances.at(-1);
+  hiddenRecorder.emit("dataavailable", { data: new Blob(["hidden"], { type: "audio/webm" }) });
+  recordingHarness.document.visibilityState = "hidden";
+  recordingHarness.document.dispatch("visibilitychange");
+  hiddenRecorder.emit("stop");
+  await waitFor(() => !recordingHarness.controller.getState().recording && recordingHarness.controller.getState().count === 3);
+  equal(recordingHarness.controller.getState().count, 3, "页面进入后台应自动停止并保留待确认片段");
+  check(recordingTrackStops >= 3, "每次离场或后台停止都应关闭麦克风轨道");
+
+  ControlledRecorder.instances.length = 0;
+  let pageHideTrackStops = 0;
+  const pageHideHarness = createHarness({
+    demo: false,
+    secure: true,
+    MediaRecorder: ControlledRecorder,
+    navigator: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop: () => { pageHideTrackStops += 1; } }] }) } },
+    fetch: async (url, options = {}) => (options.method || "GET") === "GET"
+      ? responseJson({ memoryId: "pagehide-memory", voices: [makeVoice("confirmed", "旧声音", "旧声音")], count: 1, policy: {} })
+      : responseJson({ ok: true })
+  });
+  await pageHideHarness.controller.loadMemory({ id: "pagehide-memory" });
+  await pageHideHarness.elements.voiceRecordButton.dispatch("click", { target: pageHideHarness.elements.voiceRecordButton });
+  const pageHideRecorder = ControlledRecorder.instances.at(-1);
+  pageHideRecorder.emit("dataavailable", { data: new Blob(["pagehide"], { type: "audio/webm" }) });
+  pageHideHarness.lifecycleTarget.dispatch("pagehide");
+  pageHideRecorder.emit("stop");
+  await waitFor(() => !pageHideHarness.controller.getState().recording);
+  equal(pageHideHarness.controller.getState().count, 1, "页面真正卸载时只放弃当前采集，不改写已加载声音");
+  check(pageHideTrackStops > 0, "pagehide 必须关闭麦克风轨道");
+
   let transcriptStatus = "draft";
   const calls = [];
   const functionalHarness = createHarness({
@@ -173,7 +272,7 @@ async function main() {
     }
   });
   const controller = functionalHarness.controller;
-  ["loadMemory", "waitForReady", "saveToMemory", "reset", "setDemo", "getState"].forEach((name) => {
+  ["loadMemory", "waitForReady", "saveToMemory", "prepareForViewLeave", "reset", "setDemo", "getState"].forEach((name) => {
     check(typeof controller[name] === "function", `控制器应实现 ${name}`);
   });
   await controller.loadMemory({ id: "memory-check" });
@@ -211,6 +310,8 @@ async function main() {
   permissionHarness.controller.destroy();
   cancellationHarness.controller.destroy();
   raceHarness.controller.destroy();
+  recordingHarness.controller.destroy();
+  pageHideHarness.controller.destroy();
 
   console.log(`Voice UI checks passed: ${assertions} assertions.`);
 }
@@ -226,15 +327,18 @@ function createHarness(options = {}) {
     requests.push({ url, method: requestOptions.method || "GET" });
     return responseJson({ voices: [], count: 0, policy: {} });
   });
+  const document = new FakeDocument(elements);
+  const lifecycleTarget = new FakeEventTarget();
   const controller = voice.createController({
-    document: { getElementById: (id) => elements[id] || null },
+    document,
+    lifecycleTarget,
     fetch: fetchImpl,
     navigator: options.navigator || { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [] }) } },
     MediaRecorder: options.MediaRecorder,
     isSecureContext: options.secure,
     demo: options.demo
   });
-  return { controller, elements, requests };
+  return { controller, document, lifecycleTarget, elements, requests };
 }
 
 class ControlledRecorder {
@@ -282,6 +386,24 @@ class FakeElement {
   contains() { return true; }
 }
 
+class FakeEventTarget {
+  constructor() { this.listeners = new Map(); }
+  addEventListener(type, handler) { this.listeners.set(type, handler); }
+  removeEventListener(type, handler) {
+    if (this.listeners.get(type) === handler) this.listeners.delete(type);
+  }
+  dispatch(type, event = {}) { return this.listeners.get(type)?.(event); }
+}
+
+class FakeDocument extends FakeEventTarget {
+  constructor(elements) {
+    super();
+    this.elements = elements;
+    this.visibilityState = "visible";
+  }
+  getElementById(id) { return this.elements[id] || null; }
+}
+
 function fakeActionTarget(dataset, kind, value) {
   return {
     dataset,
@@ -321,6 +443,14 @@ function responseJson(payload, status = 200) {
     json: async () => payload,
     text: async () => JSON.stringify(payload)
   };
+}
+
+async function waitFor(predicate, attempts = 40) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error("等待声音状态收敛超时");
 }
 
 async function rejects(operation, message, label) {

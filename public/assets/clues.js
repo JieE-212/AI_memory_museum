@@ -28,6 +28,8 @@
     return {
       query: String(source.query || ""),
       count: results.length,
+      total: Number.isFinite(Number(source.total)) ? Number(source.total) : results.length,
+      nextCursor: String(source.nextCursor || ""),
       results,
       engine: {
         mode: "clue",

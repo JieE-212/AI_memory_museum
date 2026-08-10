@@ -1,0 +1,59 @@
+{
+  "format": "time-isle-release-contract-v1",
+  "status": "candidate-local-only",
+  "version": "17.1.2",
+  "schemaVersion": 19,
+  "tag": "v17.1.2",
+  "annotatedTagRequired": true,
+  "syntheticDataOnly": true,
+  "claims": {
+    "demoWritePolicy": "all-non-read-methods-blocked-before-body",
+    "externalAi": "explicit-per-operation-consent-and-matching-trust-contract",
+    "encryptionAtRest": false,
+    "v18Gate": "NO-GO",
+    "productSurface": "responsive-web-pwa-not-native-app",
+    "privateCloudSync": false,
+    "collectionCards": "server-filtered-sorted-cursor-pages-of-30",
+    "mobileDetail": "single-scroll-container-reset-on-reopen-or-memory-switch-with-background-lock",
+    "cardFacets": "presentation-only-emotion-first-deduplication-with-accessible-types",
+    "guideCopy": "normalized-local-citation-lead-and-terminal-punctuation",
+    "attachmentMaintenance": "age-bounded-orphan-collection-preserves-active-drafts"
+  },
+  "model": {
+    "manifestPath": "public/assets/semantic-recall-assets.json",
+    "id": "Xenova/bge-small-zh-v1.5",
+    "dtype": "q8",
+    "dimensions": 512,
+    "onnxSha256": "15b717c382bcb518ba457b93ea6850ede7f4f1cd8937454aa06972366cd19bcc"
+  },
+  "semanticEvaluation": {
+    "fixturePath": "tests/browser/fixtures/semantic-recall-eval-v1.json",
+    "syntheticDataOnly": true,
+    "qualityDocuments": 100,
+    "performanceDocuments": 500,
+    "maximumRegressionRatio": 0.2
+  },
+  "requiredGates": [
+    { "id": "root-linux", "runner": "ubuntu-latest / Node 24", "command": "npm test" },
+    { "id": "root-windows", "runner": "windows-latest / Node 24", "command": "npm test" },
+    { "id": "browser", "runner": "ubuntu-latest / Chromium", "command": "npm --prefix tests/browser test -- core.spec.cjs writable.spec.cjs wakeup.spec.cjs" },
+    { "id": "semantic", "runner": "ubuntu-latest / Chromium WASM single-thread", "command": "npm run test:semantic-eval" },
+    { "id": "container", "runner": "ubuntu-latest / Docker", "command": "docker build --tag time-isle:17.1.2 ." }
+  ],
+  "repositories": {
+    "github": "https://github.com/JieE-212/AI_memory_museum",
+    "gitee": "https://gitee.com/JieE-212/ai-memory-museum"
+  },
+  "productionVerification": {
+    "status": "pending-local-acceptance-and-deploy",
+    "requiredBeforeReleased": true,
+    "coldStartPolicy": "finite-samples-only-no-paid-always-on-instance",
+    "apiProbeTargets": [
+      "https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com",
+      "https://ai-memory-museum-demo.vercel.app"
+    ],
+    "entryTargets": [
+      "https://shiyu-memory-demo-d3di282387d5c7-1456049152.tcloudbaseapp.com"
+    ]
+  }
+}

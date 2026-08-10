@@ -53,13 +53,11 @@
         setStatus("时屿已作为独立应用打开；私人馆藏仍只由本地服务提供。", "success");
         return;
       }
-      if (!isTrustedInstallOrigin(locationRef) || !navigatorRef.serviceWorker?.register) return;
       const ios = isIosLike(navigatorRef);
-      if (ios) {
-        showPanel("手动添加", "从 Safari 分享菜单添加到主屏幕");
-        elements.button.hidden = true;
-        elements.instructions.hidden = false;
-        setStatus("安装只增加启动入口，不移动、不上传或缓存私人馆藏。");
+      showManualInstall(ios);
+      if (!isTrustedInstallOrigin(locationRef) || !navigatorRef.serviceWorker?.register) {
+        setStatus("当前环境不能直接发起安装；仍可查看浏览器菜单中的“安装应用”或“添加到主屏幕”。", "error");
+        return;
       }
       try {
         registration = await navigatorRef.serviceWorker.register("/sw.js", {
@@ -72,7 +70,10 @@
           setStatus("新版本已准备好；关闭所有时屿页面后重新打开即可更新。", "success");
         }
       } catch {
-        if (!destroyed) elements.panel.hidden = true;
+        if (!destroyed) {
+          showManualInstall(ios);
+          setStatus("安装服务暂时没有注册成功；可刷新重试，或直接使用浏览器菜单添加入口。", "error");
+        }
       }
     }
 
@@ -152,6 +153,16 @@
       elements.panel.hidden = false;
       elements.state.textContent = state;
       elements.hint.textContent = hint;
+    }
+
+    function showManualInstall(ios) {
+      showPanel("手动添加", ios ? "从 Safari 分享菜单添加到主屏幕" : "从浏览器菜单添加到设备");
+      elements.button.hidden = true;
+      elements.instructions.hidden = false;
+      elements.instructions.innerHTML = ios
+        ? "<li>打开 Safari 的分享菜单。</li><li>选择“添加到主屏幕”。</li><li>确认添加。</li>"
+        : "<li>打开浏览器地址栏旁或右上角的菜单。</li><li>寻找“安装应用”或“添加到主屏幕”。</li><li>按浏览器提示确认。</li>";
+      setStatus("安装只增加启动入口，不移动、不上传或缓存私人馆藏。");
     }
 
     function listen(target, type, handler) {

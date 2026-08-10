@@ -156,6 +156,7 @@
       if (event.target.name === "evidence") setCount(active, "[data-co-memory-evidence-count]", event.target.value);
       if (event.target.name === "question") setCount(active, "[data-co-memory-question-count]", event.target.value);
       if (event.target.matches("[data-co-memory-confirm-check]")) updateSaveAccess(active);
+      clearFieldError(event.target);
     }
 
     function handleClick(event) {
@@ -195,11 +196,16 @@
     async function createInvitation(active, form) {
       if (active.busy) return;
       const status = form.querySelector("[data-co-memory-create-status]");
+      if (!validateCustomForm(form, status)) return;
       try {
         const values = new FormData(form);
         const passphrase = String(values.get("passphrase") || "");
         const repeated = String(values.get("passphraseAgain") || "");
-        if (passphrase !== repeated) throw letterError("两次输入的邀请口令不一致。", "CO_MEMORY_PASSPHRASE_MISMATCH");
+        if (passphrase !== repeated) {
+          const repeatedField = form.elements.passphraseAgain;
+          markFieldError(repeatedField, status, "两次输入的邀请口令不一致。");
+          return;
+        }
         const payload = createRequestPayload({
           memoryId: active.memory.id,
           letterId: cryptoApi.createLetterId(),
@@ -283,6 +289,7 @@
     async function previewReply(active, form) {
       const status = form.querySelector("[data-co-memory-import-status]");
       if (active.busy || !active.replyPackage) return;
+      if (!validateCustomForm(form, status)) return;
       try {
         active.busy = true;
         updateBusy(active);
@@ -309,6 +316,28 @@
         active.busy = false;
         if (isCurrent(active)) updateBusy(active);
       }
+    }
+
+    function validateCustomForm(form, status) {
+      const invalid = [...form.elements].find((field) => typeof field.checkValidity === "function" && !field.checkValidity());
+      if (!invalid) return true;
+      markFieldError(invalid, status, invalid.validationMessage || "请先填写这个必填项。");
+      return false;
+    }
+
+    function markFieldError(field, status, message) {
+      if (!field || !status) return;
+      status.id ||= `co-memory-error-${Math.random().toString(36).slice(2, 10)}`;
+      field.setAttribute("aria-invalid", "true");
+      field.setAttribute("aria-describedby", status.id);
+      setStatus(status, message, "error");
+      field.focus({ preventScroll: true });
+    }
+
+    function clearFieldError(field) {
+      if (!field?.matches?.("[aria-invalid='true']") || (typeof field.checkValidity === "function" && !field.checkValidity())) return;
+      field.removeAttribute("aria-invalid");
+      field.removeAttribute("aria-describedby");
     }
 
     function renderPreview(active) {

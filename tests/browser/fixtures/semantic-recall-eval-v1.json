@@ -1,0 +1,213 @@
+{
+  "format": "time-isle-semantic-recall-eval-v1",
+  "syntheticDataOnly": true,
+  "language": "zh-CN",
+  "description": "完全虚构的中文设备语义评测。人物、地点和事件均不存在，不来自用户馆藏。",
+  "topics": [
+    {
+      "id": "rain-pickup",
+      "query": "天气很糟时有人专程来接我，那种突然被照顾到的安心",
+      "literalQuery": "红格伞末班车站",
+      "positive": { "title": "红格伞下的末班车", "exhibitText": "一场虚构暴雨里，朋友绕路到车站接我。", "rawContent": "末班车到站时，我看见红格伞在雨里晃动，鞋都湿了的人还带着一杯热豆浆。", "tags": ["陪伴", "雨夜"] },
+      "hardNegative": { "title": "红格伞失物招领", "exhibitText": "商场广播寻找一把遗落的红格伞。", "rawContent": "值班员把伞编号后锁进柜子，没有人来接站，也没有发生重逢。", "tags": ["失物", "雨具"] }
+    },
+    {
+      "id": "late-call",
+      "query": "最难受的时候，有人隔着很远安静听我把话说完",
+      "literalQuery": "凌晨电话低谷陪伴",
+      "positive": { "title": "凌晨两点没有挂断的电话", "exhibitText": "虚构朋友在低谷时一直听我说话。", "rawContent": "我一句完整的话也组织不好，对方没有催促，只说我在，慢慢讲。", "tags": ["朋友", "低谷", "倾听"] },
+      "hardNegative": { "title": "凌晨电话系统维护", "exhibitText": "一则虚构通信服务维护通知。", "rawContent": "运营机房在凌晨切换线路，自动语音提醒用户稍后再拨。", "tags": ["通信", "通知"] }
+    },
+    {
+      "id": "grandma-kitchen",
+      "query": "一闻到熟悉的饭香，就想起长辈在厨房忙碌的背影",
+      "literalQuery": "桂花蒸糕外婆厨房",
+      "positive": { "title": "外婆灶台边的桂花蒸糕", "exhibitText": "虚构的童年厨房记忆。", "rawContent": "蒸汽把玻璃蒙白，外婆用木筷挑开锅盖，桂花甜味先跑到了院子里。", "tags": ["家人", "味道", "童年"] },
+      "hardNegative": { "title": "桂花蒸糕配方卡", "exhibitText": "一张虚构烘焙课配方。", "rawContent": "卡片只记录克数、温度和蒸制时间，没有家人或往事。", "tags": ["食谱", "课堂"] }
+    },
+    {
+      "id": "first-bike",
+      "query": "第一次摆脱搀扶，靠自己保持平衡向前冲的兴奋",
+      "literalQuery": "蓝色自行车第一次独骑",
+      "positive": { "title": "蓝色自行车第一次松手", "exhibitText": "虚构的学车瞬间。", "rawContent": "身后的人悄悄松开车座，我骑过三棵梧桐才发现自己已经独自前进。", "tags": ["成长", "勇气"] },
+      "hardNegative": { "title": "蓝色自行车维修单", "exhibitText": "一张虚构的车辆检修记录。", "rawContent": "维修单写着更换刹车线和车铃，没有第一次骑行的故事。", "tags": ["维修", "自行车"] }
+    },
+    {
+      "id": "cat-door",
+      "query": "回家很晚，仍有一个小生命守在门边等我的画面",
+      "literalQuery": "橘猫门口等回家",
+      "positive": { "title": "门缝里等我的橘猫", "exhibitText": "一只完全虚构的猫等待主人回家。", "rawContent": "钥匙刚碰到门锁，橘猫就从门缝探出头，困得眯眼还坚持蹭了蹭鞋尖。", "tags": ["宠物", "等待"] },
+      "hardNegative": { "title": "橘猫寻主海报", "exhibitText": "社区张贴的虚构流浪猫照片。", "rawContent": "海报询问谁认识照片里的猫，它没有在某扇门后等待任何人。", "tags": ["海报", "流浪动物"] }
+    },
+    {
+      "id": "graduation-goodbye",
+      "query": "大家笑着合影，却都知道这次散开后很难再聚齐",
+      "literalQuery": "毕业操场最后合影",
+      "positive": { "title": "毕业操场的最后一张合影", "exhibitText": "一场虚构毕业告别。", "rawContent": "快门按下前大家都在笑，按下后却有人盯着空教室悄悄擦眼睛。", "tags": ["毕业", "告别", "同学"] },
+      "hardNegative": { "title": "操场翻新进度照片", "exhibitText": "虚构校园施工记录。", "rawContent": "照片用于对比跑道材料和施工日期，没有毕业生或告别。", "tags": ["校园", "施工"] }
+    },
+    {
+      "id": "hospital-company",
+      "query": "害怕检查结果时，有人坐在走廊陪我等到天亮",
+      "literalQuery": "医院走廊陪伴天亮",
+      "positive": { "title": "医院走廊亮了一夜的灯", "exhibitText": "虚构的陪诊记忆。", "rawContent": "我反复看检查单，朋友把外套铺在冷椅上，陪我等到第一班电梯响起。", "tags": ["陪伴", "医院"] },
+      "hardNegative": { "title": "医院走廊灯具巡检", "exhibitText": "虚构后勤检查表。", "rawContent": "表格逐项记录照明功率和更换日期，不涉及陪诊。", "tags": ["后勤", "照明"] }
+    },
+    {
+      "id": "train-reunion",
+      "query": "分别很久的人从人群里出现，先愣住然后一起笑起来",
+      "literalQuery": "绿皮火车站重逢",
+      "positive": { "title": "绿皮火车旁的重逢", "exhibitText": "完全虚构的久别重逢。", "rawContent": "汽笛盖住了第一句招呼，我们隔着人群愣了两秒，随后同时向对方跑去。", "tags": ["重逢", "车站"] },
+      "hardNegative": { "title": "绿皮火车站钟表照片", "exhibitText": "虚构建筑摄影练习。", "rawContent": "画面只有站台时钟与车厢编号，没有久别的人相见。", "tags": ["摄影", "车站"] }
+    },
+    {
+      "id": "mall-broadcast",
+      "query": "在人群里走散后听见广播叫到自己的名字，终于找到家人",
+      "literalQuery": "商场广播走散团聚",
+      "positive": { "title": "广播响起后的拥抱", "exhibitText": "虚构的商场走散与团聚。", "rawContent": "我站在服务台边哭，广播第三遍响起时，家人从扶梯另一端跑了过来。", "tags": ["走散", "家人"] },
+      "hardNegative": { "title": "商场广播促销词", "exhibitText": "虚构商场广告脚本。", "rawContent": "广播反复介绍折扣和楼层活动，没有寻找走失者。", "tags": ["广告", "商场"] }
+    },
+    {
+      "id": "blackout-game",
+      "query": "突然停电后，全家没有抱怨，反而围在一起玩起老游戏",
+      "literalQuery": "停电蜡烛猜影子",
+      "positive": { "title": "停电夜的蜡烛影子", "exhibitText": "虚构家庭在停电夜玩影子游戏。", "rawContent": "没有电视和网络，大家把蜡烛放在杯子里，用手影猜动物直到来电。", "tags": ["家庭", "停电", "游戏"] },
+      "hardNegative": { "title": "蜡烛店停电预案", "exhibitText": "虚构门店安全文件。", "rawContent": "文件规定断电后关闭收银机和疏散顾客，没有家庭游戏。", "tags": ["预案", "门店"] }
+    },
+    {
+      "id": "apology-letter",
+      "query": "说不出口的歉意被认真写在纸上，后来重新和好",
+      "literalQuery": "手写道歉信和好",
+      "positive": { "title": "折了三次的道歉信", "exhibitText": "一封虚构但真诚的和好信。", "rawContent": "那句对不起被改了很多遍，纸角折了三次，最终还是塞进了朋友课桌。", "tags": ["道歉", "友情", "和好"] },
+      "hardNegative": { "title": "手写字体临摹页", "exhibitText": "虚构书法练习。", "rawContent": "整页重复书写对不起三个字，只为练习笔画，没有真实冲突。", "tags": ["书法", "练习"] }
+    },
+    {
+      "id": "mountain-fog",
+      "query": "在陌生地方看不清方向，同行的人没有责怪而是一起找路",
+      "literalQuery": "山雾迷路一起找路",
+      "positive": { "title": "山雾里走错的岔路", "exhibitText": "虚构旅行中的迷路与合作。", "rawContent": "路牌被雾遮住，我们走错半小时，谁也没有埋怨，只轮流看地图和留记号。", "tags": ["旅行", "迷路", "合作"] },
+      "hardNegative": { "title": "山雾天气观测表", "exhibitText": "虚构气象记录。", "rawContent": "表格记录能见度和湿度，没有旅行者寻找方向。", "tags": ["天气", "观测"] }
+    },
+    {
+      "id": "midnight-noodles",
+      "query": "忙到忘记吃饭时，同住的人默默留了一碗热的东西",
+      "literalQuery": "室友深夜番茄面",
+      "positive": { "title": "书桌旁的番茄面", "exhibitText": "虚构室友在深夜留下热面。", "rawContent": "赶作业到凌晨，室友没叫醒我，只把番茄面盖好并留下一张趁热吃的纸条。", "tags": ["室友", "照顾", "深夜"] },
+      "hardNegative": { "title": "番茄面餐馆点评", "exhibitText": "虚构餐馆消费记录。", "rawContent": "点评讨论汤底和排队时间，没有室友照顾或深夜书桌。", "tags": ["餐馆", "点评"] }
+    },
+    {
+      "id": "swim-courage",
+      "query": "一直害怕下水，直到有人耐心陪我松开池边",
+      "literalQuery": "泳池教练松开池边",
+      "positive": { "title": "第一次离开泳池边", "exhibitText": "虚构的克服怕水经历。", "rawContent": "教练没有推我，只在一旁数呼吸；我终于松开池边，向前漂了几秒。", "tags": ["游泳", "勇气", "鼓励"] },
+      "hardNegative": { "title": "泳池边维护告示", "exhibitText": "虚构场馆维护通知。", "rawContent": "告示要求施工期间远离池边，与克服怕水无关。", "tags": ["泳池", "维护"] }
+    },
+    {
+      "id": "stage-signal",
+      "query": "站在很多人面前脑子一片空白，台下熟悉的手势让我继续下去",
+      "literalQuery": "舞台紧张朋友手势",
+      "positive": { "title": "台下那个继续的手势", "exhibitText": "虚构演讲中收到朋友鼓励。", "rawContent": "我忘了下一句，朋友在第三排做了平时练习的手势，我才重新找回节奏。", "tags": ["舞台", "紧张", "鼓励"] },
+      "hardNegative": { "title": "剧场座位手势图", "exhibitText": "虚构引导员培训图。", "rawContent": "图示不同手势对应的座位方向，没有演讲者或朋友。", "tags": ["剧场", "指引"] }
+    },
+    {
+      "id": "father-lamp",
+      "query": "不太会表达的人，用修好一件旧东西的方式关心我",
+      "literalQuery": "父亲修台灯沉默关心",
+      "positive": { "title": "父亲修好的旧台灯", "exhibitText": "虚构的含蓄亲情记忆。", "rawContent": "他没问我最近累不累，只把闪烁的旧台灯拆开重接线路，第二天灯一直很稳。", "tags": ["父亲", "亲情", "修理"] },
+      "hardNegative": { "title": "旧台灯五金收据", "exhibitText": "虚构采购凭证。", "rawContent": "收据列出灯泡、导线和螺丝价格，没有亲情表达。", "tags": ["收据", "五金"] }
+    },
+    {
+      "id": "moving-plant",
+      "query": "搬到陌生地方时，邻居送来一件小东西让我觉得这里也能成为家",
+      "literalQuery": "搬家邻居薄荷盆栽",
+      "positive": { "title": "新门口的薄荷盆栽", "exhibitText": "虚构邻居用盆栽欢迎新住户。", "rawContent": "纸箱还没拆完，邻居敲门送来一盆薄荷，说窗边有阳光，很快就会长满。", "tags": ["搬家", "邻居", "欢迎"] },
+      "hardNegative": { "title": "薄荷盆栽养护手册", "exhibitText": "虚构园艺说明。", "rawContent": "手册介绍浇水和日照，不包含搬家或邻居欢迎。", "tags": ["园艺", "手册"] }
+    },
+    {
+      "id": "exam-note",
+      "query": "一次失败后，本以为会被批评，却收到一句允许慢慢来的话",
+      "literalQuery": "考试失利老师便签",
+      "positive": { "title": "试卷背面的便签", "exhibitText": "虚构老师在失利后留下鼓励。", "rawContent": "分数很低，老师没有写责备，只在背面贴了便签：先把今天会的三题守住。", "tags": ["考试", "老师", "鼓励"] },
+      "hardNegative": { "title": "考试分数登记表", "exhibitText": "虚构成绩统计文件。", "rawContent": "表格只有编号与分数，没有老师的鼓励文字。", "tags": ["成绩", "表格"] }
+    },
+    {
+      "id": "birthday-voice",
+      "query": "不能见面的人把祝福录下来，让一个普通日子忽然有了陪伴",
+      "literalQuery": "异地生日语音祝福",
+      "positive": { "title": "跨城寄来的生日语音", "exhibitText": "虚构异地朋友录下生日祝福。", "rawContent": "零点后手机亮起，几位朋友把各自城市的风声录进同一段祝福里。", "tags": ["生日", "语音", "异地"] },
+      "hardNegative": { "title": "语音设备录制说明", "exhibitText": "虚构录音设备手册。", "rawContent": "说明书介绍麦克风增益和文件格式，没有生日祝福。", "tags": ["录音", "说明书"] }
+    },
+    {
+      "id": "photo-restored",
+      "query": "模糊旧照片重新清晰后，长辈终于讲起画面背后的往事",
+      "literalQuery": "修复旧照片长辈故事",
+      "positive": { "title": "修清楚的旧合影", "exhibitText": "虚构照片修复后唤起家庭讲述。", "rawContent": "划痕被修掉后，长辈认出角落里的自行车，第一次讲起那次远行。", "tags": ["旧照片", "家人", "讲述"] },
+      "hardNegative": { "title": "旧照片扫描仪校准", "exhibitText": "虚构设备校色记录。", "rawContent": "记录灰阶、分辨率和色卡编号，没有任何家庭往事。", "tags": ["扫描", "校准"] }
+    }
+  ],
+  "distractorScenes": [
+    "清晨花店整理未售出的白色花束", "图书馆给旧书重新贴上分类标签", "公交调度员核对首班车时刻", "社区球场更换褪色的边线",
+    "烘焙教室记录烤箱温度曲线", "河边观测站测量每日水位", "美术馆仓库清点空画框", "小剧场测试舞台备用灯",
+    "修鞋铺给棕色皮靴换鞋带", "邮局把退回信件按区域分拣", "植物园记录仙人掌开花日期", "钟表店为旧挂钟调整摆轮",
+    "市场摊位统计青苹果剩余数量", "露营店检查帐篷拉链和地钉", "学校广播室整理无声录音带", "车站保洁员更换候车厅指示牌",
+    "文具店给蓝色笔记本贴价格签", "咖啡实验室比较不同研磨刻度", "海边救生站清点橙色救生圈", "木工教室把剩余木料按长度归档"
+  ],
+  "nullQueries": [
+    "量子潜水艇在火星海沟举行婚礼",
+    "会唱歌的紫色冰箱竞选城市市长",
+    "云朵邮差给恐龙发送股票账单",
+    "透明鲸鱼驾驶地铁穿过月亮"
+  ],
+  "baseline": {
+    "quality": {
+      "recallAt3": 1,
+      "mrrAt3": 0.933333,
+      "hardNegativeIntrusionAt3": 0.55,
+      "forbiddenAt1": 0
+    },
+    "bySlice": {
+      "semantic-paraphrase": {
+        "recallAt3": 1,
+        "mrrAt3": 0.866667,
+        "hardNegativeIntrusionAt3": 0.25,
+        "forbiddenAt1": 0
+      },
+      "literal-control": {
+        "recallAt3": 1,
+        "mrrAt3": 1,
+        "hardNegativeIntrusionAt3": 0.85,
+        "forbiddenAt1": 0
+      }
+    },
+    "quality500": {
+      "recallAt3": 1,
+      "mrrAt3": 0.933333,
+      "hardNegativeIntrusionAt3": 0.55,
+      "forbiddenAt1": 0
+    },
+    "bySlice500": {
+      "semantic-paraphrase": {
+        "recallAt3": 1,
+        "mrrAt3": 0.866667,
+        "hardNegativeIntrusionAt3": 0.25,
+        "forbiddenAt1": 0
+      },
+      "literal-control": {
+        "recallAt3": 1,
+        "mrrAt3": 1,
+        "hardNegativeIntrusionAt3": 0.85,
+        "forbiddenAt1": 0
+      }
+    },
+    "performanceMs": {
+      "coldPrepare100": 13647,
+      "warmReindex500": 57696,
+      "query100P95": 71,
+      "query500P95": 80
+    },
+    "performanceRunnerId": "zfjj-windows-local-v1",
+    "observedOn": "win32-x64 / Node 24.15.0 / Chromium 149.0.7827.55 / WASM 单线程 / 2026-07-28",
+    "maximumNullReturnAt3": 1,
+    "maximumRegressionRatio": 0.2
+  }
+}

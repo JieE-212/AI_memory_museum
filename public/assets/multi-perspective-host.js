@@ -53,12 +53,13 @@
   }
 
   function defaultHandoff(documentRef, kind, context = {}) {
+    const dialogBody = context.panel?.closest?.("#dialogBody") || context.panel?.parentElement;
     if (kind === "provenance") {
-      const panel = context.panel?.parentElement?.querySelector?.("[data-provenance-passport]");
+      const panel = dialogBody?.querySelector?.("[data-provenance-passport]");
       return revealPanel(panel, "来源护照已经打开；仍需你亲手填写并确认关系。");
     }
     if (kind === "revisions") {
-      const panel = context.panel?.parentElement?.querySelector?.(".memory-revision-panel");
+      const panel = dialogBody?.querySelector?.(".memory-revision-panel");
       return revealPanel(panel, "记忆年轮已经打开；查看或恢复仍需单独操作。");
     }
     if (kind === "puzzle") {

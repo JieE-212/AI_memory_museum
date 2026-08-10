@@ -160,7 +160,7 @@
       elements.inspectLabel?.classList.toggle("is-disabled", demo);
       if (demo) {
         setState("本地功能");
-        setText(elements.description, "共享临时示例不提供本机馆藏体检，也不接收私人备份。");
+        setText(elements.description, "公开只读示例不提供本机馆藏体检，也不接收私人备份。");
       }
     }
 

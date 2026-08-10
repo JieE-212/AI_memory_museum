@@ -6,6 +6,7 @@ const os = require("os");
 const path = require("path");
 const { createHash } = require("crypto");
 const zlib = require("zlib");
+const { digestInput } = require("../lib/ai-trust");
 
 const root = path.resolve(__dirname, "..");
 let assertionCount = 0;
@@ -19,7 +20,8 @@ async function main() {
   await runLocalFlow();
   await runMuseumLockAndLensFlow();
   await runArchiveMediaFlow();
-  await runDemoSafetyFlow();
+  await runExternalAiConsentFlow();
+  await runDemoReadOnlyFlow();
   console.log(`API smoke checks passed (${assertionCount} assertions).`);
 }
 
@@ -598,7 +600,7 @@ async function runLocalFlow() {
     assert("离线页明确不缓存或展示私人馆藏", offlineResponse.ok && offlineText.includes("不会展示馆藏、照片、声音或导出内容") && !offlineText.includes("<script"));
 
     const health = await getJson(`${baseUrl}/api/health`);
-    assert("健康检查返回时屿 V17 与 schema 19", health.response.ok && health.response.headers.get("cache-control") === "no-store" && health.payload.ok && health.payload.version === "17.0.0" && health.payload.schemaVersion === 19 && health.payload.name === "时屿" && health.payload.englishName === "TIME ISLE" && health.payload.tagline === "AI 私人记忆策展工具" && health.payload.stats.capsules === 0 && health.payload.stats.timeCalibrations === 0 && health.payload.stats.oralHistoryQuestions === 0 && health.payload.stats.oralHistoryAnswers === 0 && health.payload.stats.curatorAgentRuns === 0 && health.payload.stats.curatorAgentCompletedRuns === 0 && health.payload.stats.curatorAgentInterruptedRuns === 0 && health.payload.stats.curatorAgentProposals === 0 && health.payload.stats.curatorAgentDecisions === 0);
+    assert("健康检查返回时屿 V17.1 与 schema 19", health.response.ok && health.response.headers.get("cache-control") === "no-store" && health.payload.ok && health.payload.version === "17.1.2" && health.payload.schemaVersion === 19 && health.payload.name === "时屿" && health.payload.englishName === "TIME ISLE" && health.payload.tagline === "AI 私人记忆策展工具" && health.payload.stats.capsules === 0 && health.payload.stats.timeCalibrations === 0 && health.payload.stats.oralHistoryQuestions === 0 && health.payload.stats.oralHistoryAnswers === 0 && health.payload.stats.curatorAgentRuns === 0 && health.payload.stats.curatorAgentCompletedRuns === 0 && health.payload.stats.curatorAgentInterruptedRuns === 0 && health.payload.stats.curatorAgentProposals === 0 && health.payload.stats.curatorAgentDecisions === 0);
     assert("本地模式使用 SQLite", health.payload.mode === "local" && health.payload.storage === "local-sqlite");
     assert("健康检查区分字段线索与设备语义", health.payload.search?.mode === "field-and-clue-retrieval" && health.payload.search?.engine === "fts5-trigram" && health.payload.search?.shortQueryFallback === "parameterized-like" && health.payload.search?.externalModelRequired === false && health.payload.semanticRecall?.model === "Xenova/bge-small-zh-v1.5" && health.payload.semanticRecall?.dimensions === 512 && health.payload.semanticRecall?.remoteModelsAllowed === false && health.payload.semanticRecall?.persisted === false);
 
@@ -623,10 +625,12 @@ async function runLocalFlow() {
     assert("写请求以 403 拒绝恶意 Origin", maliciousOrigin === 403);
 
     const version = await getJson(`${baseUrl}/api/version`);
-    assert("版本接口描述 V17 核心产品流程与人工边界", version.response.ok && version.payload.version === "17.0.0" && ["共忆见证", "设备内可解释镜片", "多视角记忆对照", "设备内按意思找回", "锁馆与一次性真实恢复演练"].every((item) => version.payload.productFlow.includes(item)) && version.payload.v7.offlineSharing.includes("AES-256-GCM") && version.payload.v7.pwa.includes("不缓存私人馆藏") && version.payload.v72.concurrency.includes("If-Match") && version.payload.v73.sharePrivacy.includes("浏览器内") && version.payload.v73.revisitIntent.includes("明确选择") && version.payload.v8.uncertainTimeline.includes("不会回写展品日期") && version.payload.v8.provenanceReview.includes("待复核") && version.payload.v9.oralHistory.includes("一个问题") && version.payload.v9.humanBoundary.includes("不自动转写") && version.payload.v9.provenance.includes("草稿") && version.payload.v10.boundedAgent.includes("固定四项") && version.payload.v10.humanDecisions.includes("分别需要") && version.payload.v10.replayableEvaluation.includes("不重新读取") && version.payload.v10.restoreBoundary.includes("待复核只读历史") && version.payload.v12.coMemoryLetters.includes("AES-256-GCM") && version.payload.v13.localBoundary.includes("零外部模型") && version.payload.v14.museumLock.includes("423") && version.payload.v14.recoveryDrill.includes("不能证明") && version.payload.v15.isolatedRestore.includes("一次性") && version.payload.v15.recoveryBoundary.includes("不证明异机灾备") && version.payload.v16.derivedBoundary.includes("零模型") && version.payload.v16.identityBoundary.includes("身份未核验") && version.payload.v17.semanticRecall.includes("512 维") && version.payload.v17.privacyBoundary.includes("Worker 内存") && version.payload.v17.interpretationBoundary.includes("不是事实"));
+    assert("版本接口描述 V17.1 核心产品流程与人工边界", version.response.ok && version.payload.version === "17.1.2" && ["先保存原文", "设备内按意思找回", "确定性策展工作流", "共忆见证", "锁馆与一次性真实恢复演练"].every((item) => version.payload.productFlow.includes(item)) && version.payload.v7.offlineSharing.includes("AES-256-GCM") && version.payload.v7.pwa.includes("不缓存私人馆藏") && version.payload.v72.concurrency.includes("If-Match") && version.payload.v73.sharePrivacy.includes("浏览器内") && version.payload.v8.uncertainTimeline.includes("不会回写展品日期") && version.payload.v9.humanBoundary.includes("不自动转写") && version.payload.v10.deterministicWorkflow.includes("不是自治 Agent") && version.payload.v14.recoveryDrill.includes("不能证明") && version.payload.v15.recoveryBoundary.includes("不证明异机灾备") && version.payload.v16.identityBoundary.includes("身份未核验") && version.payload.v17.semanticRecall.includes("512 维") && version.payload.v171.demoWriteBoundary.includes("正文前") && version.payload.v171.optionalOrganization.includes("同一件展品"));
 
     const demo = await getJson(`${baseUrl}/api/demo/status`);
     assert("本地模式未伪装成公开 Demo", demo.response.ok && demo.payload.interviewDemo === false);
+    const trust = await getJson(`${baseUrl}/api/runtime/trust`);
+    assert("私人本地信任合同明确本机写入、零外发和未静态加密", trust.response.ok && trust.payload.audience === "private-local" && trust.payload.storage.scope === "local-device" && trust.payload.storage.visitorWritesAllowed === true && trust.payload.externalAi.configured === false && trust.payload.encryptionAtRest.enabled === false && trust.payload.features.semanticRecall.effectiveMode === "device-embedding");
 
     const options = await getJson(`${baseUrl}/api/options`);
     assert("选项接口包含七个中文展厅", options.response.ok && options.payload.halls.length === 7 && options.payload.halls.every((hall) => hall.name.endsWith("展厅")));
@@ -636,19 +640,38 @@ async function runLocalFlow() {
     await runLocalCuratorAgentFlow(baseUrl);
 
     const rawContent = "2025年5月20日，我和朋友在学校操场散步。那段时间很迷茫，但他一直陪我把话说完。";
-    const analysis = await postJson(`${baseUrl}/api/analyze`, { rawContent });
-    assert("本地 Mock 能生成展品草稿", analysis.response.ok && analysis.payload.mode === "mock-fallback" && analysis.payload.draft.title && analysis.payload.draft.hall);
-    assert("Agent 整理保留三步轨迹", analysis.payload.workflow.steps.length === 3 && analysis.payload.workflow.run.persisted === true);
-    assert("整理记录已获得可关联 ID", Boolean(analysis.payload.draft.agentRunId));
-
     const memoryId = `smoke-memory-${Date.now()}`;
     const created = await postJson(`${baseUrl}/api/memories`, {
-      ...analysis.payload.draft,
       id: memoryId,
-      favorite: true
+      rawContent
     });
-    assert("展品保存成功", created.response.status === 201 && created.payload.memory.id === memoryId);
-    assert("展品关联 Agent run", created.payload.memory.agentRunId === analysis.payload.draft.agentRunId);
+    assert("只填写原文即可先创建同一件展品", created.response.status === 201 && created.payload.memory.id === memoryId && created.payload.memory.rawContent === rawContent && created.payload.persistence.wrote === true && !created.payload.memory.agentRunId);
+
+    const analysis = await postJson(`${baseUrl}/api/analyze`, { rawContent, memoryId, allowExternalAi: false });
+    assert("本地规则生成未持久化整理草稿与服务端签名回执", analysis.response.ok && analysis.payload.mode === "local-rules" && analysis.payload.draft.title && analysis.payload.draft.hall && analysis.payload.execution.engineId === "local-memory-rules-v1" && analysis.payload.execution.externalRequestOccurred === false && analysis.payload.executionReceipt?.memoryId === memoryId && /^[a-f0-9]{64}$/.test(analysis.payload.executionReceipt?.signature || "") && analysis.payload.persistence.wrote === false);
+    assert("整理预览保留三步轨迹但不预写数据库", analysis.payload.workflow.steps.length === 3 && analysis.payload.workflow.run.persisted === false && !analysis.payload.draft.agentRunId);
+
+    const forgedReceipt = await putJson(`${baseUrl}/api/memories/${memoryId}`, {
+      ...analysis.payload.draft,
+      rawContent,
+      expectedUpdatedAt: created.payload.memory.updatedAt,
+      organizeReceipt: { confirmed: true, receipt: { ...analysis.payload.executionReceipt, execution: { ...analysis.payload.executionReceipt.execution, mode: "external-model" } } }
+    });
+    assert("客户端不能伪造整理引擎或复用被篡改的执行回执", forgedReceipt.response.status === 400 && forgedReceipt.payload.error.includes("回执"));
+
+    const organized = await putJson(`${baseUrl}/api/memories/${memoryId}`, {
+      ...analysis.payload.draft,
+      rawContent,
+      favorite: true,
+      expectedUpdatedAt: created.payload.memory.updatedAt,
+      organizeReceipt: { confirmed: true, receipt: analysis.payload.executionReceipt }
+    });
+    assert("用户确认后以并发条件更新同一件展品而不重复创建", organized.response.ok && organized.payload.memory.id === memoryId && organized.payload.memory.agentRunId && organized.payload.persistence.fields.includes("organize-run") && (await getJson(`${baseUrl}/api/memories`)).payload.memories.filter((item) => item.id === memoryId).length === 1);
+
+    const firstCardPage = await getJson(`${baseUrl}/api/memories?view=card&sort=recent&limit=1`);
+    const firstCard = firstCardPage.payload.memories?.[0];
+    const forbiddenCardFields = ["rawContent", "attachments", "media", "voices", "entityRefs"];
+    assert("馆藏首批卡片响应物理排除正文与完整媒体", firstCardPage.response.ok && firstCardPage.payload.memories.length === 1 && firstCardPage.payload.total >= 1 && firstCard && forbiddenCardFields.every((field) => !Object.hasOwn(firstCard, field)));
 
     const detail = await getJson(`${baseUrl}/api/memories/${memoryId}`);
     assert("展品详情可读取", detail.response.ok && detail.payload.memory.rawContent === rawContent);
@@ -676,7 +699,7 @@ async function runLocalFlow() {
     assert("多视角对照 HTTP 预览前后馆藏统计零变化", JSON.stringify(perspectiveStatsAfter) === JSON.stringify(perspectiveStatsBefore));
 
     const trace = await getJson(`${baseUrl}/api/memories/${memoryId}/agent-run`);
-    assert("展品可回看 Agent 依据", trace.response.ok && trace.payload.run.steps.length === 3 && trace.payload.run.memoryId === memoryId);
+    assert("展品可回看整理执行依据", trace.response.ok && trace.payload.run.steps.length === 3 && trace.payload.run.memoryId === memoryId);
 
     const updated = await putJson(`${baseUrl}/api/memories/${memoryId}`, { title: "操场上的陪伴", importance: 5, expectedUpdatedAt: detail.payload.memory.updatedAt });
     assert("展品可更新", updated.response.ok && updated.payload.memory.title === "操场上的陪伴" && updated.payload.memory.importance === 5);
@@ -740,7 +763,7 @@ async function runLocalFlow() {
     assert("混合检索返回匹配依据", search.response.ok && search.payload.results.some((item) => item.memory.id === memoryId) && search.payload.results[0].reason);
 
     const guide = await postJson(`${baseUrl}/api/guide`, { question: "哪些记忆和朋友的陪伴有关？" });
-    assert("讲解员回答包含展品引用", guide.response.ok && guide.payload.answer && guide.payload.citations.some((item) => item.id === memoryId));
+    assert("讲解员回答包含展品引用、统一中文句式和零持久化执行回执", guide.response.ok && guide.payload.answer && guide.payload.citations.some((item) => item.id === memoryId) && guide.payload.execution.engineId === "local-evidence-guide-v1" && guide.payload.persistence.wrote === false && !/记录了这件展品记录了|[。！？!?；;,，]{2,}/u.test(guide.payload.answer));
 
     const insights = await getJson(`${baseUrl}/api/insights`);
     assert("回顾接口生成时间线、主题和摘要", insights.response.ok && Array.isArray(insights.payload.timeline) && Array.isArray(insights.payload.themes) && insights.payload.report.summary);
@@ -762,10 +785,16 @@ async function runLocalFlow() {
     });
     assert("可保存同一往事的第二个版本", related.response.status === 201 && related.payload.memory.id === relatedId);
 
+    const pagedCards = await getJson(`${baseUrl}/api/memories?view=card&sort=recent&limit=1`);
+    const nextCards = await getJson(`${baseUrl}/api/memories?view=card&sort=recent&limit=1&cursor=${encodeURIComponent(pagedCards.payload.nextCursor)}`);
+    assert("馆藏 cursor 可继续读取且不重复首件", pagedCards.response.ok && pagedCards.payload.nextCursor && nextCards.response.ok && nextCards.payload.memories.length === 1 && nextCards.payload.memories[0].id !== pagedCards.payload.memories[0].id);
+    const mismatchedCardCursor = await getJson(`${baseUrl}/api/memories?view=card&sort=oldest&limit=1&cursor=${encodeURIComponent(pagedCards.payload.nextCursor)}`);
+    assert("馆藏 cursor 不能跨排序条件复用", mismatchedCardCursor.response.status === 400);
+
     const shortClueSearch = await getJson(`${baseUrl}/api/search?q=${encodeURIComponent("学校")}`);
     const trigramClueSearch = await getJson(`${baseUrl}/api/search?q=${encodeURIComponent("星河湾")}`);
     assert("两字中文线索使用参数化 LIKE 回退", shortClueSearch.response.ok && shortClueSearch.payload.engine.shortQueryFallback === true && shortClueSearch.payload.results.some((item) => item.memory.id === relatedId));
-    assert("三字中文线索使用 FTS5 trigram 且返回完整展品", trigramClueSearch.response.ok && trigramClueSearch.payload.engine.fts === "fts5-trigram" && trigramClueSearch.payload.engine.shortQueryFallback === false && trigramClueSearch.payload.results.some((item) => item.memory.id === relatedId && item.memory.rawContent));
+    assert("三字中文线索使用 FTS5 trigram 且只返回卡片投影", trigramClueSearch.response.ok && trigramClueSearch.payload.engine.fts === "fts5-trigram" && trigramClueSearch.payload.engine.shortQueryFallback === false && trigramClueSearch.payload.results.some((item) => item.memory.id === relatedId && !Object.hasOwn(item.memory, "rawContent")));
 
     const peopleEntities = await getJson(`${baseUrl}/api/entities?type=person&q=${encodeURIComponent("朋友")}&limit=20`);
     assert("同名人物默认保留为不同身份线索", peopleEntities.response.ok && peopleEntities.payload.entities.length >= 2 && new Set(peopleEntities.payload.entities.map((entity) => entity.id)).size === peopleEntities.payload.entities.length);
@@ -1069,7 +1098,10 @@ async function runLocalFlow() {
         id,
         title: `清空验证展品 ${index + 1}`,
         rawContent: `这是清空主题展览前的第 ${index + 1} 段可引用原文。`,
-        exhibitText: "只用于验证整馆清空。"
+        exhibitText: "只用于验证整馆清空。",
+        people: ["清空验证人物"],
+        location: "虚构清空展厅",
+        tags: ["清空验证"]
       });
     }
     const purgePreview = await postJson(`${baseUrl}/api/exhibitions/preview`, { theme: "清空验证", memoryIds: purgeMemoryIds });
@@ -2145,311 +2177,42 @@ async function runLocalMediaFlow(baseUrl, memoryId, relatedId, mediaRoot) {
   assert("失败的派生测试会话可主动清理", discarded.response.ok && discarded.payload.uploadId === invalidUploadId);
 }
 
-async function runDemoSafetyFlow() {
-  const dbPath = path.join(os.tmpdir(), `ai-memory-museum-demo-smoke-${Date.now()}.sqlite`);
+async function runExternalAiConsentFlow() {
+  const dbPath = path.join(os.tmpdir(), `ai-memory-museum-ai-consent-${Date.now()}.sqlite`);
   const mediaRoot = `${dbPath}.media`;
   try {
     await withServer({
       DB_PATH: dbPath,
       MEDIA_ROOT: mediaRoot,
-      INTERVIEW_DEMO: "true",
-      AI_API_KEY: "demo-key-must-be-ignored",
-      AI_BASE_URL: "http://127.0.0.1:1"
+      AI_API_KEY: "configured-test-key",
+      AI_BASE_URL: "http://127.0.0.1:1/private/path?secret=hidden",
+      AI_MODEL: "consent-test-model",
+      AI_PROVIDER_LABEL: "测试提供方",
+      AI_TIMEOUT_MS: "150"
     }, async (baseUrl) => {
-    const status = await getJson(`${baseUrl}/api/demo/status`);
-    assert("公开 Demo 自动注入四条示例、一场已发布展览与一项时间校准", status.response.ok && status.payload.interviewDemo === true && status.payload.seededExamples === 4 && status.payload.seededExhibitions === 1 && status.payload.seededTimeCalibrations === 1 && status.payload.seededOralHistoryAnswers === 0 && status.payload.oralHistoryMode === "read-only-question" && status.payload.seededCuratorAgentRuns === 0 && status.payload.curatorAgentMode === "read-only-synthetic-sample");
-    assert("公开 Demo 使用临时存储并强制本地 Mock", status.payload.storage === "ephemeral-sqlite-on-tmp" && status.payload.destructiveActionsBlocked === true && status.payload.aiMode === "mock-fallback");
-    const demoHome = await fetch(`${baseUrl}/`);
-    assert("公开 Demo 通过权限策略禁用麦克风", demoHome.headers.get("permissions-policy")?.includes("microphone=()"));
+      const trust = await getJson(`${baseUrl}/api/runtime/trust`);
+      assert("外部 AI 信任合同只公开提供方、模型、安全 origin 和内容绑定 ID", trust.response.ok && /^sha256:[a-f0-9]{64}$/.test(trust.payload.contractId) && trust.payload.externalAi.configured === true && trust.payload.externalAi.consentRequired === true && trust.payload.externalAi.providerLabel === "测试提供方" && trust.payload.externalAi.model === "consent-test-model" && trust.payload.externalAi.endpointOrigin === "http://127.0.0.1:1" && !JSON.stringify(trust.payload).includes("secret=hidden") && trust.payload.features.organize.inputFieldsSent.includes("rawContent"));
 
-    const memories = await getJson(`${baseUrl}/api/memories`);
-    assert("公开 Demo 馆藏可直接浏览", memories.response.ok && memories.payload.memories.length === 4);
-    const demoExhibitions = await getJson(`${baseUrl}/api/exhibitions`);
-    const seededExhibition = demoExhibitions.payload.exhibitions[0];
-    const seededExhibitionDetail = await getJson(`${baseUrl}/api/exhibitions/${seededExhibition.id}`);
-    const seededShareCandidates = await getJson(`${baseUrl}/api/offline-exhibits/candidates?exhibitionId=${encodeURIComponent(seededExhibition.id)}`);
-    assert(
-      "公开 Demo 预置已发布展览可读并可进入加密分享素材流",
-      demoExhibitions.response.ok &&
-        demoExhibitions.payload.exhibitions.length === 1 &&
-        seededExhibition.status === "published" &&
-        seededExhibitionDetail.response.ok &&
-        seededExhibitionDetail.payload.exhibition.id === seededExhibition.id &&
-        seededExhibitionDetail.payload.exhibition.status === "published" &&
-        ["demo-campus-farewell", "demo-family-noodles", "demo-friend-call"].every((id) => seededExhibitionDetail.payload.exhibition.memoryIds.includes(id)) &&
-        seededExhibitionDetail.payload.exhibition.memoryIds.length === 3 &&
-        seededShareCandidates.response.ok &&
-        seededShareCandidates.payload.exhibition.id === seededExhibition.id
-    );
-
-    const demoTimeline = await getJson(`${baseUrl}/api/timeline?limit=20&order=asc`);
-    const demoCalibrationEntry = demoTimeline.payload.entries.find((entry) => entry.calibration?.resolutionKind === "alternatives");
-    const demoCalibrationUrl = `${baseUrl}/api/time-calibrations/events/${encodeURIComponent(demoCalibrationEntry.target.id)}`;
-    const demoCalibrationBefore = await getJson(demoCalibrationUrl);
-    const blockedCalibration = await putJson(demoCalibrationUrl, {
-      resolutionKind: "uncertain",
-      intervalStart: "",
-      intervalEnd: "",
-      selectedSourceKeys: [],
-      sourceSetSha256: demoCalibrationBefore.payload.sourceSetSha256,
-      note: "访客不应写入",
-      confirm: true
-    });
-    const demoCalibrationAfter = await getJson(demoCalibrationUrl);
-    assert("公开 Demo 展示预置多种日期记录但拒绝访客改写", demoTimeline.response.ok && demoCalibrationEntry.target.memberIds.length === 2 && demoCalibrationBefore.payload.calibration.resolutionKind === "alternatives" && blockedCalibration.response.status === 403 && demoCalibrationAfter.payload.calibration.updatedAt === demoCalibrationBefore.payload.calibration.updatedAt && demoCalibrationAfter.payload.calibration.resolutionKind === "alternatives");
-
-    const demoOralUrl = `${baseUrl}/api/oral-histories/events/${encodeURIComponent(demoCalibrationEntry.target.id)}`;
-    const demoOralStatsBefore = (await getJson(`${baseUrl}/api/health`)).payload.stats;
-    const demoOral = await getJson(demoOralUrl);
-    const blockedOralPut = await fetch(demoOralUrl, {
-      method: "PUT",
-      headers: writeHeaders(demoOralUrl, { "Content-Type": "application/json", "If-Match": demoOral.response.headers.get("etag") }),
-      body: JSON.stringify({})
-    });
-    const blockedOralDelete = await fetch(demoOralUrl, {
-      method: "DELETE",
-      headers: writeHeaders(demoOralUrl, { "Content-Type": "application/json", "If-Match": demoOral.response.headers.get("etag") }),
-      body: JSON.stringify({ confirm: true })
-    });
-    const demoOralAfter = await getJson(demoOralUrl);
-    const demoOralStatsAfter = (await getJson(`${baseUrl}/api/health`)).payload.stats;
-    assert(
-      "公开 Demo 只读展示口述问题并以零麦克风、零回答写入拒绝 PUT/DELETE",
-      demoOral.response.ok &&
-        demoOral.payload.demo === true &&
-        demoOral.payload.question?.sources.length === 2 &&
-        blockedOralPut.status === 403 &&
-        blockedOralDelete.status === 403 &&
-        demoOralAfter.payload.history.length === 0 &&
-        demoOralStatsAfter.oralHistoryQuestions === demoOralStatsBefore.oralHistoryQuestions &&
-        demoOralStatsAfter.oralHistoryAnswers === demoOralStatsBefore.oralHistoryAnswers
-    );
-
-    const demoCuratorStatsBefore = (await getJson(`${baseUrl}/api/health`)).payload.stats;
-    const demoCuratorSample = await getJson(`${baseUrl}/api/curator-agent/sample`);
-    const sampleRunId = demoCuratorSample.payload.run.id;
-    const sampleRunUrl = `${baseUrl}/api/curator-agent/runs/${sampleRunId}`;
-    const sampleEtag = demoCuratorSample.response.headers.get("etag");
-    const blockedCuratorMutations = await Promise.all([
-      postJson(`${baseUrl}/api/curator-agent/runs`, {
-        intent: "draft_exhibition",
-        query: "公开 Demo 不应创建运行"
-      }, { "Idempotency-Key": "demo-curator-create" }),
-      postJson(`${sampleRunUrl}/execute`, { confirm: true }, {
-        "If-Match": sampleEtag,
-        "Idempotency-Key": "demo-curator-execute"
-      }),
-      postJson(`${sampleRunUrl}/cancel`, { confirm: true }, {
-        "If-Match": sampleEtag,
-        "Idempotency-Key": "demo-curator-cancel"
-      }),
-      postJson(`${sampleRunUrl}/decisions`, {
-        action: "save_exhibition",
-        decision: "approve",
-        confirm: true
-      }, {
-        "If-Match": sampleEtag,
-        "Idempotency-Key": "demo-curator-decision"
-      }),
-      deleteJson(sampleRunUrl, { confirm: true }, {
-        "If-Match": sampleEtag,
-        "Idempotency-Key": "demo-curator-delete"
-      })
-    ]);
-    const demoCuratorStatsAfter = (await getJson(`${baseUrl}/api/health`)).payload.stats;
-    assert(
-      "公开 Demo 只合成零写入策展工作区且全部 V10 POST/DELETE 均返回 403",
-      demoCuratorSample.response.ok &&
-        demoCuratorSample.payload.demo === true &&
-        demoCuratorSample.payload.synthetic === true &&
-        demoCuratorSample.payload.run.schemaVersion === 14 &&
-        demoCuratorSample.payload.run.status === "completed" &&
-        demoCuratorSample.payload.run.allowDecisions === false &&
-        demoCuratorSample.payload.steps.length === 4 &&
-        demoCuratorSample.payload.proposal.actions.length === 3 &&
-        !demoCuratorSample.payload.proposal.actions.some((action) => action.action.includes("share")) &&
-        blockedCuratorMutations.every((item) => item.response.status === 403 && item.payload.interviewDemo === true) &&
-        demoCuratorStatsBefore.curatorAgentRuns === 0 &&
-        demoCuratorStatsBefore.curatorAgentProposals === 0 &&
-        demoCuratorStatsBefore.curatorAgentDecisions === 0 &&
-        JSON.stringify(demoCuratorStatsAfter) === JSON.stringify(demoCuratorStatsBefore)
-    );
-
-    const demoPeople = await getJson(`${baseUrl}/api/entities?type=person&limit=20`);
-    const [demoTargetPerson, demoSourcePerson] = demoPeople.payload.entities;
-    const demoClueStatsBefore = (await getJson(`${baseUrl}/api/health`)).payload.stats;
-    const demoAliasPreview = await postJson(`${baseUrl}/api/entities/${demoTargetPerson.id}/aliases/preview`, { alias: "演示别名" });
-    const demoAliasWrite = await postJson(`${baseUrl}/api/entities/${demoTargetPerson.id}/aliases`, { alias: "演示别名", confirm: true });
-    const demoMergePreview = await postJson(`${baseUrl}/api/entities/${demoTargetPerson.id}/merge/preview`, { sourceEntityId: demoSourcePerson.id });
-    const demoMergeWrite = await postJson(`${baseUrl}/api/entities/${demoTargetPerson.id}/merge`, { sourceEntityId: demoSourcePerson.id, confirm: true });
-    const demoClueStatsAfter = (await getJson(`${baseUrl}/api/health`)).payload.stats;
-    assert("公开 Demo 可预览实体变更但拒绝别名与合并写入", demoAliasPreview.response.ok && demoMergePreview.response.ok && demoAliasWrite.response.status === 403 && demoMergeWrite.response.status === 403);
-    assert("公开 Demo 实体预览保持 SQLite 零写入", demoClueStatsAfter.entities === demoClueStatsBefore.entities && demoClueStatsAfter.entityAliases === demoClueStatsBefore.entityAliases);
-
-    const demoExhibitionPreview = await postJson(`${baseUrl}/api/exhibitions/preview`, {
-      theme: "Demo 中的温暖片段",
-      memoryIds: memories.payload.memories.slice(0, 2).map((memory) => memory.id)
-    });
-    assert("公开 Demo 允许生成不落库的主题展览预览", demoExhibitionPreview.response.ok && demoExhibitionPreview.payload.preview.sections.length > 0);
-    const blockedExhibitionSave = await postJson(`${baseUrl}/api/exhibitions`, {
-      ...demoExhibitionPreview.payload.preview,
-      confirm: true
-    });
-    assert("公开 Demo 阻止主题展览持久化", blockedExhibitionSave.response.status === 403 && blockedExhibitionSave.payload.interviewDemo === true);
-
-    const demoCapsulesBefore = await getJson(`${baseUrl}/api/capsules`);
-    const blockedCapsule = await postJson(`${baseUrl}/api/capsules`, {
-      exhibitionId: "demo-exhibition",
-      title: "不应保存的 Demo 胶囊",
-      shellMessage: "不写入",
-      opensOn: "2099-01-01",
-      timezone: "Asia/Shanghai",
-      mediaAssetIds: [],
-      transcriptAssetIds: [],
-      confirm: true
-    });
-    const demoCapsulesAfter = await getJson(`${baseUrl}/api/capsules`);
-    assert("公开 Demo 阻止胶囊写入且外壳列表保持零变化", demoCapsulesBefore.response.ok && blockedCapsule.response.status === 403 && blockedCapsule.payload.interviewDemo === true && demoCapsulesAfter.payload.capsules.length === demoCapsulesBefore.payload.capsules.length);
-
-    const targetId = memories.payload.memories[0].id;
-    const syntheticPerspectives = await getJson(`${baseUrl}/api/multi-perspective/memories/demo-never-read-private-store`);
-    assert("公开 Demo 多视角对照固定返回合成零保存投影", syntheticPerspectives.response.ok && syntheticPerspectives.payload.preview?.synthetic === true && syntheticPerspectives.payload.preview?.target?.id === "demo-never-read-private-store" && syntheticPerspectives.payload.preview?.execution?.externalModel === false && syntheticPerspectives.payload.preview?.execution?.persisted === false && JSON.stringify(syntheticPerspectives.payload).includes("身份未核验") && !JSON.stringify(syntheticPerspectives.payload).includes(targetId));
-    const demoRevisit = await getJson(`${baseUrl}/api/revisits?kind=random&localDate=2026-07-16&timezone=Asia%2FShanghai`);
-    assert("公开 Demo 可以浏览但不会预写回访状态", demoRevisit.response.ok && demoRevisit.payload.revisit?.memory.id && demoRevisit.payload.revisit.state.viewCount === 0);
-    const demoIntentBefore = await getJson(`${baseUrl}/api/revisits/${targetId}/intent`);
-    const demoIntentListBefore = await getJson(`${baseUrl}/api/revisits/intents`);
-    const blockedIntent = await putJson(`${baseUrl}/api/revisits/${targetId}/intent`, {
-      choice: "welcome",
-      notBeforeLocalDate: "",
-      timezone: "",
-      confirm: true
-    });
-    const demoIntentAfter = await getJson(`${baseUrl}/api/revisits/${targetId}/intent`);
-    const demoIntentListAfter = await getJson(`${baseUrl}/api/revisits/intents`);
-    assert("公开 Demo 拒绝回访意愿 PUT 且保持零持久化", demoIntentBefore.payload.intent.choice === "neutral" && demoIntentListBefore.payload.count === 0 && blockedIntent.response.status === 403 && blockedIntent.payload.interviewDemo === true && demoIntentAfter.payload.intent.choice === "neutral" && demoIntentListAfter.payload.count === 0);
-    const demoRevisitContext = { localDate: "2026-07-16", timezone: "Asia/Shanghai" };
-    const blockedViewed = await postJson(`${baseUrl}/api/revisits/${targetId}/viewed`, demoRevisitContext);
-    const blockedDismissed = await postJson(`${baseUrl}/api/revisits/${targetId}/dismissed`, demoRevisitContext);
-    assert("公开 Demo 阻止回访浏览与隐藏状态写入", blockedViewed.response.status === 403 && blockedViewed.payload.interviewDemo === true && blockedDismissed.response.status === 403 && blockedDismissed.payload.interviewDemo === true);
-
-    const blockedDelete = await fetch(`${baseUrl}/api/memories/${targetId}`, {
-      method: "DELETE",
-      headers: writeHeaders(`${baseUrl}/api/memories/${targetId}`)
-    });
-    const blockedPayload = await blockedDelete.json();
-    assert("公开 Demo 阻止删除", blockedDelete.status === 403 && blockedPayload.interviewDemo === true);
-
-    const blockedPurge = await fetch(`${baseUrl}/api/memories/purge`, {
-      method: "DELETE",
-      headers: writeHeaders(`${baseUrl}/api/memories/purge`, { "Content-Type": "application/json" }),
-      body: JSON.stringify({ confirm: "DELETE" })
-    });
-    assert("公开 Demo 阻止清空", blockedPurge.status === 403);
-
-    const blockedSeedEdit = await putJson(`${baseUrl}/api/memories/${targetId}`, { title: "不应覆盖预置展品" });
-    assert("公开 Demo 保护预置展品不被改写", blockedSeedEdit.response.status === 403);
-
-    const blockedImport = await postJson(`${baseUrl}/api/memories/import`, { memories: [] });
-    assert("公开 Demo 禁止导入污染共享临时实例", blockedImport.response.status === 403);
-
-    const blockedArchiveRestore = await fetch(`${baseUrl}/api/archive/restore`, {
-      method: "POST",
-      headers: writeHeaders(`${baseUrl}/api/archive/restore`, { "Content-Type": "application/octet-stream" }),
-      body: Buffer.from([0x1f, 0x8b])
-    });
-    assert("公开 Demo 禁止完整归档恢复", blockedArchiveRestore.status === 403);
-
-    const demoLockBefore = await getJson(`${baseUrl}/api/museum-lock`);
-    const demoV15StatsBefore = (await getJson(`${baseUrl}/api/health`)).payload.stats;
-    const blockedDemoLockResponse = await fetch(`${baseUrl}/api/museum-lock/lock`, {
-      method: "POST",
-      headers: writeHeaders(`${baseUrl}/api/museum-lock/lock`, { "Content-Type": "text/plain" }),
-      body: "Demo 不应读取锁馆口令正文"
-    });
-    const blockedDemoLock = await blockedDemoLockResponse.json();
-    const blockedDemoDrillResponse = await fetch(`${baseUrl}/api/recovery-drills/structural`, {
-      method: "POST",
-      headers: writeHeaders(`${baseUrl}/api/recovery-drills/structural`, { "Content-Type": "text/plain" }),
-      body: Buffer.alloc(2048, 0x41)
-    });
-    const blockedDemoDrill = await blockedDemoDrillResponse.json();
-    const blockedDemoIsolatedResponse = await fetch(`${baseUrl}/api/recovery-drills/isolated-restore`, {
-      method: "POST",
-      headers: writeHeaders(`${baseUrl}/api/recovery-drills/isolated-restore`, { "Content-Type": "text/plain" }),
-      body: Buffer.alloc(2048, 0x42)
-    });
-    const blockedDemoIsolated = await blockedDemoIsolatedResponse.json();
-    const demoLockAfter = await getJson(`${baseUrl}/api/museum-lock`);
-    const demoV15StatsAfter = (await getJson(`${baseUrl}/api/health`)).payload.stats;
-    assert(
-      "公开 Demo 在解析 Content-Type 和正文前以 403 阻止锁馆与结构演练上传",
-      [
-        [blockedDemoLockResponse, blockedDemoLock],
-        [blockedDemoDrillResponse, blockedDemoDrill]
-      ].every(([response, payload]) => response.status === 403 && payload.interviewDemo === true && payload.bodyBytesRead === 0) &&
-        blockedDemoIsolatedResponse.status === 403 &&
-        blockedDemoIsolated.code === "ISOLATED_RECOVERY_DEMO_READ_ONLY" &&
-        blockedDemoIsolated.interviewDemo === true &&
-        blockedDemoIsolated.bodyBytesRead === 0 &&
-        demoLockAfter.payload.state?.status === demoLockBefore.payload.state?.status &&
-        demoLockAfter.payload.state?.revision === demoLockBefore.payload.state?.revision &&
-        JSON.stringify(demoV15StatsAfter) === JSON.stringify(demoV15StatsBefore) &&
-        !fs.existsSync(path.join(mediaRoot, ".drill"))
-    );
-
-    const blockedHealthScan = await postJson(`${baseUrl}/api/collection-health/scans`, { scope: "full" });
-    const blockedArchiveInspect = await fetch(`${baseUrl}/api/archive/inspect`, {
-      method: "POST",
-      headers: writeHeaders(`${baseUrl}/api/archive/inspect`, { "Content-Type": "application/vnd.time-isle" }),
-      body: Buffer.from([0x1f, 0x8b])
-    });
-    assert("公开 Demo 禁止重型馆藏体检与私人备份验真", blockedHealthScan.response.status === 403 && blockedArchiveInspect.status === 403);
-
-    const guide = await postJson(`${baseUrl}/api/guide`, { question: "哪些记忆与温暖有关？" });
-    assert("公开 Demo 讲解路径可用", guide.response.ok && guide.payload.citations.length > 0);
-    const analyzed = await postJson(`${baseUrl}/api/analyze`, { rawContent: "公开 Demo 的模型密钥即使误配也不能被调用。" });
-    assert("公开 Demo 忽略误配密钥且整理仍可用", analyzed.response.ok && analyzed.payload.mode === "mock-fallback");
-
-    const visitorMemoryId = `demo-visitor-${Date.now()}`;
-    const visitorCreated = await postJson(`${baseUrl}/api/memories`, {
-      id: visitorMemoryId,
-      title: "访客临时展品",
-      rawContent: "只用于验证公开 Demo 不能通过反复编辑膨胀修订历史。",
-      exhibitText: "共享示例只允许一次性临时记录。"
-    });
-    const revisionsBeforeBlockedEdit = await getJson(`${baseUrl}/api/revisions?limit=100`);
-    const blockedVisitorEdit = await putJson(`${baseUrl}/api/memories/${visitorMemoryId}`, {
-      title: "不应产生第二条修订",
-      expectedUpdatedAt: visitorCreated.payload.memory.updatedAt
-    });
-    const revisionsAfterBlockedEdit = await getJson(`${baseUrl}/api/revisions?limit=100`);
-    assert("公开 Demo 阻止访客新增展品的后续 PUT，避免无限制造修订", visitorCreated.response.status === 201 && blockedVisitorEdit.response.status === 403 && revisionsAfterBlockedEdit.payload.revisions.length === revisionsBeforeBlockedEdit.payload.revisions.length);
-
-    const route = await getJson(`${baseUrl}/api/archaeology/routes`);
-    assert("公开 Demo 可生成不写入私人数据的记忆航线", route.response.ok && route.payload.route.items.length >= 2 && route.payload.route.transitions.every((item) => item.sameEvent === "unassessed"));
-
-    await assertDemoMediaWritesBlocked(baseUrl, targetId);
-    await assertDemoVoiceWritesBlocked(baseUrl, targetId, mediaRoot);
-    const memoryLimit = status.payload.limits?.memories;
-    const memoriesBeforeCapacity = await getJson(`${baseUrl}/api/memories`);
-    const capacityAttempts = Array.from({ length: (memoryLimit - memoriesBeforeCapacity.payload.memories.length) + 8 }, (_, offset) => {
-      const index = memoriesBeforeCapacity.payload.memories.length + offset;
-      return postJson(`${baseUrl}/api/memories`, {
-        id: `demo-capacity-${index}`,
-        title: `临时容量 ${index}`,
-        rawContent: "只用于验证公开 Demo 的固定资源上限。",
-        exhibitText: "容量边界测试"
-      });
-    });
-    const capacityResults = await Promise.all(capacityAttempts);
-    const afterCapacity = await getJson(`${baseUrl}/api/memories`);
-    assert(
-      "公开 Demo 以事务硬上限和 429 阻止并发共享文本无限增长",
-      Number.isInteger(memoryLimit) &&
-        capacityResults.filter((item) => item.response.status === 201).length === memoryLimit - memoriesBeforeCapacity.payload.memories.length &&
-        capacityResults.filter((item) => item.response.status === 429).length === 8 &&
-        afterCapacity.payload.memories.length === memoryLimit
-    );
+      const rawContent = "外部模型同意门禁的虚构测试原文。";
+      const memoryId = "external-consent-memory";
+      const created = await postJson(`${baseUrl}/api/memories`, { id: memoryId, rawContent });
+      assert("外部整理同意测试也遵守先保存原文", created.response.status === 201);
+      const statsBefore = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+      const withoutConsent = await postJson(`${baseUrl}/api/analyze`, { rawContent, memoryId });
+      const consent = await issueExternalConsent(baseUrl, trust.payload.contractId, "organize", rawContent);
+      const wrongContract = await postJson(`${baseUrl}/api/analyze`, { rawContent, memoryId, allowExternalAi: true, externalAiConsent: { ...consent, contractId: `sha256:${"0".repeat(64)}` } });
+      const withConsent = await postJson(`${baseUrl}/api/analyze`, { rawContent, memoryId, allowExternalAi: true, externalAiConsent: consent });
+      const replayedConsent = await postJson(`${baseUrl}/api/analyze`, { rawContent, memoryId, allowExternalAi: true, externalAiConsent: consent });
+      const guideQuestion = "这件虚构展品说了什么？";
+      const guideWithoutConsent = await postJson(`${baseUrl}/api/guide`, { question: guideQuestion });
+      const guideConsent = await issueExternalConsent(baseUrl, trust.payload.contractId, "guide", guideQuestion);
+      const guideWithConsent = await postJson(`${baseUrl}/api/guide`, { question: guideQuestion, allowExternalAi: true, externalAiConsent: guideConsent });
+      const statsAfter = (await getJson(`${baseUrl}/api/health`)).payload.stats;
+      assert("未同意时不外发，过期或不匹配的合同明确拒绝", withoutConsent.response.ok && withoutConsent.payload.execution.mode === "local-rules" && withoutConsent.payload.execution.externalRequestOccurred === false && wrongContract.response.status === 409);
+      assert("明确同意后才尝试外部请求，失败时回退并诚实回执", withConsent.response.ok && withConsent.payload.execution.mode === "local-rules-fallback" && withConsent.payload.execution.externalRequestOccurred === true && withConsent.payload.execution.consentApplied === true && withConsent.payload.execution.provider === "测试提供方" && withConsent.payload.execution.model === "consent-test-model" && withConsent.payload.persistence.wrote === false);
+      assert("一次性外部 AI 同意不可重放", replayedConsent.response.status === 409 && replayedConsent.payload.error?.includes("已经使用过"));
+      assert("讲解员使用独立的逐次同意，且回执不冒充成功外部调用", guideWithoutConsent.response.ok && guideWithoutConsent.payload.execution.externalRequestOccurred === false && guideWithConsent.response.ok && guideWithConsent.payload.execution.externalRequestOccurred === true && guideWithConsent.payload.execution.consentApplied === true);
+      assert("整理与讲解预览都不预写运行或正文", JSON.stringify(statsAfter) === JSON.stringify(statsBefore));
     });
   } finally {
     removeDatabase(dbPath);
@@ -2457,116 +2220,120 @@ async function runDemoSafetyFlow() {
   }
 }
 
-async function assertDemoMediaWritesBlocked(baseUrl, memoryId) {
-  const uploadId = "upload-00000000-0000-4000-8000-000000000000";
-  const assetId = "asset-demo-write-guard";
-  const annotationId = "observation-demo-write-guard";
-  const fixture = createWebp(2, 2);
-  const attempts = [
-    {
-      name: "原图上传",
-      request: () => fetch(`${baseUrl}/api/media/uploads`, {
-        method: "POST",
-        headers: writeHeaders(`${baseUrl}/api/media/uploads`, { "Content-Type": "image/webp" }),
-        body: fixture
-      })
-    },
-    {
-      name: "展示图写入",
-      request: () => fetch(`${baseUrl}/api/media/uploads/${uploadId}/display`, {
-        method: "PUT",
-        headers: writeHeaders(`${baseUrl}/api/media/uploads/${uploadId}/display`, { "Content-Type": "image/webp" }),
-        body: fixture
-      })
-    },
-    {
-      name: "缩略图写入",
-      request: () => fetch(`${baseUrl}/api/media/uploads/${uploadId}/thumb`, {
-        method: "PUT",
-        headers: writeHeaders(`${baseUrl}/api/media/uploads/${uploadId}/thumb`, { "Content-Type": "image/webp" }),
-        body: fixture
-      })
-    },
-    {
-      name: "上传完成",
-      request: () => jsonFetch(`${baseUrl}/api/media/uploads/${uploadId}/complete`, "POST", {})
-    },
-    {
-      name: "上传丢弃",
-      request: () => jsonFetch(`${baseUrl}/api/media/uploads/${uploadId}`, "DELETE")
-    },
-    {
-      name: "媒体关联",
-      request: () => jsonFetch(`${baseUrl}/api/memories/${memoryId}/media`, "POST", { assetId })
-    },
-    {
-      name: "媒体说明更新",
-      request: () => jsonFetch(`${baseUrl}/api/memories/${memoryId}/media/${assetId}`, "PUT", { caption: "不应写入" })
-    },
-    {
-      name: "媒体解除关联",
-      request: () => jsonFetch(`${baseUrl}/api/memories/${memoryId}/media/${assetId}`, "DELETE")
-    },
-    {
-      name: "孤儿资产删除",
-      request: () => jsonFetch(`${baseUrl}/api/media/assets/${assetId}`, "DELETE")
-    }
-  ];
-
-  const results = [];
-  for (const attempt of attempts) {
-    const response = await attempt.request();
-    const payload = await response.json();
-    results.push({ name: attempt.name, status: response.status, payload });
-  }
+async function issueExternalConsent(baseUrl, contractId, feature, input) {
+  const issued = await postJson(`${baseUrl}/api/ai/consent`, {
+    acknowledged: true,
+    contractId,
+    feature,
+    inputSha256: digestInput(feature, input)
+  });
   assert(
-    "公开 Demo 阻止全部媒体写操作",
-    results.length === attempts.length &&
-      results.every((item) => item.status === 403 && item.payload.interviewDemo === true)
+    `服务端为 ${feature} 签发一次性内容绑定同意`,
+    issued.response.status === 201 &&
+      issued.payload.consent?.contractId === contractId &&
+      issued.payload.consent?.feature === feature &&
+      issued.payload.consent?.inputSha256 === digestInput(feature, input) &&
+      issued.payload.persistence?.wrote === false
   );
-
-  const annotationsUrl = `${baseUrl}/api/memories/${memoryId}/media/${assetId}/annotations`;
-  const annotationAttempts = [
-    () => jsonFetch(annotationsUrl, "POST", {
-      region: { x: 0, y: 0, width: 1, height: 1 },
-      label: "不应写入公开 Demo"
-    }),
-    () => jsonFetch(`${annotationsUrl}/${annotationId}`, "PUT", {
-      region: { x: 0, y: 0, width: 1, height: 1 },
-      label: "不应更新公开 Demo"
-    }),
-    () => jsonFetch(`${annotationsUrl}/${annotationId}`, "DELETE")
-  ];
-  const annotationResults = [];
-  for (const request of annotationAttempts) {
-    const response = await request();
-    annotationResults.push({ response, payload: await response.json() });
-  }
-  assert(
-    "公开 Demo 阻止图片区域证据的创建、更新和删除",
-    annotationResults.every(({ response, payload }) => response.status === 403 && payload.interviewDemo === true)
-  );
+  return issued.payload.consent;
 }
 
-async function assertDemoVoiceWritesBlocked(baseUrl, memoryId, mediaRoot) {
-  const assetId = "voice-demo-write-guard";
-  const before = (await getJson(`${baseUrl}/api/health`)).payload.stats;
-  const attempts = [
-    fetch(`${baseUrl}/api/voice/uploads?filename=demo.webm`, {
-      method: "POST",
-      headers: writeHeaders(`${baseUrl}/api/voice/uploads?filename=demo.webm`, { "Content-Type": "audio/webm" }),
-      body: createVoiceWebm()
-    }),
-    jsonFetch(`${baseUrl}/api/memories/${memoryId}/voices`, "PUT", { items: [{ assetId }] }),
-    jsonFetch(`${baseUrl}/api/memories/${memoryId}/voices/${assetId}/transcript`, "PUT", { text: "不应写入", confirm: true }),
-    jsonFetch(`${baseUrl}/api/memories/${memoryId}/voices/${assetId}/transcript`, "DELETE"),
-    jsonFetch(`${baseUrl}/api/voice/assets/${assetId}`, "DELETE")
-  ];
-  const responses = await Promise.all(attempts);
-  const payloads = await Promise.all(responses.map((response) => response.json()));
-  const after = (await getJson(`${baseUrl}/api/health`)).payload.stats;
-  assert("公开 Demo 阻止全部声音与转写写操作", responses.every((response) => response.status === 403) && payloads.every((payload) => payload.interviewDemo === true));
-  assert("公开 Demo 声音写入保持数据库与文件零变化", after.voiceAssets === before.voiceAssets && after.voiceLinks === before.voiceLinks && after.voiceTranscripts === before.voiceTranscripts && listFiles(path.join(mediaRoot, "voice", "ready")).length === 0);
+async function runDemoReadOnlyFlow() {
+  const dbPath = path.join(os.tmpdir(), `ai-memory-museum-demo-read-only-${Date.now()}.sqlite`);
+  const mediaRoot = `${dbPath}.media`;
+  try {
+    await withServer({
+      DB_PATH: dbPath,
+      MEDIA_ROOT: mediaRoot,
+      INTERVIEW_DEMO: "true",
+      AI_API_KEY: "demo-key-must-be-ignored",
+      AI_BASE_URL: "https://example.invalid/private/path?token=must-not-leak"
+    }, async (baseUrl) => {
+      const status = await getJson(`${baseUrl}/api/demo/status`);
+      const trust = await getJson(`${baseUrl}/api/runtime/trust`);
+      const healthBefore = await getJson(`${baseUrl}/api/health`);
+      const memoriesBefore = await getJson(`${baseUrl}/api/memories`);
+      const home = await fetch(`${baseUrl}/`);
+
+      assert("公开 Demo 仍播种四件完全虚构展品", status.response.ok && status.payload.interviewDemo === true && status.payload.seededExamples === 4 && memoriesBefore.payload.memories.length === 4);
+      assert("公开 Demo 禁用麦克风且不伪装为私人应用", home.ok && home.headers.get("permissions-policy")?.includes("microphone=()") && trust.payload.audience === "public-demo" && trust.payload.pwa.nativeApp === false);
+      assert(
+        "运行时信任合同公开只读、临时存储与未静态加密边界",
+        trust.response.ok &&
+          trust.payload.contractVersion === 1 &&
+          trust.payload.appVersion === "17.1.2" &&
+          trust.payload.schemaVersion === 19 &&
+          trust.payload.storage.visitorWritesAllowed === false &&
+          trust.payload.storage.blockedBeforeBodyRead === true &&
+          ["POST", "PUT", "PATCH", "DELETE"].every((method) => trust.payload.storage.blockedMethods.includes(method)) &&
+          trust.payload.externalAi.configured === false &&
+          trust.payload.encryptionAtRest.enabled === false &&
+          !JSON.stringify(trust.payload).includes("must-not-leak")
+      );
+
+      const sample = await getJson(`${baseUrl}/api/demo/compose-sample`);
+      const guide = await getJson(`${baseUrl}/api/demo/guide?id=warmth`);
+      const invalidGuide = await getJson(`${baseUrl}/api/demo/guide?id=visitor-question`);
+      const curatorSample = await getJson(`${baseUrl}/api/curator-agent/sample`);
+      const semanticSnapshot = await getJson(`${baseUrl}/api/semantic-recall/snapshot`);
+      assert("公开记录页只返回固定虚构草稿且预览零持久化", sample.response.ok && sample.payload.sample === true && sample.payload.readOnly === true && sample.payload.execution.mode === "local-rules" && sample.payload.persistence.wrote === false && sample.payload.workflow.run.persisted === false);
+      assert("公开讲解只接受固定问题并返回句式干净的本地引用", guide.response.ok && guide.payload.sample === true && guide.payload.readOnly === true && guide.payload.citations.length > 0 && guide.payload.execution.engineId === "local-evidence-guide-v1" && guide.payload.persistence.wrote === false && invalidGuide.response.status === 400 && !/记录了这件展品记录了|[。！？!?；;,，]{2,}/u.test(guide.payload.answer));
+      assert("公开高级能力只提供合成策展样例与只读语义快照", curatorSample.response.ok && curatorSample.payload.synthetic === true && curatorSample.payload.run.allowDecisions === false && semanticSnapshot.response.ok && semanticSnapshot.payload.snapshot.documents.length === 4);
+
+      const targetId = memoriesBefore.payload.memories[0].id;
+      const writeAttempts = [
+        () => postJson(`${baseUrl}/api/analyze`, { rawContent: "这段正文绝不能被读取或保存。" }),
+        () => postJson(`${baseUrl}/api/guide`, { question: "任意问题不属于公开固定问题。" }),
+        () => postJson(`${baseUrl}/api/memories`, { rawContent: "不能新增" }),
+        () => putJson(`${baseUrl}/api/memories/${targetId}`, { rawContent: "不能修改" }),
+        async () => {
+          const response = await fetch(`${baseUrl}/api/memories/${targetId}`, {
+            method: "PATCH",
+            headers: writeHeaders(`${baseUrl}/api/memories/${targetId}`, { "Content-Type": "application/json" }),
+            body: JSON.stringify({ title: "不能局部修改" })
+          });
+          return { response, payload: await response.json() };
+        },
+        () => deleteJson(`${baseUrl}/api/memories/${targetId}`),
+        async () => {
+          const response = await fetch(`${baseUrl}/api/media/uploads`, {
+            method: "POST",
+            headers: writeHeaders(`${baseUrl}/api/media/uploads`, { "Content-Type": "application/octet-stream" }),
+            body: Buffer.alloc(4096, 0x41)
+          });
+          return { response, payload: await response.json() };
+        },
+        async () => {
+          const response = await fetch(`${baseUrl}/api/archive/restore`, {
+            method: "POST",
+            headers: writeHeaders(`${baseUrl}/api/archive/restore`, { "Content-Type": "text/plain" }),
+            body: Buffer.alloc(4096, 0x42)
+          });
+          return { response, payload: await response.json() };
+        }
+      ];
+      const blocked = [];
+      for (const attempt of writeAttempts) blocked.push(await attempt());
+      assert(
+        "公开 Demo 所有写方法在 Content-Type 与正文解析前统一拒绝",
+        blocked.every(({ response, payload }) =>
+          response.status === 403 &&
+          payload.code === "INTERVIEW_DEMO_READ_ONLY" &&
+          payload.interviewDemo === true &&
+          payload.bodyBytesRead === 0 &&
+          payload.persistence?.wrote === false
+        )
+      );
+
+      const healthAfter = await getJson(`${baseUrl}/api/health`);
+      const memoriesAfter = await getJson(`${baseUrl}/api/memories`);
+      assert("公开 Demo 门禁前后数据库统计与四件播种展品完全不变", JSON.stringify(healthAfter.payload.stats) === JSON.stringify(healthBefore.payload.stats) && JSON.stringify(memoriesAfter.payload.memories) === JSON.stringify(memoriesBefore.payload.memories));
+      assert("公开 Demo 门禁没有生成访客媒体文件", listFiles(path.join(mediaRoot, "ready")).length === 0 && listFiles(path.join(mediaRoot, "voice", "ready")).length === 0);
+    });
+  } finally {
+    removeDatabase(dbPath);
+    removeDirectory(mediaRoot);
+  }
 }
 
 async function withServer(extraEnv, callback) {

@@ -271,6 +271,7 @@
 
     function handleFormChange(event) {
       const target = event.target;
+      clearValidation(target);
       if (target.name === QUESTION_NAME) {
         state.selectedQuestionKey = String(target.value || "");
         state.conflict = false;
@@ -289,6 +290,7 @@
     }
 
     function handleFormInput(event) {
+      clearValidation(event.target);
       if (event.target === elements.transcript) state.transcriptText = elements.transcript.value.slice(0, MAX_TRANSCRIPT_LENGTH);
       if (event.target === elements.intervalStart) state.intervalStart = elements.intervalStart.value;
       if (event.target === elements.intervalEnd) state.intervalEnd = elements.intervalEnd.value;
@@ -767,8 +769,17 @@
 
     function showValidation(message, focus) {
       setStatus(message, "error");
-      if (focus?.setAttribute) focus.setAttribute("aria-invalid", "true");
+      if (focus?.setAttribute) {
+        focus.setAttribute("aria-invalid", "true");
+        if (elements.status.id) focus.setAttribute("aria-describedby", elements.status.id);
+      }
       focus?.focus?.({ preventScroll: false });
+    }
+
+    function clearValidation(field) {
+      if (!field?.removeAttribute) return;
+      field.removeAttribute("aria-invalid");
+      if (field.getAttribute("aria-describedby") === elements.status.id) field.removeAttribute("aria-describedby");
     }
 
     function focusFirstQuestion() {

@@ -48,7 +48,7 @@ equal((html.match(/\/revisit-intents\.css(?:\?[^"']*)?/g) || []).length, 1, "回
 ok(revisits.includes("TimeIsleRevisitIntents?.createController"), "今日回访控制器接入长期意愿子模块");
 ok(revisits.includes("intentController?.renderPanel(memory, current.intent)"), "单件展品在呈现后才生成意愿面板");
 ok(revisits.includes("button.disabled = busyAction || busyLoad") && revisits.includes("if (!button || busyAction || busyLoad) return;"), "读取候选期间禁止切换方式，避免旧响应覆盖新选择");
-ok(revisits.includes('const next = await load(revisit.kind, { userInitiated: true });') && revisits.includes('if (next) elements.content.querySelector("[data-revisit-title]")?.focus'), "换一件后把键盘焦点交给新展品标题");
+ok(revisits.includes('const next = await load(revisit.kind, { userInitiated: true, cursor:') && revisits.includes('if (next) elements.content.querySelector("[data-revisit-title]")?.focus({ preventScroll: true });'), "换一件后把键盘焦点交给新展品标题");
 
 for (const endpoint of ["/api/revisits/intents", "/api/revisits/${encodeURIComponent(memoryId)}/intent"]) {
   ok(source.includes(endpoint), `前端接入 ${endpoint}`);

@@ -107,7 +107,7 @@
       if (!elements.dialog.open) elements.dialog.showModal();
       global.requestAnimationFrame?.(() => elements.dialogTitle.focus({ preventScroll: true }));
       if (demo) await loadSample();
-      else setStatus("填写主题即可开始；限定来源是可选项。助手只会先生成提案。", false);
+      else setStatus("填写主题即可开始；限定来源是可选项。确定性工作流只会先生成提案。", false);
     }
 
     async function preselectSources(handoff, trigger) {
@@ -201,7 +201,7 @@
       const count = selectedMemoryIds().length;
       elements.sourceStatus.textContent = count
         ? `已选择 ${count} 件；限定来源时至少选择 ${MIN_SELECTED_SOURCES} 件、最多 ${MAX_SELECTED_SOURCES} 件。`
-        : `可选择 ${MIN_SELECTED_SOURCES}–${MAX_SELECTED_SOURCES} 件；不选择时由助手只读查找。`;
+        : `可选择 ${MIN_SELECTED_SOURCES}–${MAX_SELECTED_SOURCES} 件；不选择时由确定性规则只读查找。`;
     }
 
     async function startProposal(event) {
@@ -215,7 +215,7 @@
         return;
       }
       if (memoryIds.length === 1) {
-        setStatus("限定来源至少需要 2 件；也可以取消选择，让助手在馆藏中查找。", true);
+        setStatus("限定来源至少需要 2 件；也可以取消选择，让确定性规则在馆藏中查找。", true);
         elements.sourcePicker.open = true;
         return;
       }
@@ -243,7 +243,7 @@
         if (!isCurrent(run)) return;
         acceptWorkspace(created);
         renderWorkspace("read");
-        setStatus("助手正在只读查阅来源并整理章节…");
+        setStatus("确定性策展工作流正在只读查阅来源并整理章节…");
         const executed = await requestJson("mutation", `/api/curator-agent/runs/${encodeURIComponent(workspace.run.id)}/execute`, {
           method: "POST",
           headers: mutationHeaders("execute"),
@@ -584,7 +584,7 @@
       const article = button.closest("[data-curator-run]");
       if (!article || article.querySelector(".curator-agent-delete-confirm")) return;
       article.insertAdjacentHTML("beforeend", `<div class="curator-agent-delete-confirm">
-        <span>只删除这条 Agent 运行记录，不删除馆藏或展览。</span>
+        <span>只删除这条策展工作流记录，不删除馆藏或展览。</span>
         <button type="button" class="button danger compact" data-curator-run-delete-confirm="${escapeHtml(article.dataset.curatorRun)}">确认删除</button>
         <button type="button" class="button text-button compact" data-curator-run-delete-cancel>取消</button>
       </div>`);
@@ -613,7 +613,7 @@
           busy = false;
           resetWorkspace({ preserveMemories: true });
         }
-        setStatus("这条本机 Agent 运行记录已删除；馆藏与展览未改变。", false, true);
+        setStatus("这条本机策展工作流记录已删除；馆藏与展览未改变。", false, true);
       } catch (error) {
         if (!isExpectedCancellation(error)) setStatus(`记录删除失败：${errorMessage(error)}`, true);
       } finally {
@@ -697,6 +697,7 @@
     function setDemo(value) {
       const next = Boolean(value);
       if (demo === next) return;
+      startSession();
       demo = next;
       if (elements.dialog.open) {
         resetWorkspace();

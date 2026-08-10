@@ -23,6 +23,7 @@
 
   function createController(config = {}) {
     const documentRef = config.document || global.document;
+    const lifecycleTarget = config.lifecycleTarget || global;
     if (!documentRef) throw new Error("TimeIsleVoice 需要浏览器 DOM。");
     const fetchImpl = config.fetch || (typeof global.fetch === "function" ? global.fetch.bind(global) : null);
     if (!fetchImpl) throw new Error("TimeIsleVoice 需要 fetch 支持。");
@@ -44,6 +45,8 @@
     let items = [];
     let session = 0;
     let mutationBusy = false;
+    let loadBusy = false;
+    let externalBusy = false;
     let loadError = null;
     let loadPromise = Promise.resolve();
     let recording = null;
@@ -63,7 +66,8 @@
       listen(elements.voiceFileInput, "change", handleFileInput);
       listen(elements.voiceList, "click", handleListClick);
       listen(elements.voiceList, "input", handleListInput);
-      listen(global, "pagehide", handlePageHide);
+      listen(documentRef, "visibilitychange", handleVisibilityChange);
+      listen(lifecycleTarget, "pagehide", handlePageHide);
     }
 
     function listen(target, type, handler, options) {
@@ -169,7 +173,11 @@
         body: item.file,
         signal: abortController.signal
       }).then((payload) => {
-        if (!isActiveItem(item, itemSession)) return null;
+        if (!isActiveItem(item, itemSession)) {
+          const staleAsset = normalizeAsset(payload?.asset);
+          if (staleAsset.id) void cleanupOrphanAsset(staleAsset.id);
+          return null;
+        }
         item.asset = normalizeAsset(payload.asset);
         item.assetId = item.asset.id;
         item.contentUrl = safeAudioUrl(item.asset.contentUrl) || item.previewUrl;
@@ -194,7 +202,7 @@
 
     async function startRecording() {
       if (permissionRequest) { cancelPermissionRequest(true); return; }
-      if (demo || recording || mutationBusy || items.length >= policy.maxVoicesPerMemory) return;
+      if (demo || recording || isInteractionBusy() || items.length >= policy.maxVoicesPerMemory) return;
       if (!canRecord()) {
         setStatus("当前环境不能安全录音，请改为选择已有音频。", "error");
         return;
@@ -209,11 +217,13 @@
       let stream, startedRecording = null;
       try {
         stream = await navigatorRef.mediaDevices.getUserMedia({ audio: true, video: false });
-        if (permissionRequest?.token !== token || requestSession !== session || demo || mutationBusy) { stopTracks(stream); return; }
+        if (permissionRequest?.token !== token || requestSession !== session || demo || isInteractionBusy()) { stopTracks(stream); return; }
         const mimeType = preferredRecorderMime(MediaRecorderImpl);
         const recorder = new MediaRecorderImpl(stream, { mimeType });
         const recordSession = session;
         const chunks = [];
+        let resolveStop;
+        const stopPromise = new Promise((resolve) => { resolveStop = resolve; });
         recording = {
           recorder,
           stream,
@@ -223,7 +233,9 @@
           cancelled: false,
           recordSession,
           timer: null,
-          timeout: null
+          timeout: null,
+          stopPromise,
+          resolveStop
         };
         startedRecording = recording;
         recorder.addEventListener("dataavailable", (event) => {
@@ -255,39 +267,50 @@
     }
 
     function stopRecording(cancelled = false, reachedLimit = false) {
-      if (!recording) return;
-      recording.cancelled = Boolean(cancelled);
-      recording.reachedLimit = Boolean(reachedLimit);
-      clearRecordingTimers(recording);
-      stopTracks(recording.stream);
-      if (recording.recorder.state !== "inactive") recording.recorder.stop();
-      else finalizeRecording();
+      if (!recording) return Promise.resolve({ kept: false, cancelled: Boolean(cancelled) });
+      const active = recording;
+      active.cancelled = Boolean(cancelled);
+      active.reachedLimit = Boolean(reachedLimit);
+      clearRecordingTimers(active);
+      stopTracks(active.stream);
+      if (active.recorder.state !== "inactive") active.recorder.stop();
+      else void finalizeRecording();
+      return active.stopPromise;
     }
 
-    function finalizeRecording() {
+    async function finalizeRecording() {
       const finished = recording;
       if (!finished) return;
       recording = null;
       clearRecordingTimers(finished);
-      stopTracks(finished.stream);
       render();
-      if (finished.recordSession !== session) return;
+      if (finished.recordSession !== session) {
+        finished.resolveStop?.({ kept: false, cancelled: true, stale: true });
+        return;
+      }
       if (finished.cancelled) {
         setStatus("已取消本次录音，没有留下文件。", "notice");
+        finished.resolveStop?.({ kept: false, cancelled: true });
         return;
       }
       const mimeType = canonicalMime(finished.recorder.mimeType || finished.mimeType, "recording.webm");
       const blob = new Blob(finished.chunks, { type: mimeType });
       if (!blob.size) {
         setStatus("这次录音没有可保存的声音，请重试。", "error");
+        finished.resolveStop?.({ kept: false, cancelled: false, empty: true });
         return;
       }
       const extension = mimeType === "audio/mp4" ? "m4a" : "webm";
       const fileName = `记忆录音-${recordingStamp(new Date())}.${extension}`;
       const file = createNamedBlob(blob, fileName, mimeType);
-      addFiles([file]).then(() => {
+      try {
+        await addFiles([file]);
         if (finished.reachedLimit) setStatus("已到 2 分 59 秒，录音已自动停止并开始保存。", "notice");
-      }).catch((error) => setStatus(errorMessage(error), "error"));
+        finished.resolveStop?.({ kept: true, cancelled: false });
+      } catch (error) {
+        setStatus(errorMessage(error), "error");
+        finished.resolveStop?.({ kept: false, cancelled: false, error: errorMessage(error) });
+      }
     }
 
     function updateRecordingTimer() {
@@ -299,7 +322,7 @@
     function handleListInput(event) {
       const target = event.target;
       const item = findItem(target.dataset.voiceId);
-      if (!item || demo) return;
+      if (!item || demo || isInteractionBusy()) return;
       if (target.matches("[data-voice-label]")) item.label = target.value.slice(0, 120);
       if (target.matches("[data-voice-transcript]")) {
         item.transcript.text = target.value.slice(0, 8000);
@@ -322,7 +345,7 @@
     }
 
     function stageTranscript(item, confirmed) {
-      if (demo || mutationBusy) return;
+      if (demo || isInteractionBusy()) return;
       const text = String(item.transcript.text || "").trim();
       if (!text) {
         setStatus("请先根据录音填写并核对文字稿。", "error");
@@ -338,7 +361,7 @@
     }
 
     function stageTranscriptDeletion(item) {
-      if (demo || mutationBusy) return;
+      if (demo || isInteractionBusy()) return;
       item.transcript = { ...item.transcript, text: "", status: "", dirty: true, delete: true };
       render();
       notifyChange();
@@ -346,7 +369,7 @@
     }
 
     function retryUpload(item) {
-      if (demo || item.status !== "error" || !item.file) return;
+      if (demo || isInteractionBusy() || item.status !== "error" || !item.file) return;
       item.status = "uploading";
       item.error = "";
       render();
@@ -354,7 +377,7 @@
     }
 
     function removeItem(item) {
-      if (demo || mutationBusy) return;
+      if (demo || isInteractionBusy()) return;
       item.abortController?.abort();
       revokePreview(item);
       items = items.filter((candidate) => candidate !== item);
@@ -373,11 +396,13 @@
       items = normalizeVoiceList(memory.voices).map(createExistingItem);
       removedAssetIds.clear();
       loadError = null;
+      loadBusy = Boolean(memoryId);
       render();
       if (!memoryId) {
         loadPromise = Promise.resolve();
         return loadPromise;
       }
+      setStatus("正在读取已有声音，完成前暂不接受修改。", "loading");
       const loadSession = session;
       loadPromise = request(`/api/memories/${encodeURIComponent(memoryId)}/voices`).then((payload) => {
         if (loadSession !== session) return null;
@@ -394,6 +419,11 @@
         loadError = error;
         setStatus(`声音附件读取失败：${errorMessage(error)}`, "error");
         return null;
+      }).finally(() => {
+        if (loadSession !== session) return;
+        loadBusy = false;
+        render();
+        notifyChange();
       });
       return loadPromise;
     }
@@ -506,6 +536,7 @@
       items = [];
       memoryId = "";
       loadError = null;
+      loadBusy = false;
       loadPromise = Promise.resolve();
       previous.forEach((item) => {
         item.abortController?.abort();
@@ -533,14 +564,25 @@
       config.onBusyChange?.(mutationBusy);
     }
 
+    function setExternalBusy(value) {
+      externalBusy = Boolean(value);
+      render();
+      return externalBusy;
+    }
+
+    function isInteractionBusy() {
+      return mutationBusy || loadBusy || externalBusy;
+    }
+
     function render() {
       const recordAvailable = !demo && canRecord();
       const atLimit = items.length >= policy.maxVoicesPerMemory;
+      const interactionBusy = isInteractionBusy();
       elements.voiceRecordButton.hidden = !recordAvailable;
-      elements.voiceRecordButton.disabled = mutationBusy || Boolean(recording) || atLimit;
+      elements.voiceRecordButton.disabled = interactionBusy || Boolean(recording) || atLimit;
       elements.voiceRecordButton.textContent = permissionRequest ? "取消授权等待" : "开始录音";
       elements.voiceRecordButton.setAttribute("aria-busy", String(Boolean(permissionRequest)));
-      elements.voiceFileInput.disabled = demo || mutationBusy || Boolean(recording) || Boolean(permissionRequest) || atLimit;
+      elements.voiceFileInput.disabled = demo || interactionBusy || Boolean(recording) || Boolean(permissionRequest) || atLimit;
       elements.voiceFileLabel.classList.toggle("is-disabled", elements.voiceFileInput.disabled);
       elements.voiceFileLabel.setAttribute("aria-disabled", String(elements.voiceFileInput.disabled));
       elements.voiceFallbackHelp.textContent = demo
@@ -564,20 +606,20 @@
       return `<li class="voice-item${item.status === "error" ? " is-error" : ""}">
         <div class="voice-item-main">
           <audio controls preload="metadata" src="${escapeAttribute(audioUrl)}" aria-label="试听${escapeAttribute(title)}"></audio>
-          <label>声音标签<input type="text" maxlength="120" value="${escapeAttribute(item.label)}" data-voice-label data-voice-id="${escapeAttribute(item.localId)}" placeholder="例如：外婆讲述" ${demo || mutationBusy ? "disabled" : ""} /></label>
-          <button type="button" class="button text-button compact" data-voice-action="remove" data-voice-id="${escapeAttribute(item.localId)}" ${demo || mutationBusy ? "disabled" : ""}>移除</button>
+          <label>声音标签<input type="text" maxlength="120" value="${escapeAttribute(item.label)}" data-voice-label data-voice-id="${escapeAttribute(item.localId)}" placeholder="例如：外婆讲述" ${demo || isInteractionBusy() ? "disabled" : ""} /></label>
+          <button type="button" class="button text-button compact" data-voice-action="remove" data-voice-id="${escapeAttribute(item.localId)}" ${demo || isInteractionBusy() ? "disabled" : ""}>移除</button>
         </div>
         <div class="voice-item-meta"><span>${escapeHtml(formatDuration(item.asset?.durationMs))}</span><span>${escapeHtml(stateText)}</span></div>
         ${item.status === "error" ? `<div class="voice-item-error"><span>${escapeHtml(item.error)}</span><button type="button" data-voice-action="retry" data-voice-id="${escapeAttribute(item.localId)}">重试</button></div>` : ""}
         <details class="voice-transcript">
           <summary>文字稿 <small>${escapeHtml(transcriptStatus)}</small></summary>
           <div class="voice-transcript-body">
-            <label>根据你听到的内容手动核对<textarea maxlength="8000" data-voice-transcript data-voice-id="${escapeAttribute(item.localId)}" placeholder="这里不会自动生成文字；请亲自听过后填写。" ${demo || mutationBusy ? "disabled" : ""}>${escapeHtml(item.transcript.text)}</textarea></label>
+            <label>根据你听到的内容手动核对<textarea maxlength="8000" data-voice-transcript data-voice-id="${escapeAttribute(item.localId)}" placeholder="这里不会自动生成文字；请亲自听过后填写。" ${demo || isInteractionBusy() ? "disabled" : ""}>${escapeHtml(item.transcript.text)}</textarea></label>
             <p>“保存草稿”不会出现在普通详情；只有“人工确认”后的文字稿会展示并参与检索。</p>
             <div class="voice-transcript-actions">
-              <button type="button" class="button secondary compact" data-voice-action="draft" data-voice-id="${escapeAttribute(item.localId)}" ${demo || mutationBusy || item.status !== "ready" ? "disabled" : ""}>保存草稿</button>
-              <button type="button" class="button primary compact" data-voice-action="confirm" data-voice-id="${escapeAttribute(item.localId)}" ${demo || mutationBusy || item.status !== "ready" ? "disabled" : ""}>人工确认</button>
-              ${item.transcript.existed && !item.transcript.delete ? `<button type="button" class="button text-button compact" data-voice-action="delete-transcript" data-voice-id="${escapeAttribute(item.localId)}" ${demo || mutationBusy ? "disabled" : ""}>移除文字稿</button>` : ""}
+              <button type="button" class="button secondary compact" data-voice-action="draft" data-voice-id="${escapeAttribute(item.localId)}" ${demo || isInteractionBusy() || item.status !== "ready" ? "disabled" : ""}>保存草稿</button>
+              <button type="button" class="button primary compact" data-voice-action="confirm" data-voice-id="${escapeAttribute(item.localId)}" ${demo || isInteractionBusy() || item.status !== "ready" ? "disabled" : ""}>人工确认</button>
+              ${item.transcript.existed && !item.transcript.delete ? `<button type="button" class="button text-button compact" data-voice-action="delete-transcript" data-voice-id="${escapeAttribute(item.localId)}" ${demo || isInteractionBusy() ? "disabled" : ""}>移除文字稿</button>` : ""}
             </div>
           </div>
         </details>
@@ -591,7 +633,8 @@
         demo,
         recording: Boolean(recording),
         awaitingPermission: Boolean(permissionRequest),
-        busy: mutationBusy || Boolean(permissionRequest) || Boolean(recording) || items.some((item) => item.status === "uploading"),
+        loading: loadBusy,
+        busy: isInteractionBusy() || Boolean(permissionRequest) || Boolean(recording) || items.some((item) => item.status === "uploading"),
         ready: !loadError && !permissionRequest && !recording && items.every((item) => item.status === "ready"),
         hasErrors: Boolean(loadError) || items.some((item) => item.status === "error"),
         items: items.map((item, index) => ({
@@ -603,6 +646,32 @@
           transcriptDirty: item.transcript.dirty
         }))
       };
+    }
+
+    async function prepareForViewLeave(action = "keep") {
+      const normalizedAction = action === "discard" ? "discard" : "keep";
+      const permissionCancelled = cancelPermissionRequest();
+      const activeRecording = Boolean(recording);
+      const result = activeRecording
+        ? await stopRecording(normalizedAction === "discard")
+        : { kept: false, cancelled: normalizedAction === "discard" };
+      render();
+      if (normalizedAction === "keep" && (permissionCancelled || activeRecording)) {
+        setStatus(result.kept
+          ? "录音已停止并保留在待保存声音中。"
+          : "已停止麦克风采集；当前没有生成可保留的片段。", "notice");
+      }
+      if (normalizedAction === "discard" && (permissionCancelled || activeRecording)) {
+        setStatus("已停止并放弃本次采集；之前加入的声音仍然保留。", "notice");
+      }
+      notifyChange();
+      return { action: normalizedAction, permissionCancelled, activeRecording, ...result };
+    }
+
+    function handleVisibilityChange() {
+      if (documentRef.visibilityState !== "hidden") return;
+      if (!permissionRequest && !recording) return;
+      void prepareForViewLeave("keep");
     }
 
     function handlePageHide() {
@@ -692,6 +761,7 @@
 
     function assertMutable() {
       if (demo) throw new Error("公开 Demo 不保存私人声音。");
+      if (loadBusy) throw new Error("正在读取已有声音，请稍候。");
       if (mutationBusy) throw new Error("声音附件正在保存，请稍候。");
     }
 
@@ -700,8 +770,10 @@
       loadMemory,
       waitForReady,
       saveToMemory,
+      prepareForViewLeave,
       reset,
       setDemo,
+      setExternalBusy,
       getState,
       destroy
     });
