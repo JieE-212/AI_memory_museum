@@ -112,6 +112,7 @@ jobs:
           EVIDENCE_ROOT_WINDOWS: ${{ needs.root-windows.result }}
           EVIDENCE_BROWSER: ${{ needs.browser.result }}
           EVIDENCE_SEMANTIC: ${{ needs.semantic.result }}
+          EVIDENCE_SEMANTIC_INDEX: ${{ needs.root-linux.result }}
           EVIDENCE_CONTAINER: ${{ needs.container.result }}
           EVIDENCE_RELEASE_COMMIT: ${{ github.sha }}
           GITHUB_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
