@@ -1,4 +1,4 @@
-name: V17.1 quality and evidence
+name: V17.2 quality and evidence
 
 on:
   push:
@@ -21,7 +21,18 @@ jobs:
         with:
           node-version: 24
       - run: git diff --check
-      - run: npm test
+      - name: Run npm test
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          npm test *>&1 | Tee-Object -FilePath artifacts/root-windows.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: root-windows-log
+          path: artifacts/root-windows.log
+          if-no-files-found: warn
 
   root-windows:
     runs-on: windows-latest
@@ -81,7 +92,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker build --tag time-isle:17.1.2 .
+      - run: docker build --tag time-isle:17.2.2 .
 
   evidence:
     if: always()
@@ -95,7 +106,7 @@ jobs:
         with:
           node-version: 24
       - name: Generate candidate evidence manifest
-        run: node scripts/release-evidence-check.js --write artifacts/release-evidence-v17.1.2.json --require-passed-gates
+        run: node scripts/release-evidence-check.js --write artifacts/release-evidence-v17.2.2.json --require-passed-gates
         env:
           EVIDENCE_ROOT_LINUX: ${{ needs.root-linux.result }}
           EVIDENCE_ROOT_WINDOWS: ${{ needs.root-windows.result }}
@@ -107,6 +118,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: release-evidence-v17.1.2
-          path: artifacts/release-evidence-v17.1.2.json
+          name: release-evidence-v17.2.2
+          path: artifacts/release-evidence-v17.2.2.json
           if-no-files-found: error
