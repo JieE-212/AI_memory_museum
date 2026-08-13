@@ -314,8 +314,8 @@ async function openReadyWritable(page, route) {
   const trust = await page.request.get(`${WRITABLE_BASE_URL}/api/runtime/trust`);
   expect(trust.status()).toBe(200);
   expect(await trust.json()).toMatchObject({
-    appVersion: "17.1.2",
-    schemaVersion: 19,
+    appVersion: "17.2.2",
+    schemaVersion: 20,
     audience: "private-local",
     storage: { visitorWritesAllowed: true, durability: "persistent" },
     encryptionAtRest: { enabled: false },

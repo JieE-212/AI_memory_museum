@@ -27,6 +27,7 @@ async function main() {
   check(!isMutationRequest("GET", "/api/memories"), "GET 是只读请求");
   check(!isMutationRequest("POST", "/api/archive/inspect"), "归档验真是显式只读 POST");
   check(!isMutationRequest("POST", "/api/recovery-drills/structural"), "结构演练是显式只读 POST");
+  check(!isMutationRequest("POST", "/api/semantic-index/search"), "语义索引查询是显式只读 POST");
   check(!isMutationRequest("POST", "/api/museum-lock/unlock"), "锁馆控制保持可用");
 
   current = locked;
@@ -35,6 +36,10 @@ async function main() {
   check((await runtime.enterHttpRequest({ method: "GET" }, response(), url("/api/memories"))).allowed, "锁馆 GET 仍可用");
   check((await runtime.enterHttpRequest({ method: "POST" }, response(), url("/api/archive/inspect"))).allowed, "锁馆归档验真仍可用");
   check((await runtime.enterHttpRequest({ method: "POST" }, response(), url("/api/recovery-drills/structural"))).allowed, "锁馆结构演练仍可用");
+  const semanticSearch = await runtime.enterHttpRequest({ method: "POST" }, response(), url("/api/semantic-index/search"));
+  check(semanticSearch.allowed && semanticSearch.mutation === false && semanticSearch.bodyBytesRead === 0, "锁馆后语义索引查询仍是零正文读取的只读操作");
+  const semanticUpsert = await runtime.enterHttpRequest({ method: "POST" }, response(), url("/api/semantic-index/upsert"));
+  check(!semanticUpsert.allowed && semanticUpsert.statusCode === 423 && semanticUpsert.bodyBytesRead === 0, "锁馆后语义索引写入仍在正文前被拒绝");
   check((await runtime.runMaintenance(() => { throw new Error("must not run"); })).skipped, "锁馆后台维护零写入跳过");
 
   current = unlocked;

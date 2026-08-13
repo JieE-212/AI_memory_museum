@@ -25,7 +25,7 @@ async function main() {
   const loader = createLoader({
     document: harness.document,
     location: { href: "http://127.0.0.1:3000/#collection" },
-    version: "17.1.2",
+    version: "17.2.2",
     timeoutMs: 25
   });
 
@@ -34,7 +34,7 @@ async function main() {
   const concurrent = loader.loadScript("/assets/curator-agent.js", () => ready);
   assert.strictEqual(first, concurrent, "并发加载必须共享同一个 Promise");
   assert.equal(harness.scripts.length, 1, "并发加载只插入一段脚本");
-  assert.equal(harness.scripts[0].src, "http://127.0.0.1:3000/assets/curator-agent.js?v=17.1.2");
+  assert.equal(harness.scripts[0].src, "http://127.0.0.1:3000/assets/curator-agent.js?v=17.2.2");
   ready = true;
   harness.scripts[0].dispatch("load");
   await first;

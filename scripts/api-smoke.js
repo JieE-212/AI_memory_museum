@@ -230,7 +230,7 @@ async function runArchiveMediaFlow() {
         body: archive
       });
       const inspection = await inspectionResponse.json();
-      assert("备份验真只读返回可恢复边界并清理暂存", inspectionResponse.ok && inspection.inspection.restorable === true && inspection.inspection.schemaVersion === 19 && inspection.inspection.counts.memories === 2 && inspection.inspection.counts.mediaAssets === 2 && inspection.inspection.counts.voices === 1 && inspection.inspection.counts.revisions === 2 && inspection.inspection.counts.revisitIntents === 1 && inspection.inspection.counts.timeCalibrations === 0 && inspection.inspection.counts.oralHistoryQuestions === 0 && inspection.inspection.counts.oralHistoryAnswers === 0 && inspection.inspection.counts.curatorAgentRuns === 0 && inspection.inspection.counts.curatorAgentProposals === 0 && inspection.inspection.counts.curatorAgentDecisions === 0 && (await getJson(`${baseUrl}/api/memories`)).payload.memories.length === 2 && !fs.existsSync(path.join(mediaRoot, ".inspect")));
+      assert("备份验真只读返回可恢复边界并清理暂存", inspectionResponse.ok && inspection.inspection.restorable === true && inspection.inspection.schemaVersion === 20 && inspection.inspection.counts.memories === 2 && inspection.inspection.counts.mediaAssets === 2 && inspection.inspection.counts.voices === 1 && inspection.inspection.counts.revisions === 2 && inspection.inspection.counts.revisitIntents === 1 && inspection.inspection.counts.timeCalibrations === 0 && inspection.inspection.counts.oralHistoryQuestions === 0 && inspection.inspection.counts.oralHistoryAnswers === 0 && inspection.inspection.counts.curatorAgentRuns === 0 && inspection.inspection.counts.curatorAgentProposals === 0 && inspection.inspection.counts.curatorAgentDecisions === 0 && (await getJson(`${baseUrl}/api/memories`)).payload.memories.length === 2 && !fs.existsSync(path.join(mediaRoot, ".inspect")));
       const isolatedStatsBefore = (await getJson(`${baseUrl}/api/health`)).payload.stats;
       const isolatedMemoriesBefore = (await getJson(`${baseUrl}/api/memories`)).payload.memories.map((memory) => memory.id).sort();
       const isolatedMediaFilesBefore = listFiles(mediaRoot).map((file) => path.relative(mediaRoot, file)).sort();
@@ -466,6 +466,40 @@ async function runMuseumLockAndLensFlow() {
         ))
       );
 
+      const lockedSemanticIdentity = {
+        modelId: "Xenova/bge-small-zh-v1.5",
+        modelSha256: "15b717c382bcb518ba457b93ea6850ede7f4f1cd8937454aa06972366cd19bcc",
+        projectionVersion: "v1"
+      };
+      const lockedSemanticVector = Buffer.alloc(512 * Float32Array.BYTES_PER_ELEMENT);
+      lockedSemanticVector.writeFloatLE(1, 0);
+      const lockedSemanticSearch = await postJson(`${baseUrl}/api/semantic-index/search`, {
+        ...lockedSemanticIdentity,
+        limit: 30,
+        vector: lockedSemanticVector.toString("base64")
+      });
+      const blockedSemanticUpsertResponse = await fetch(`${baseUrl}/api/semantic-index/upsert`, {
+        method: "POST",
+        headers: writeHeaders(`${baseUrl}/api/semantic-index/upsert`, { "Content-Type": "text/plain" }),
+        body: "this body must not be read while locked"
+      });
+      const blockedSemanticUpsert = await blockedSemanticUpsertResponse.json();
+      const blockedSemanticClearResponse = await fetch(`${baseUrl}/api/semantic-index`, {
+        method: "DELETE",
+        headers: writeHeaders(`${baseUrl}/api/semantic-index`, { "Content-Type": "text/plain" }),
+        body: "this body must not be read while locked"
+      });
+      const blockedSemanticClear = await blockedSemanticClearResponse.json();
+      assert(
+        "锁馆仍允许只读语义查询，但在读取正文前阻止索引写入和清除",
+        lockedSemanticSearch.response.ok &&
+          Array.isArray(lockedSemanticSearch.payload.results) &&
+          [blockedSemanticUpsert, blockedSemanticClear].every((payload) => (
+            payload.code === "MUSEUM_LOCKED" && payload.bodyBytesRead === 0
+          )) &&
+          [blockedSemanticUpsertResponse, blockedSemanticClearResponse].every((response) => response.status === 423)
+      );
+
       const lockedHealth = await getJson(`${baseUrl}/api/health`);
       const lockedCollection = await getJson(`${baseUrl}/api/memories`);
       const lockedJsonExport = await getJson(`${baseUrl}/api/memories/export`);
@@ -477,7 +511,7 @@ async function runMuseumLockAndLensFlow() {
           lockedCollection.response.ok &&
           lockedCollection.payload.memories.length === 2 &&
           lockedJsonExport.response.ok &&
-          lockedJsonExport.payload.schemaVersion === 19 &&
+          lockedJsonExport.payload.schemaVersion === 20 &&
           archiveResponse.ok &&
           archive.subarray(0, 2).equals(Buffer.from([0x1f, 0x8b]))
       );
@@ -600,9 +634,9 @@ async function runLocalFlow() {
     assert("离线页明确不缓存或展示私人馆藏", offlineResponse.ok && offlineText.includes("不会展示馆藏、照片、声音或导出内容") && !offlineText.includes("<script"));
 
     const health = await getJson(`${baseUrl}/api/health`);
-    assert("健康检查返回时屿 V17.1 与 schema 19", health.response.ok && health.response.headers.get("cache-control") === "no-store" && health.payload.ok && health.payload.version === "17.1.2" && health.payload.schemaVersion === 19 && health.payload.name === "时屿" && health.payload.englishName === "TIME ISLE" && health.payload.tagline === "AI 私人记忆策展工具" && health.payload.stats.capsules === 0 && health.payload.stats.timeCalibrations === 0 && health.payload.stats.oralHistoryQuestions === 0 && health.payload.stats.oralHistoryAnswers === 0 && health.payload.stats.curatorAgentRuns === 0 && health.payload.stats.curatorAgentCompletedRuns === 0 && health.payload.stats.curatorAgentInterruptedRuns === 0 && health.payload.stats.curatorAgentProposals === 0 && health.payload.stats.curatorAgentDecisions === 0);
+    assert("健康检查返回时屿 V17.2.2、schema 20", health.response.ok && health.response.headers.get("cache-control") === "no-store" && health.payload.ok && health.payload.version === "17.2.2" && health.payload.schemaVersion === 20 && health.payload.name === "时屿" && health.payload.englishName === "TIME ISLE" && health.payload.tagline === "AI 私人记忆策展工具" && health.payload.stats.capsules === 0 && health.payload.stats.timeCalibrations === 0 && health.payload.stats.oralHistoryQuestions === 0 && health.payload.stats.oralHistoryAnswers === 0 && health.payload.stats.curatorAgentRuns === 0 && health.payload.stats.curatorAgentCompletedRuns === 0 && health.payload.stats.curatorAgentInterruptedRuns === 0 && health.payload.stats.curatorAgentProposals === 0 && health.payload.stats.curatorAgentDecisions === 0);
     assert("本地模式使用 SQLite", health.payload.mode === "local" && health.payload.storage === "local-sqlite");
-    assert("健康检查区分字段线索与设备语义", health.payload.search?.mode === "field-and-clue-retrieval" && health.payload.search?.engine === "fts5-trigram" && health.payload.search?.shortQueryFallback === "parameterized-like" && health.payload.search?.externalModelRequired === false && health.payload.semanticRecall?.model === "Xenova/bge-small-zh-v1.5" && health.payload.semanticRecall?.dimensions === 512 && health.payload.semanticRecall?.remoteModelsAllowed === false && health.payload.semanticRecall?.persisted === false);
+    assert("健康检查区分字段线索与可选本机派生语义", health.payload.search?.mode === "field-and-clue-retrieval" && health.payload.search?.engine === "fts5-trigram" && health.payload.search?.shortQueryFallback === "parameterized-like" && health.payload.search?.externalModelRequired === false && health.payload.semanticRecall?.model === "Xenova/bge-small-zh-v1.5" && health.payload.semanticRecall?.dimensions === 512 && health.payload.semanticRecall?.remoteModelsAllowed === false && health.payload.semanticRecall?.persisted === true);
 
     const spoofedHost = await rawHttpStatus(`${baseUrl}/api/health`, {
       headers: { Host: "attacker.example" }
@@ -625,7 +659,7 @@ async function runLocalFlow() {
     assert("写请求以 403 拒绝恶意 Origin", maliciousOrigin === 403);
 
     const version = await getJson(`${baseUrl}/api/version`);
-    assert("版本接口描述 V17.1 核心产品流程与人工边界", version.response.ok && version.payload.version === "17.1.2" && ["先保存原文", "设备内按意思找回", "确定性策展工作流", "共忆见证", "锁馆与一次性真实恢复演练"].every((item) => version.payload.productFlow.includes(item)) && version.payload.v7.offlineSharing.includes("AES-256-GCM") && version.payload.v7.pwa.includes("不缓存私人馆藏") && version.payload.v72.concurrency.includes("If-Match") && version.payload.v73.sharePrivacy.includes("浏览器内") && version.payload.v8.uncertainTimeline.includes("不会回写展品日期") && version.payload.v9.humanBoundary.includes("不自动转写") && version.payload.v10.deterministicWorkflow.includes("不是自治 Agent") && version.payload.v14.recoveryDrill.includes("不能证明") && version.payload.v15.recoveryBoundary.includes("不证明异机灾备") && version.payload.v16.identityBoundary.includes("身份未核验") && version.payload.v17.semanticRecall.includes("512 维") && version.payload.v171.demoWriteBoundary.includes("正文前") && version.payload.v171.optionalOrganization.includes("同一件展品"));
+    assert("版本接口描述 V17.2.2 核心产品流程与人工边界", version.response.ok && version.payload.version === "17.2.2" && ["先保存原文", "设备内按意思找回", "确定性策展工作流", "共忆见证", "锁馆与一次性真实恢复演练"].every((item) => version.payload.productFlow.includes(item)) && version.payload.v7.offlineSharing.includes("AES-256-GCM") && version.payload.v7.pwa.includes("不缓存私人馆藏") && version.payload.v72.concurrency.includes("If-Match") && version.payload.v73.sharePrivacy.includes("浏览器内") && version.payload.v8.uncertainTimeline.includes("不会回写展品日期") && version.payload.v9.humanBoundary.includes("不自动转写") && version.payload.v10.deterministicWorkflow.includes("不是自治 Agent") && version.payload.v14.recoveryDrill.includes("不能证明") && version.payload.v15.recoveryBoundary.includes("异机灾备") && version.payload.v16.identityBoundary.includes("身份未核验") && version.payload.v17.semanticRecall.includes("512 维") && version.payload.v171.demoWriteBoundary.includes("正文") && version.payload.v171.optionalOrganization.includes("同一件展品") && version.payload.v172.persistentIndex.includes("来源哈希"));
 
     const demo = await getJson(`${baseUrl}/api/demo/status`);
     assert("本地模式未伪装成公开 Demo", demo.response.ok && demo.payload.interviewDemo === false);
@@ -646,6 +680,23 @@ async function runLocalFlow() {
       rawContent
     });
     assert("只填写原文即可先创建同一件展品", created.response.status === 201 && created.payload.memory.id === memoryId && created.payload.memory.rawContent === rawContent && created.payload.persistence.wrote === true && !created.payload.memory.agentRunId);
+
+    const memoryCountBeforeBlankContent = (await getJson(`${baseUrl}/api/memories`)).payload.memories.length;
+    const rejectedEmptyMemory = await postJson(`${baseUrl}/api/memories`, { rawContent: "" });
+    const rejectedWhitespaceMemory = await postJson(`${baseUrl}/api/memories`, { rawContent: " \n\t " });
+    const rejectedBlankUpdate = await putJson(`${baseUrl}/api/memories/${memoryId}`, {
+      rawContent: "  \n ",
+      expectedUpdatedAt: created.payload.memory.updatedAt
+    });
+    const afterBlankContent = await getJson(`${baseUrl}/api/memories/${memoryId}`);
+    assert(
+      "私人馆藏在持久化前拒绝空白正文，既不创建记录也不清空已有原文",
+      [rejectedEmptyMemory, rejectedWhitespaceMemory, rejectedBlankUpdate].every((result) => (
+        result.response.status === 400 && result.payload.code === "MEMORY_RAW_CONTENT_REQUIRED"
+      )) &&
+        (await getJson(`${baseUrl}/api/memories`)).payload.memories.length === memoryCountBeforeBlankContent &&
+        afterBlankContent.payload.memory.rawContent === rawContent
+    );
 
     const analysis = await postJson(`${baseUrl}/api/analyze`, { rawContent, memoryId, allowExternalAi: false });
     assert("本地规则生成未持久化整理草稿与服务端签名回执", analysis.response.ok && analysis.payload.mode === "local-rules" && analysis.payload.draft.title && analysis.payload.draft.hall && analysis.payload.execution.engineId === "local-memory-rules-v1" && analysis.payload.execution.externalRequestOccurred === false && analysis.payload.executionReceipt?.memoryId === memoryId && /^[a-f0-9]{64}$/.test(analysis.payload.executionReceipt?.signature || "") && analysis.payload.persistence.wrote === false);
@@ -682,9 +733,17 @@ async function runLocalFlow() {
     const rejectedSemanticQuery = await getJson(`${baseUrl}/api/semantic-recall/snapshot?query=private`);
     const rejectedSemanticWrite = await postJson(`${baseUrl}/api/semantic-recall/snapshot`, { query: "不能发送" });
     const semanticStatsAfter = (await getJson(`${baseUrl}/api/health`)).payload.stats;
-    assert("设备语义快照 GET 只投影五类可索引文字", semanticSnapshot.response.ok && semanticSnapshot.response.headers.get("cache-control") === "private, no-store" && semanticDocument?.rawContent === rawContent.normalize("NFKC") && JSON.stringify(Object.keys(semanticDocument).sort()) === JSON.stringify(["confirmedTranscripts", "exhibitText", "memoryId", "rawContent", "tags", "title"].sort()) && semanticSnapshot.payload.snapshot?.model?.remoteModelsAllowed === false && semanticSnapshot.payload.snapshot?.boundary?.persisted === false);
+    assert("设备语义快照 GET 只投影五类可索引文字并提供源哈希", semanticSnapshot.response.ok && semanticSnapshot.response.headers.get("cache-control") === "private, no-store" && semanticDocument?.rawContent === rawContent.normalize("NFKC") && JSON.stringify(Object.keys(semanticDocument).sort()) === JSON.stringify(["confirmedTranscripts", "exhibitText", "memoryId", "rawContent", "sourceSha256", "tags", "title"].sort()) && /^[a-f0-9]{64}$/u.test(semanticDocument?.sourceSha256 || "") && semanticSnapshot.payload.snapshot?.model?.remoteModelsAllowed === false && semanticSnapshot.payload.snapshot?.boundary?.persisted === false);
     assert("设备语义快照拒绝查询参数和非 GET 方法", rejectedSemanticQuery.response.status === 400 && rejectedSemanticWrite.response.status === 405);
     assert("设备语义 HTTP 快照前后馆藏统计零变化", JSON.stringify(semanticStatsAfter) === JSON.stringify(semanticStatsBefore));
+
+    const semanticIndexIdentity = { modelId: "Xenova/bge-small-zh-v1.5", modelSha256: "15b717c382bcb518ba457b93ea6850ede7f4f1cd8937454aa06972366cd19bcc", projectionVersion: "v1" };
+    const semanticIndexVector = Buffer.alloc(512 * Float32Array.BYTES_PER_ELEMENT); semanticIndexVector.writeFloatLE(1, 0);
+    const semanticIndexStatus = await getJson(`${baseUrl}/api/semantic-index/status`);
+    const semanticIndexUpsert = await postJson(`${baseUrl}/api/semantic-index/upsert`, { ...semanticIndexIdentity, entries: [{ memoryId, sourceSha256: semanticDocument.sourceSha256, vector: semanticIndexVector.toString("base64") }] });
+    const semanticIndexSearch = await postJson(`${baseUrl}/api/semantic-index/search`, { ...semanticIndexIdentity, limit: 30, vector: semanticIndexVector.toString("base64") });
+    const semanticIndexClear = await deleteJson(`${baseUrl}/api/semantic-index`);
+    assert("私人本地语义索引只接收 ID、源哈希和 Float32LE 向量并可精确检索和移除", semanticIndexStatus.response.ok && semanticIndexStatus.payload.allowed === true && semanticIndexStatus.payload.persistence === "local-sqlite-derived-cache" && semanticIndexUpsert.response.ok && semanticIndexUpsert.payload.stored === 1 && semanticIndexSearch.response.ok && semanticIndexSearch.payload.results[0]?.memoryId === memoryId && semanticIndexClear.response.ok && semanticIndexClear.payload.deleted === 1);
 
     const perspectiveStatsBefore = (await getJson(`${baseUrl}/api/health`)).payload.stats;
     const perspectives = await getJson(`${baseUrl}/api/multi-perspective/memories/${memoryId}`);
@@ -727,6 +786,9 @@ async function runLocalFlow() {
     });
     const stalePayload = await staleResponse.json();
     assert("过期 If-Match 返回 412、新 ETag 且不泄漏正文", staleResponse.status === 412 && staleResponse.headers.get("etag") === currentEtag && stalePayload.updatedAt === revisionUpdated.memory.updatedAt && !Object.hasOwn(stalePayload, "memory") && !JSON.stringify(stalePayload).includes("这是一段用于验证年轮的原文"));
+    const missingDeletePrecondition = await deleteJson(`${baseUrl}/api/memories/${revisionMemoryId}`);
+    const staleDelete = await fetch(`${baseUrl}/api/memories/${revisionMemoryId}`, { method: "DELETE", headers: writeHeaders(`${baseUrl}/api/memories/${revisionMemoryId}`, { "If-Match": initialEtag }) });
+    assert("删除展品要求当前版本，旧版本不能删除新版本", missingDeletePrecondition.response.status === 428 && staleDelete.status === 412 && (await getJson(`${baseUrl}/api/memories/${revisionMemoryId}`)).payload.memory.title === revisionUpdated.memory.title);
     const noopResponse = await fetch(`${baseUrl}/api/memories/${revisionMemoryId}`, {
       method: "PUT",
       headers: writeHeaders(`${baseUrl}/api/memories/${revisionMemoryId}`, { "Content-Type": "application/json", "If-Match": currentEtag }),
@@ -749,7 +811,7 @@ async function runLocalFlow() {
     const restoredRevision = await restoreResponse.json();
     const restoredRevisionList = await getJson(`${baseUrl}/api/memories/${revisionMemoryId}/revisions`);
     assert("恢复旧版复制为新的 head 且不删除历史", restoreResponse.ok && restoredRevision.memory.title === "年轮第一版" && restoredRevisionList.payload.revisions.length === 3 && restoredRevisionList.payload.revisions[0].changeKind === "restored" && restoredRevisionList.payload.revisions[0].restoredFromRevisionId === initialRevision.id);
-    await deleteJson(`${baseUrl}/api/memories/${revisionMemoryId}`);
+    await deleteJson(`${baseUrl}/api/memories/${revisionMemoryId}`, undefined, { "If-Match": restoreResponse.headers.get("etag") });
 
     const healthStarted = await postJson(`${baseUrl}/api/collection-health/scans`, { scope: "full" });
     let healthScan = healthStarted.payload.scan;
@@ -1004,7 +1066,7 @@ async function runLocalFlow() {
     assert("馆藏备份包含已确认主题展览", fullExport.payload.exhibitions.exhibitions.some((item) => item.id === exhibitionId));
     assert("馆藏备份包含回访与当日隐藏状态", fullExport.payload.revisits.mode === "full" && fullExport.payload.revisits.states.length === 2 && fullExport.payload.revisits.states.some((state) => state.memoryId === memoryId && state.viewCount === 1) && fullExport.payload.revisits.states.some((state) => state.memoryId === relatedId && state.dismissedLocalDate === "2026-05-20"));
     assert("馆藏完整备份包含非空 later 回访意愿", fullExport.payload.revisitIntents.mode === "full" && fullExport.payload.revisitIntents.schemaVersion === 11 && fullExport.payload.revisitIntents.intents.length === 1 && fullExport.payload.revisitIntents.intents[0].memoryId === relatedId && fullExport.payload.revisitIntents.intents[0].intent === "later" && fullExport.payload.revisitIntents.intents[0].notBeforeLocalDate === "2027-05-20" && fullExport.payload.revisitIntents.intents[0].notBeforeTimezone === "Asia/Shanghai");
-    assert("schema 19 馆藏备份保留既有子模块契约", fullExport.payload.schemaVersion === 19 && fullExport.payload.entities.mode === "full" && fullExport.payload.entities.entities.some((entity) => entity.aliases.some((alias) => alias.alias === "老友")) && fullExport.payload.voices.mode === "full" && fullExport.payload.capsules.mode === "full" && fullExport.payload.revisions.mode === "full" && fullExport.payload.revisitIntents.mode === "full" && fullExport.payload.timeCalibrations.mode === "full" && fullExport.payload.timeCalibrations.calibrations.length === 1 && fullExport.payload.oralHistories.mode === "full" && fullExport.payload.oralHistories.questions.length === 0 && fullExport.payload.oralHistories.answers.length === 0 && fullExport.payload.curatorAgent.mode === "full" && fullExport.payload.curatorAgent.schemaVersion === 14 && fullExport.payload.curatorAgent.runs.length === 0);
+    assert("schema 20 馆藏备份保留既有子模块契约", fullExport.payload.schemaVersion === 20 && fullExport.payload.entities.mode === "full" && fullExport.payload.entities.entities.some((entity) => entity.aliases.some((alias) => alias.alias === "老友")) && fullExport.payload.voices.mode === "full" && fullExport.payload.capsules.mode === "full" && fullExport.payload.revisions.mode === "full" && fullExport.payload.revisitIntents.mode === "full" && fullExport.payload.timeCalibrations.mode === "full" && fullExport.payload.timeCalibrations.calibrations.length === 1 && fullExport.payload.oralHistories.mode === "full" && fullExport.payload.oralHistories.questions.length === 0 && fullExport.payload.oralHistories.answers.length === 0 && fullExport.payload.curatorAgent.mode === "full" && fullExport.payload.curatorAgent.schemaVersion === 14 && fullExport.payload.curatorAgent.runs.length === 0);
 
     await putJson(`${baseUrl}/api/memories/${memoryId}`, { rawContent: "这段原文已被重新整理，不再包含此前的日期、人物或地点线索。", expectedUpdatedAt: updated.payload.memory.updatedAt });
     const revalidatedExport = await getJson(`${baseUrl}/api/memories/export`);
@@ -1079,16 +1141,22 @@ async function runLocalFlow() {
     });
     assert("写入接口拒绝非 JSON Content-Type", rejectedContentType.status === 415);
 
+    const relatedForDelete = await getJson(`${baseUrl}/api/memories/${relatedId}`);
     const deleteRelatedResponse = await fetch(`${baseUrl}/api/memories/${relatedId}`, {
       method: "DELETE",
-      headers: writeHeaders(`${baseUrl}/api/memories/${relatedId}`)
+      headers: writeHeaders(`${baseUrl}/api/memories/${relatedId}`, {
+        "If-Match": relatedForDelete.response.headers.get("etag")
+      })
     });
     const afterVersionDelete = await getJson(`${baseUrl}/api/memories/export`);
     assert("删除一个版本后保留归属于剩余记忆的补问", deleteRelatedResponse.ok && afterVersionDelete.payload.archaeology.events.length === 0 && afterVersionDelete.payload.archaeology.questions.length === 1);
 
+    const memoryForDelete = await getJson(`${baseUrl}/api/memories/${memoryId}`);
     const deleteResponse = await fetch(`${baseUrl}/api/memories/${memoryId}`, {
       method: "DELETE",
-      headers: writeHeaders(`${baseUrl}/api/memories/${memoryId}`)
+      headers: writeHeaders(`${baseUrl}/api/memories/${memoryId}`, {
+        "If-Match": memoryForDelete.response.headers.get("etag")
+      })
     });
     assert("本地展品可删除", deleteResponse.ok);
 
@@ -1449,9 +1517,9 @@ async function runLocalCuratorAgentFlow(baseUrl) {
   const fullCurator = fullExport.payload.curatorAgent;
   const archivedRun = fullCurator.runs.find((entry) => entry.run.id === runId);
   assert(
-    "schema 19 完整 JSON 内嵌 schema 14 可重放策展审计工作区",
+    "schema 20 完整 JSON 内嵌 schema 14 可重放策展审计工作区",
     fullExport.response.ok &&
-      fullExport.payload.schemaVersion === 19 &&
+      fullExport.payload.schemaVersion === 20 &&
       fullCurator.mode === "full" &&
       fullCurator.schemaVersion === 14 &&
       archivedRun.steps.length === 4 &&
@@ -1571,8 +1639,14 @@ async function runLocalCuratorAgentFlow(baseUrl) {
   assert("后续只读运行明确记录它查阅过的既有展览", exhibitionReferenceExecuted.response.ok && exhibitionReferenceExecuted.payload.proposal.duplicateContext.some((item) => item.id === exhibitionId));
   const deletedExhibition = await deleteJson(`${baseUrl}/api/exhibitions/${exhibitionId}`);
   const runAfterExhibitionDelete = await getJson(`${runsUrl}/${exhibitionReferenceRunId}`);
-  const deletedLeft = await deleteJson(`${baseUrl}/api/memories/${leftId}`);
-  const deletedRight = await deleteJson(`${baseUrl}/api/memories/${rightId}`);
+  const leftForCleanup = await getJson(`${baseUrl}/api/memories/${leftId}`);
+  const rightForCleanup = await getJson(`${baseUrl}/api/memories/${rightId}`);
+  const deletedLeft = await deleteJson(`${baseUrl}/api/memories/${leftId}`, undefined, {
+    "If-Match": leftForCleanup.response.headers.get("etag")
+  });
+  const deletedRight = await deleteJson(`${baseUrl}/api/memories/${rightId}`, undefined, {
+    "If-Match": rightForCleanup.response.headers.get("etag")
+  });
   const finalHealth = await getJson(`${baseUrl}/api/health`);
   assert(
     "删除展览级联清除引用它的运行，V10 专用展品与证据在场景结束后全部清理",
@@ -1903,9 +1977,12 @@ async function runLocalMediaFlow(baseUrl, memoryId, relatedId, mediaRoot) {
 
   const gcTriggerId = `media-gc-trigger-${Date.now()}`;
   await postJson(`${baseUrl}/api/memories`, { id: gcTriggerId, title: "媒体清理触发器", rawContent: "验证刚完成上传的图片不会被并发清理。" });
+  const gcTriggerMemory = await getJson(`${baseUrl}/api/memories/${gcTriggerId}`);
   const gcTriggerDelete = await fetch(`${baseUrl}/api/memories/${gcTriggerId}`, {
     method: "DELETE",
-    headers: writeHeaders(`${baseUrl}/api/memories/${gcTriggerId}`)
+    headers: writeHeaders(`${baseUrl}/api/memories/${gcTriggerId}`, {
+      "If-Match": gcTriggerMemory.response.headers.get("etag")
+    })
   });
   const freshAssetAfterGc = await fetch(`${baseUrl}${asset.urls.display}`);
   assert("新完成但尚未关联的媒体享有清理宽限期", gcTriggerDelete.ok && freshAssetAfterGc.ok);
@@ -2261,8 +2338,8 @@ async function runDemoReadOnlyFlow() {
         "运行时信任合同公开只读、临时存储与未静态加密边界",
         trust.response.ok &&
           trust.payload.contractVersion === 1 &&
-          trust.payload.appVersion === "17.1.2" &&
-          trust.payload.schemaVersion === 19 &&
+          trust.payload.appVersion === "17.2.2" &&
+          trust.payload.schemaVersion === 20 &&
           trust.payload.storage.visitorWritesAllowed === false &&
           trust.payload.storage.blockedBeforeBodyRead === true &&
           ["POST", "PUT", "PATCH", "DELETE"].every((method) => trust.payload.storage.blockedMethods.includes(method)) &&
@@ -2276,9 +2353,11 @@ async function runDemoReadOnlyFlow() {
       const invalidGuide = await getJson(`${baseUrl}/api/demo/guide?id=visitor-question`);
       const curatorSample = await getJson(`${baseUrl}/api/curator-agent/sample`);
       const semanticSnapshot = await getJson(`${baseUrl}/api/semantic-recall/snapshot`);
+      const semanticIndexStatus = await getJson(`${baseUrl}/api/semantic-index/status`);
       assert("公开记录页只返回固定虚构草稿且预览零持久化", sample.response.ok && sample.payload.sample === true && sample.payload.readOnly === true && sample.payload.execution.mode === "local-rules" && sample.payload.persistence.wrote === false && sample.payload.workflow.run.persisted === false);
       assert("公开讲解只接受固定问题并返回句式干净的本地引用", guide.response.ok && guide.payload.sample === true && guide.payload.readOnly === true && guide.payload.citations.length > 0 && guide.payload.execution.engineId === "local-evidence-guide-v1" && guide.payload.persistence.wrote === false && invalidGuide.response.status === 400 && !/记录了这件展品记录了|[。！？!?；;,，]{2,}/u.test(guide.payload.answer));
       assert("公开高级能力只提供合成策展样例与只读语义快照", curatorSample.response.ok && curatorSample.payload.synthetic === true && curatorSample.payload.run.allowDecisions === false && semanticSnapshot.response.ok && semanticSnapshot.payload.snapshot.documents.length === 4);
+      assert("公开 Demo 设备语义只在会话内运行且不提供持久索引", semanticIndexStatus.response.ok && semanticIndexStatus.payload.allowed === false && semanticIndexStatus.payload.boundary === "public-demo-memory-only" && semanticIndexStatus.payload.cachedCount === 0);
 
       const targetId = memoriesBefore.payload.memories[0].id;
       const writeAttempts = [
@@ -2295,6 +2374,8 @@ async function runDemoReadOnlyFlow() {
           return { response, payload: await response.json() };
         },
         () => deleteJson(`${baseUrl}/api/memories/${targetId}`),
+        () => postJson(`${baseUrl}/api/semantic-index/upsert`, { entries: [{ memoryId: targetId, sourceSha256: "a".repeat(64), vector: Buffer.alloc(2048).toString("base64") }], modelId: "ignored", modelSha256: "ignored", projectionVersion: "ignored" }),
+        () => deleteJson(`${baseUrl}/api/semantic-index`),
         async () => {
           const response = await fetch(`${baseUrl}/api/media/uploads`, {
             method: "POST",

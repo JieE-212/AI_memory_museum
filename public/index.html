@@ -10,36 +10,36 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="时屿" />
     <title>时屿｜AI 私人记忆策展工具</title>
-    <link rel="manifest" href="/manifest.webmanifest?v=17.1.2" />
+    <link rel="manifest" href="/manifest.webmanifest?v=17.2.2" />
     <link rel="icon" href="/assets/time-isle-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/assets/time-isle-apple-touch.png" />
     <link rel="stylesheet" href="/styles.css?v=7.2.0-touch5" />
-    <link rel="stylesheet" href="/pwa.css?v=17.1.2" />
+    <link rel="stylesheet" href="/pwa.css?v=17.2.2" />
     <link rel="stylesheet" href="/archaeology.css" />
     <link rel="stylesheet" href="/exhibitions.css?v=7.2.0" />
-    <link rel="stylesheet" href="/curator-agent.css?v=17.1.2" />
-    <link rel="stylesheet" href="/capsules.css?v=17.1.2" />
-    <link rel="stylesheet" href="/share-privacy.css?v=17.1.2" />
-    <link rel="stylesheet" href="/revisits.css?v=17.1.2" />
-    <link rel="stylesheet" href="/revisit-intents.css?v=17.1.2" />
-    <link rel="stylesheet" href="/time-calibrations.css?v=17.1.2" />
+    <link rel="stylesheet" href="/curator-agent.css?v=17.2.2" />
+    <link rel="stylesheet" href="/capsules.css?v=17.2.2" />
+    <link rel="stylesheet" href="/share-privacy.css?v=17.2.2" />
+    <link rel="stylesheet" href="/revisits.css?v=17.2.2" />
+    <link rel="stylesheet" href="/revisit-intents.css?v=17.2.2" />
+    <link rel="stylesheet" href="/time-calibrations.css?v=17.2.2" />
     <link rel="stylesheet" href="/revisions.css?v=7.2.0-a11y2" />
     <link rel="stylesheet" href="/clues.css?v=7.2.0" />
     <link rel="stylesheet" href="/collection-health.css?v=7.2.0-a11y2" />
     <link rel="stylesheet" href="/media.css" />
     <link rel="stylesheet" href="/voice.css?v=7.2.0-align1" />
-    <link rel="stylesheet" href="/oral-histories.css?v=17.1.2" />
+    <link rel="stylesheet" href="/oral-histories.css?v=17.2.2" />
     <link rel="stylesheet" href="/media-evidence.css" />
     <link rel="stylesheet" href="/media-compare.css" />
     <link rel="stylesheet" href="/media-ocr.css" />
     <link rel="stylesheet" href="/media-lab.css" />
-    <link rel="stylesheet" href="/memory-inbox.css?v=17.1.2-mobile1" />
-    <link rel="stylesheet" href="/provenance.css?v=17.1.2" />
-    <link rel="stylesheet" href="/co-memory-letter.css?v=17.1.2" />
-    <link rel="stylesheet" href="/multi-perspective.css?v=17.1.2" />
-    <link rel="stylesheet" href="/semantic-recall.css?v=17.1.2" />
-    <link rel="stylesheet" href="/memory-lens.css?v=17.1.2" />
-    <link rel="stylesheet" href="/museum-lock.css?v=17.1.2" />
+    <link rel="stylesheet" href="/memory-inbox.css?v=17.2.2-mobile1" />
+    <link rel="stylesheet" href="/provenance.css?v=17.2.2" />
+    <link rel="stylesheet" href="/co-memory-letter.css?v=17.2.2" />
+    <link rel="stylesheet" href="/multi-perspective.css?v=17.2.2" />
+    <link rel="stylesheet" href="/semantic-recall.css?v=17.2.2" />
+    <link rel="stylesheet" href="/memory-lens.css?v=17.2.2" />
+    <link rel="stylesheet" href="/museum-lock.css?v=17.2.2" />
   </head>
   <body>
     <a class="skip-link" href="#mainContent">跳到主要内容</a>
@@ -335,8 +335,7 @@
                     <label>人物<input id="draftPeople" type="text" maxlength="240" placeholder="用逗号分隔" /></label>
                     <label>标签<input id="draftTags" type="text" maxlength="240" placeholder="用逗号分隔" /></label>
                     <label>情绪<input id="draftEmotions" type="text" maxlength="160" placeholder="用逗号分隔" /></label>
-                    <label>重要度
-                      <select id="draftImportance">
+                    <label>重要度<select id="draftImportance">
                         <option value="1">1 · 普通记录</option>
                         <option value="2">2 · 值得回看</option>
                         <option value="3">3 · 重要记忆</option>
@@ -380,12 +379,18 @@
               <div><p class="eyebrow">Three simple ways</p><h2 id="recallMethodsTitle">你还记得什么？</h2></div>
             </div>
             <div class="recall-method-grid">
-              <button type="button" id="recallFieldButton"><span aria-hidden="true">1</span><strong>记得名字、地点或原句</strong><small>用字段与线索检索，最快也最确定。</small></button>
-              <button type="button" id="recallSemanticButton"><span aria-hidden="true">2</span><strong>只记得一个画面</strong><small>主动准备设备语义，再按意思寻找。</small></button>
-              <button type="button" id="recallGuideButton"><span aria-hidden="true">3</span><strong>想跨多件记忆提问</strong><small>让讲解员依据馆藏引用回答。</small></button>
+              <button type="button" id="recallFieldButton" aria-pressed="true"><strong>按名字、地点或原句找</strong><small>字段与线索检索，最快也最确定。</small></button>
+              <button type="button" id="recallSemanticButton" aria-pressed="false"><strong>按意思找</strong><small>只记得一个画面时，主动准备设备语义。</small></button>
+              <button type="button" id="recallGuideButton" aria-pressed="false"><strong>向馆藏提问</strong><small>跨多件记忆提问，回答附上引用展品。</small></button>
             </div>
+            <form class="recall-field-form" id="recallFieldForm" hidden>
+              <label for="recallFieldQuery">记得的词</label>
+              <div><input id="recallFieldQuery" type="search" maxlength="160" autocomplete="off" placeholder="例如：操场、爷爷、那句原话" /><button type="submit" class="button primary">查找</button></div>
+              <p id="recallFieldStatus" class="semantic-recall-status" role="status">字段结果只匹配你输入的线索。</p>
+              <div id="recallFieldResults" class="semantic-recall-results" hidden></div>
+            </form>
           </section>
-          <details class="semantic-recall-card" id="semanticRecallDetails">
+          <details class="semantic-recall-card" id="semanticRecallDetails" hidden>
             <summary>
               <span><strong>按意思找回</strong><small>主动启用后才加载约 47 MB</small></span>
               <span class="engine-badge">设备 embedding</span>
@@ -394,11 +399,12 @@
               <p class="semantic-recall-intro">不用记得原文。试着描述“小时候下雨天等爷爷”这样的画面，时屿会在当前设备里比较文字含义，找回可能相关的展品。索引只反映你点击“准备”这一刻的馆藏。</p>
               <div class="semantic-recall-boundary" aria-label="设备语义隐私边界">
                 <div><strong>只在你点击后运行</strong><span>展开不会下载；点击准备后才加载约 47 MB 模型。</span></div>
-                <div><strong>文字与查询不上传</strong><span>标题、说明、正文片段、标签和确认文字稿只进入浏览器 Worker。</span></div>
-                <div><strong>变化后重新准备</strong><span>查询、向量和索引只在本页内存中；刷新、其他标签页或外部修改后需要重备。</span></div>
+                <div><strong id="semanticRecallPrivacyTitle">文字与查询留在设备</strong><span id="semanticRecallPrivacyCopy">会话模式下，标题、说明、正文片段、标签和确认文字稿只进入浏览器 Worker。</span></div>
+                <div><strong>变化后重新准备</strong><span>正文、照片和声音不会随语义查询上传；仅在你明确保存派生索引后，查询向量会发给当前设备的同源本地服务做本地融合。</span></div>
               </div>
               <div class="semantic-recall-actions">
                 <button type="button" class="button primary" id="semanticRecallPrepare">在此设备准备（约 47 MB）</button>
+                <button type="button" class="button secondary" id="semanticRecallPersist" hidden>保存派生索引到本机</button>
                 <button type="button" class="button secondary" id="semanticRecallStop" hidden>停止准备</button>
                 <button type="button" class="button text-button" id="semanticRecallClear" hidden>释放本页模型内存</button>
               </div>
@@ -420,7 +426,7 @@
             </div>
           </details>
 
-          <section class="guide-card" aria-labelledby="guideTitle">
+          <section class="guide-card" aria-labelledby="guideTitle" hidden>
             <div class="section-heading compact-heading">
               <div>
                 <p class="eyebrow">Guide</p>
@@ -595,6 +601,11 @@
                 <p class="action-note pwa-install-status" id="pwaInstallStatus" role="status" aria-live="polite" aria-atomic="true"></p>
               </div>
             </details>
+            <section class="device-intelligence-card" aria-labelledby="deviceIntelligenceTitle">
+              <div><h3 id="deviceIntelligenceTitle">设备智能</h3><p id="semanticIndexStatus">正在读取设备语义索引状态。</p></div>
+              <div class="data-actions"><button type="button" class="button secondary compact" id="semanticIndexRefresh">刷新状态</button><button type="button" class="button text-button compact" id="semanticIndexClear">移除派生索引</button></div>
+              <p class="action-note">派生索引只由馆藏文字生成，不包含在备份中；移除不会删除记忆、照片或声音。</p>
+            </section>
             <details class="project-backstage security-backstage">
               <summary><span><strong>项目幕后：完整安全合同</strong><small>锁馆、恢复演练与馆藏体检；普通使用无需展开</small></span><span aria-hidden="true">＋</span></summary>
               <div class="project-backstage-body">
@@ -1064,14 +1075,12 @@
                 <label for="capsuleTitle">胶囊标题
                   <input id="capsuleTitle" type="text" maxlength="120" required placeholder="例如：留给明年夏天的我们" />
                 </label>
-                <label for="capsuleOpensOn">开启日期
-                  <input id="capsuleOpensOn" type="date" required />
+                <label for="capsuleOpensOn">开启日期<input id="capsuleOpensOn" type="date" required />
                 </label>
                 <label class="capsule-wide-field" for="capsuleShellMessage">未开启时可见的留言
                   <textarea id="capsuleShellMessage" maxlength="500" placeholder="只写愿意公开在外壳上的话。"></textarea>
                 </label>
-                <label class="capsule-wide-field" for="capsuleTimezone">日期所在时区
-                  <input id="capsuleTimezone" type="text" readonly />
+                <label class="capsule-wide-field" for="capsuleTimezone">日期所在时区<input id="capsuleTimezone" type="text" readonly />
                 </label>
               </div>
               <div class="capsule-form-actions">
@@ -1097,8 +1106,7 @@
                 <label for="sharePublicTitle">公开标题
                   <input id="sharePublicTitle" type="text" maxlength="120" required />
                 </label>
-                <label for="shareFileTitle">下载文件名
-                  <input id="shareFileTitle" type="text" maxlength="80" required aria-describedby="shareFileTitleHint" />
+                <label for="shareFileTitle">下载文件名<input id="shareFileTitle" type="text" maxlength="80" required aria-describedby="shareFileTitleHint" />
                   <small id="shareFileTitleHint">页面会安全处理文件名并自动添加 .html。</small>
                 </label>
                 <label class="share-privacy-wide" for="sharePublicNote">公开说明
@@ -1124,8 +1132,7 @@
                 <label for="shareExhibitTheme">加密展览主题
                   <input id="shareExhibitTheme" type="text" maxlength="120" />
                 </label>
-                <label class="share-privacy-wide" for="shareExhibitOpening">加密展览开场
-                  <textarea id="shareExhibitOpening" maxlength="1200"></textarea>
+                <label class="share-privacy-wide" for="shareExhibitOpening">加密展览开场<textarea id="shareExhibitOpening" maxlength="1200"></textarea>
                 </label>
               </div>
               <div class="share-privacy-content" id="sharePrivacyContent" tabindex="-1"></div>
@@ -1216,28 +1223,28 @@
 
     <footer class="site-footer">
       <span>时屿 · 让记忆可整理，也让 AI 的依据可回看。</span>
-      <span id="footerVersion">v17.1.2</span>
+      <span id="footerVersion">v17.2.2</span>
     </footer>
 
     <script src="/assets/portability.js"></script>
     <script src="/assets/media-intelligence.js"></script>
     <script src="/assets/media.js"></script>
-    <script src="/assets/voice-capture.js?v=17.1.2"></script>
+    <script src="/assets/voice-capture.js?v=17.2.2"></script>
     <script src="/assets/voice.js?v=7.2.0"></script>
     <script src="/assets/media-compare.js"></script>
     <script src="/assets/exhibitions.js?v=7.2.0"></script>
-    <script src="/assets/memory-lens.js?v=17.1.2"></script>
-    <script src="/assets/memory-lens-host.js?v=17.1.2"></script>
-    <script src="/assets/museum-lock.js?v=17.1.2"></script>
-    <script src="/assets/revisit-intents.js?v=17.1.2"></script>
-    <script src="/assets/revisits.js?v=17.1.2"></script>
-    <script src="/assets/time-calibrations.js?v=17.1.2"></script>
+    <script src="/assets/memory-lens.js?v=17.2.2"></script>
+    <script src="/assets/memory-lens-host.js?v=17.2.2"></script>
+    <script src="/assets/museum-lock.js?v=17.2.2"></script>
+    <script src="/assets/revisit-intents.js?v=17.2.2"></script>
+    <script src="/assets/revisits.js?v=17.2.2"></script>
+    <script src="/assets/time-calibrations.js?v=17.2.2"></script>
     <script src="/assets/clues.js?v=7.2.0"></script>
     <script src="/assets/collection-health.js?v=7.2.0-a11y2"></script>
-    <script src="/assets/memory-inbox.js?v=17.1.2"></script>
-    <script src="/assets/semantic-recall.js?v=17.1.2"></script>
-    <script src="/assets/pwa.js?v=17.1.2"></script>
-    <script src="/assets/lazy-features.js?v=17.1.2"></script>
-    <script src="/assets/app.js?v=17.1.2"></script>
+    <script src="/assets/memory-inbox.js?v=17.2.2"></script>
+    <script src="/assets/semantic-recall.js?v=17.2.2"></script>
+    <script src="/assets/pwa.js?v=17.2.2"></script>
+    <script src="/assets/lazy-features.js?v=17.2.2"></script>
+    <script src="/assets/app.js?v=17.2.2"></script>
   </body>
 </html>

@@ -28,10 +28,12 @@ npm.cmd start
 ## 2. 当前公开入口
 
 - 国内静态唤醒入口：<https://shiyu-memory-demo-d3di282387d5c7-1456049152.tcloudbaseapp.com>
-- CloudBase 应用直连（诊断备用）：<https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com>
+- 国内直接备用（CloudBase 云托管）：<https://time-isle-demo-284723-8-1456049152.sh.run.tcloudbase.com/#collection>
+- 国内静态备用（CloudBase 静态应用）：<https://time-isle-wakeup-shiyu-memory-demo-d3di282387d5c7.webapps.tcloudbase.com>
+- CloudBase 应用旧网关（仅诊断）：<https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com>
 - Vercel 全球备用：<https://ai-memory-museum-demo.vercel.app>
 
-这些地址在发布前仍运行已核验的 V17.0.0。V17.1.2 的运行时 Tag 固定在提交 A；完成双远端、CI 与生产探针后，才用纯文档提交 B 更新发布合同。
+这些地址在发布前仍运行已核验的 V17.0.0。V17.2.2 是取代未发布 V17.2.1 的本地候选；其运行时 Tag 固定在提交 A，完成双远端、CI 与生产探针后，才用纯文档提交 B 更新发布合同。
 
 ## 3. 发布前门禁
 
@@ -60,7 +62,7 @@ git diff --check
 
 1. `git status --short` 只有本次计划内文件，无临时 SQLite、媒体、Playwright 报告或语义报告。
 2. 桌面 1265×720、手机 390×844、手机 320×700、触控横屏 844×390 均完成真实浏览器目视验收。
-3. `release/v17.1.2.json` 仍为 `candidate-local-only`，V18 为 `NO-GO`，静态加密为 `false`。
+3. `release/v17.2.2.json` 仍为 `candidate-local-only`，schema 为 `20`，V18 为 `NO-GO`，静态加密为 `false`；V17.2.2 私人派生索引仍是可选本机 SQLite BLOB，公开 Demo 不保存。`release/v17.2.1.json` 仅是被收束版取代的本地候选快照。
 4. 没有把本地可写、设备语义、PWA 安装或一次性恢复扩大成私人云同步、原生 App、事实判断或灾备证明。
 
 根 `npm test` 不隐式运行 Playwright，因此浏览器门禁不可省略。
@@ -77,22 +79,22 @@ github → GitHub 与 Vercel 构建源
 发布时先创建唯一运行时提交 A，并在 CI 通过后创建不可变 Annotated Tag。生产部署必须明确使用提交 A（或该 Tag）；完成生产核验后才允许创建只改文档/发布证据的提交 B：
 
 ```powershell
-git commit -m "release: V17.1.2 runtime"
+git commit -m "release: V17.2.2 runtime"
 git push gitee main
 git push github main
-# 停在这里：确认两个远端的 main 都是 A，且 main CI 的五个门禁全部成功
-git tag -a v17.1.2 -m "时屿 V17.1.2：移动体验、数据可靠性与性能收束版"
-git push gitee v17.1.2
-git push github v17.1.2
+# 停在这里：确认两个远端的 main 都是 A，且 main CI 的全部声明门禁成功
+git tag -a v17.2.2 -m "时屿 V17.2.2：语义索引与移动体验收束版"
+git push gitee v17.2.2
+git push github v17.2.2
 # 再停在这里：确认两个远端的 Tag 都是 Annotated、peeled=A，且 tag CI/evidence 成功
-# 生产核验通过后：只改文档与 release/v17.1.2.json，再提交 B
-git commit -m "docs: record V17.1.2 production evidence"
+# 生产核验通过后：只改文档与 release/v17.2.2.json，再提交 B
+git commit -m "docs: record V17.2.2 production evidence"
 git push gitee main
 git push github main
 # B 推送后只生成 post-B evidence manifest；生产别名仍保持部署 A
 ```
 
-最终远端语义是：GitHub/Gitee 的 `main` 指向文档提交 B，`v17.1.2` Annotated Tag 的 peeled commit 指向运行时提交 A。A 与 B 不得混称；一次 `git push` 成功不等于双远端、Tag 或生产发布完成。
+最终远端语义是：GitHub/Gitee 的 `main` 指向文档提交 B，`v17.2.2` Annotated Tag 的 peeled commit 指向运行时提交 A。A 与 B 不得混称；一次 `git push` 成功不等于双远端、Tag 或生产发布完成。
 
 ## 5. Vercel
 
@@ -116,7 +118,7 @@ DEPLOYMENT_PLATFORM=vercel
 
 不要设置 `AI_API_KEY`。Vercel 注入的官方域名和 `ALLOWED_HOSTS` 中的精确 hostname 组成 Host 白名单；不支持通配符、路径或协议前缀。所有浏览器 mutation 还必须通过同源 Origin 与 Fetch Metadata 校验，但 Demo 会更早地在正文读取前统一拒绝。
 
-生产部署必须从运行时提交 A 或 `v17.1.2` Tag 创建并记录 deployment ID。提交 B 只改文档和证据：若项目的 Git 集成会因 B 自动生成新生产部署，应先暂停该次生产提升或将生产别名保持在 A；不得把 B 误记为运行时部署来源。
+生产部署必须从运行时提交 A 或 `v17.2.2` Tag 创建并记录 deployment ID。提交 B 只改文档和证据：若项目的 Git 集成会因 B 自动生成新生产部署，应先暂停该次生产提升或将生产别名保持在 A；不得把 B 误记为运行时部署来源。
 
 ## 6. CloudBase
 
@@ -149,10 +151,10 @@ CloudBase 会缩容到 0。有限冷启动可出现短暂 503；只做有限次�
 /offline.html
 ```
 
-发布 V17.1.2 时必须满足：
+发布 V17.2.2 时必须满足：
 
-- `/api/version`：`version = 17.1.2`；commit 以 Vercel/CloudBase 构建 metadata 记录，不从该接口臆测。
-- `/api/health`：`ok = true`、`schemaVersion = 19`、`mode = interview-demo`。
+- `/api/version`：`version = 17.2.2`；commit 以 Vercel/CloudBase 构建 metadata 记录，不从该接口臆测。
+- `/api/health`：`ok = true`、`schemaVersion = 20`、`mode = interview-demo`。
 - `/api/runtime/trust`：`audience = public-demo`；存储为临时公开样例；`visitorWritesAllowed = false`；`blockedBeforeBodyRead = true`；外部 AI 不允许；`encryptionAtRest.enabled = false`。
 - `/api/memories`：固定四件虚构展品。
 - 设备语义快照只包含四件虚构展品，远程模型关闭，向量不持久化。
@@ -190,12 +192,12 @@ CloudBase 会缩容到 0。有限冷启动可出现短暂 503；只做有限次�
 
 ## 9. Evidence manifest
 
-当前合同为 [`release/v17.1.2.json`](./release/v17.1.2.json)。运行时提交 A 的 CI evidence 与生产探针应绑定。提交 B 自身不能预先写入自己的 SHA，因此 B 与双远端 `main` 的实际 SHA 只在 B 创建并推送后写入最终 evidence manifest（CI artifact 或脱敏外部附件），不反向改写合同：
+当前合同为 [`release/v17.2.2.json`](./release/v17.2.2.json)，状态保持 `candidate-local-only`；它取代从未发布的 [`release/v17.2.1.json`](./release/v17.2.1.json) 本地候选。运行时提交 A 的 CI evidence 与生产探针应绑定。提交 B 自身不能预先写入自己的 SHA，因此 B 与双远端 `main` 的实际 SHA 只在 B 创建并推送后写入最终 evidence manifest（CI artifact 或脱敏外部附件），不反向改写合同：
 
 - 版本、schema、运行时提交 A、文档提交 B 与期望 Tag；A 必须是 B 的祖先，A→B 只允许文档和 release JSON。
 - 模型 ID、ONNX SHA-256、评测集 SHA-256。
 - Windows/Linux 根门禁、Demo/可写浏览器旅程、语义质量和 Docker 构建结果。
-- GitHub/Gitee `main=B`、Annotated Tag peeled `A`，分别记录两种 SHA；这两项由 B 之后生成的 manifest 记录，`release/v17.1.2.json` 不自引用 B。
+- GitHub/Gitee `main=B`、Annotated Tag peeled `A`，分别记录两种 SHA；这两项由 B 之后生成的 manifest 记录，`release/v17.2.2.json` 不自引用 B。
 - CloudBase/Vercel 的脱敏 `/api/version`、`/api/health`、`/api/runtime/trust` 观察结果。
 - 桌面、390px、320px、844×390 与手机入口分别记录的验收范围。
 
@@ -212,7 +214,7 @@ $env:EVIDENCE_GITHUB_TAG_ANNOTATED = "true"
 $env:EVIDENCE_GITEE_MAIN_COMMIT = "<gitee-main-B>"
 $env:EVIDENCE_GITEE_TAG_COMMIT = "<tag-peeled-A>"
 $env:EVIDENCE_GITEE_TAG_ANNOTATED = "true"
-node scripts/release-evidence-check.js --write artifacts/release-evidence-v17.1.2.json --require-complete-evidence
+node scripts/release-evidence-check.js --write artifacts/release-evidence-v17.2.2.json --require-complete-evidence
 ```
 
 该 artifact 才是记录 B、双远端 SHA、部署 ID 与生产探针的最终证据；候选阶段自动生成的 manifest 不能冒充 released 证据。

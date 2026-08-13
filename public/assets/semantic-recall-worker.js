@@ -21,6 +21,7 @@ let extractor = null;
 let indexed = [];
 let collectionFingerprint = "";
 let activeSession = "";
+let persistentIndexReady = false;
 
 self.addEventListener("message", (event) => {
   const message = event.data;
@@ -38,6 +39,7 @@ async function prepare(message) {
   const snapshot = normalizeSemanticSnapshot(message.snapshot);
   indexed = [];
   collectionFingerprint = "";
+  persistentIndexReady = message.usePersistentIndex === true;
   post(message.session, "progress", { phase: "model", percent: 0, label: "正在加载约 47 MB 的设备模型…" });
   if (!extractor) {
     extractor = await pipeline("feature-extraction", SEMANTIC_RECALL_MODEL_ID, {
@@ -56,6 +58,19 @@ async function prepare(message) {
     throw recallError("设备索引文字超过模型的安全输入范围。", "SEMANTIC_RECALL_TOKEN_BUDGET_EXCEEDED");
   }
   const documents = snapshot.documents;
+  if (persistentIndexReady) {
+    collectionFingerprint = snapshot.collectionFingerprint;
+    post(message.session, "ready", {
+      documentCount: documents.length,
+      collectionFingerprint,
+      dimensions: 512,
+      maximumInputTokens: tokenizerBudget.maximumInputTokens,
+      modelMaximumTokens: tokenizerBudget.modelMaximumTokens,
+      persistentIndexReady: true,
+      entries: []
+    });
+    return;
+  }
   const batchSize = 8;
   for (let offset = 0; offset < documents.length; offset += batchSize) {
     assertActive(message.session);
@@ -78,7 +93,13 @@ async function prepare(message) {
     collectionFingerprint,
     dimensions: 512,
     maximumInputTokens: tokenizerBudget.maximumInputTokens,
-    modelMaximumTokens: tokenizerBudget.modelMaximumTokens
+    modelMaximumTokens: tokenizerBudget.modelMaximumTokens,
+    persistentIndexReady: false,
+    entries: indexed.map((item) => ({
+      memoryId: item.document.memoryId,
+      sourceSha256: item.document.sourceSha256,
+      vector: item.vector
+    }))
   });
 }
 
@@ -91,6 +112,10 @@ async function query(message) {
   const output = await extractor(buildSemanticQueryText(queryText), { pooling: "mean", normalize: true });
   assertActive(message.session);
   const [vector] = tensorRows(output, 1);
+  if (persistentIndexReady) {
+    post(message.session, "persistent-query", { query: queryText, vector, collectionFingerprint });
+    return;
+  }
   const results = rankSemanticResults(vector, indexed, 6);
   post(message.session, "results", { query: queryText, results, collectionFingerprint });
 }
@@ -133,6 +158,7 @@ function fail(session, error) {
   if (session !== activeSession || error?.code === "SEMANTIC_RECALL_CANCELLED") return;
   indexed = [];
   collectionFingerprint = "";
+  persistentIndexReady = false;
   const safeCode = String(error?.code || "").startsWith("SEMANTIC_RECALL_")
     ? String(error.code)
     : "SEMANTIC_RECALL_MODEL_UNAVAILABLE";

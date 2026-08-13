@@ -7,7 +7,7 @@
     "#memoryForm button", "#memoryForm textarea", "#draftForm button", "#draftForm input", "#draftForm select", "#draftForm textarea",
     "#photoInput", "#voiceRecordButton", "#voiceFileInput", "#memoryInboxOpenButton", "#curatorAgentButton",
     "#exhibitionStudioButton", "#capsuleStudioButton", "#collectionHealthStart", "#archiveImportFile", "#importFile", "#purgeButton",
-    "#dialogEditButton", "#dialogDeleteButton", "#guideQuestion", "#guideAskButton",
+    "#dialogEditButton", "#dialogDeleteButton", "#guideQuestion", "#guideAskButton", "#semanticRecallPersist", "#semanticIndexRefresh", "#semanticIndexClear",
     "#timeCalibrationForm :is(button,input,select,textarea)", "#oralHistoryForm :is(button,input,select,textarea)",
     "[data-provenance-form] :is(button,input,select,textarea)", "[data-provenance-action]", "[data-co-memory-confirm-save]",
     "[data-curator-action]", "[data-curator-run-delete]", "[data-curator-run-delete-confirm]"

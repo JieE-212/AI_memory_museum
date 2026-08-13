@@ -2,7 +2,7 @@
 
 把零散文字、照片和声音整理成一座能找回、能回看、也能说明来源边界的私人记忆博物馆。
 
-> 仓库当前是 **17.1.2 / schema 19 / candidate-local-only**。本地门禁通过不会自动扩大成发布事实；发布需按运行时提交 A → Annotated Tag → 双平台部署与探针 → 证据提交 B 的授权流程执行。最后完成生产核验的线上版本仍是 **17.0.0**。V18 真正数据库/媒体静态加密继续保持 **NO-GO**。
+> 仓库当前是 **17.2.2 / schema 20 / candidate-local-only**。这是取代从未发布 V17.2.1 的本地收束候选；本轮仍不提交、不打 Tag、不推送、不部署。私人设备语义索引默认不保存，用户明确选择后才写入本机 SQLite 派生 BLOB；备份、分享和公开 Demo 均不携带它。最后完成生产核验的线上版本仍是 **17.0.0**。V18 真正数据库/媒体静态加密继续保持 **NO-GO**。
 
 ## 它解决什么问题
 
@@ -19,10 +19,11 @@
 ### 公开安全体验
 
 - 国内入口（CloudBase 静态唤醒）：<https://shiyu-memory-demo-d3di282387d5c7-1456049152.tcloudbaseapp.com>
-- CloudBase 应用直连（诊断备用）：<https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com>
-- 全球备用（Vercel）：<https://ai-memory-museum-demo.vercel.app>
+- 国内直接备用（CloudBase 云托管）：<https://time-isle-demo-284723-8-1456049152.sh.run.tcloudbase.com/#collection>
+- 国内静态备用（CloudBase 静态应用）：<https://time-isle-wakeup-shiyu-memory-demo-d3di282387d5c7.webapps.tcloudbase.com>
+- 全球备用（Vercel，不作为国内面试流程的一部分）：<https://ai-memory-museum-demo.vercel.app>
 
-公开网址当前仍运行已发布的 V17.0.0；V17.1.2 尚未替换线上版本，只有 GitHub/Gitee 的 `main` 与 Annotated Tag 拓扑、CI、双平台部署和生产探针全部通过后才会完成切换。
+公开网址当前仍运行已发布的 V17.0.0；V17.2.2 尚未替换线上版本，只有 GitHub/Gitee 的 `main` 与 Annotated Tag 拓扑、CI、双平台部署和生产探针全部通过后才会完成切换。
 
 建议路线：
 
@@ -97,7 +98,7 @@ npm.cmd run release:verify
 
 浏览器门禁使用隔离的 Demo 与可写服务，覆盖 1265×720、390×844、320×700、844×390，并对四主视图执行 WCAG AA 自动检查。真实语义评测固定使用完全虚构的 100/500 件中文语料，分别执行总体与切片质量门禁，并记录两档索引与查询性能；临时 SQLite、媒体、声音和测试结果目录在本地运行结束后清理。GitHub CI 还会在 Windows/Linux 执行根检查、运行 Demo/可写旅程、语义质量和 Docker 构建，并生成 evidence artifact。
 
-当前合同位于 [`release/v17.1.2.json`](./release/v17.1.2.json)，状态为 `candidate-local-only`；测试成功不能自动触发提交、推送、部署，也不能改写为“已发布”。
+当前合同位于 [`release/v17.2.2.json`](./release/v17.2.2.json)，状态为 `candidate-local-only`；测试成功不能自动触发提交、推送、部署，也不能改写为“已发布”。[`release/v17.2.1.json`](./release/v17.2.1.json) 仅保留为已被本地收束版取代的候选快照。
 
 ## 文档
 

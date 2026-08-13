@@ -126,6 +126,8 @@ test.describe("V17.1 interview-demo browser gate", () => {
       });
     });
     await openReadyDemo(page, "reflect");
+    await page.locator("#recallGuideButton").click();
+    await expect(page.locator("#guideAskButton")).toBeVisible();
     await page.locator("#guideAskButton").click();
     await expect(page.locator("#guideQuestion")).toBeFocused();
     await expect(page.locator("#guideQuestion")).toHaveAttribute("aria-invalid", "true");
@@ -328,11 +330,11 @@ test.describe("V17.1 interview-demo browser gate", () => {
       }
     });
     await openReadyDemo(page, "reflect");
+    await page.locator("#recallSemanticButton").click();
     const panel = page.locator("#semanticRecallDetails");
-    await expect(panel).not.toHaveAttribute("open", "");
-    expect(observed).toEqual([]);
-    await panel.locator(":scope > summary").click();
+    await expect(panel).toBeVisible();
     await expect(panel).toHaveAttribute("open", "");
+    expect(observed).toEqual([]);
     await page.waitForTimeout(150);
     expect(observed).toEqual([]);
     expect([...new Set(allNetworkOrigins)]).toEqual([new URL(page.url()).origin]);
@@ -718,8 +720,8 @@ async function openReadyDemo(page, route) {
   expect(health.status()).toBe(200);
   expect(await health.json()).toMatchObject({
     ok: true,
-    version: "17.1.2",
-    schemaVersion: 19,
+    version: "17.2.2",
+    schemaVersion: 20,
     mode: "interview-demo",
     storage: "ephemeral-sqlite"
   });

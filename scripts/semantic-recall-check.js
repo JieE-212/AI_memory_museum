@@ -21,7 +21,8 @@ const snapshot = build();
 equal(snapshot.format, SEMANTIC_RECALL_FORMAT, "snapshot uses a versioned contract");
 equal(snapshot.documentCount, 2, "snapshot covers the complete saved collection");
 deepEqual(snapshot.documents.map((item) => item.memoryId), ["memory-a", "memory-b"], "documents have deterministic ID order");
-deepEqual(Object.keys(snapshot.documents[0]).sort(), ["confirmedTranscripts", "exhibitText", "memoryId", "rawContent", "tags", "title"].sort(), "document projection has only indexable text fields");
+deepEqual(Object.keys(snapshot.documents[0]).sort(), ["confirmedTranscripts", "exhibitText", "memoryId", "rawContent", "sourceSha256", "tags", "title"].sort(), "document projection has indexable fields and a source hash");
+ok(/^[a-f0-9]{64}$/u.test(snapshot.documents[0].sourceSha256), "document projection carries a source hash");
 deepEqual(snapshot.documents[0].confirmedTranscripts, ["爷爷撑着蓝伞来接我。"], "only confirmed transcript text enters the snapshot");
 const serialized = JSON.stringify(snapshot);
 for (const canary of ["草稿文字暗号", "原始音频暗号", "gps-canary", "person-secret", "entity-secret", "provenance-secret"]) {

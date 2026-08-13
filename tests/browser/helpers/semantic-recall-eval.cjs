@@ -6,6 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const { createMemoryStore } = require("../../../database");
+const { SCHEMA_VERSION } = require("../../../lib/release-identity");
 
 const SNAPSHOT_FORMAT = "time-isle-semantic-recall-snapshot-v1";
 const MODEL_ID = "Xenova/bge-small-zh-v1.5";
@@ -96,6 +97,7 @@ function buildSnapshot(documents) {
     exhibitText: document.exhibitText,
     memoryId: document.memoryId,
     rawContent: document.rawContent,
+    sourceSha256: "0".repeat(64),
     tags: [...document.tags],
     title: document.title
   }));
@@ -158,14 +160,14 @@ function runFtsBaseline(documents, queries) {
   try {
     store = createMemoryStore({
       dbPath: path.join(tempRoot, "evaluation.sqlite"),
-      schemaVersion: 19,
+      schemaVersion: SCHEMA_VERSION,
       halls: [{ id: "daily", name: "日常展厅", description: "完全虚构评测" }]
     });
     const timestamp = "2026-01-01T00:00:00.000Z";
     for (const document of documents) {
       store.saveMemory({
         id: document.memoryId,
-        schemaVersion: 19,
+        schemaVersion: SCHEMA_VERSION,
         title: document.title,
         hall: "daily",
         sourceType: "完全虚构评测",

@@ -62,8 +62,8 @@ async function run() {
 
 function snapshotFixture() {
   const documents = [
-    { memoryId: "memory-a", title: "雨天等爷爷", exhibitText: "放学后在屋檐下等。", rawContent: "爷爷撑伞来接我。", tags: ["童年"], confirmedTranscripts: ["雨声很大"] },
-    { memoryId: "memory-b", title: "海边晚风", exhibitText: "沿着海岸散步。", rawContent: "风很轻。", tags: ["旅行"], confirmedTranscripts: [] }
+    { memoryId: "memory-a", title: "雨天等爷爷", exhibitText: "放学后在屋檐下等。", rawContent: "爷爷撑伞来接我。", sourceSha256: "a".repeat(64), tags: ["童年"], confirmedTranscripts: ["雨声很大"] },
+    { memoryId: "memory-b", title: "海边晚风", exhibitText: "沿着海岸散步。", rawContent: "风很轻。", sourceSha256: "a".repeat(64), tags: ["旅行"], confirmedTranscripts: [] }
   ];
   return {
     format: "time-isle-semantic-recall-snapshot-v1",

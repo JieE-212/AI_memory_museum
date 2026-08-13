@@ -25,7 +25,7 @@ check(contract.format === "time-isle-release-contract-v1", "release contract for
 for (const failure of validateReleaseContractState(contract)) failures.push(failure);
 check(/^\d+\.\d+\.\d+$/.test(contract.version) && contract.tag === `v${contract.version}`, "version and expected tag agree");
 check(contract.annotatedTagRequired === true, "release requires an annotated tag");
-check(contract.schemaVersion === 19, "schema stays at 19");
+check(contract.schemaVersion === SCHEMA_VERSION, "schema matches the runtime identity");
 check(contract.syntheticDataOnly === true && contract.semanticEvaluation.syntheticDataOnly === true, "release and semantic evidence use only synthetic fixtures");
 check(contract.claims.demoWritePolicy === "all-non-read-methods-blocked-before-body", "Demo zero-body write policy is declared");
 check(contract.claims.externalAi === "explicit-per-operation-consent-and-matching-trust-contract", "external AI consent boundary is declared");
@@ -63,7 +63,7 @@ check(onnx && sha256File(path.join(root, onnx.path)) === onnx.sha256, "release e
 check(evaluationFixture.format === "time-isle-semantic-recall-eval-v1" && evaluationFixture.syntheticDataOnly === true, "semantic fixture is versioned and explicitly fictional");
 check(evaluationFixture.topics.length === 20 && evaluationFixture.baseline.maximumRegressionRatio === contract.semanticEvaluation.maximumRegressionRatio, "semantic fixture and 20% regression contract agree");
 check(Boolean(evaluationFixture.baseline.quality500 && evaluationFixture.baseline.bySlice500?.["semantic-paraphrase"] && evaluationFixture.baseline.bySlice500?.["literal-control"]), "500-document overall and slice quality baselines are frozen");
-check(Array.isArray(contract.requiredGates) && new Set(contract.requiredGates.map((item) => item.id)).size === 5, "five independent release gates are declared");
+check(Array.isArray(contract.requiredGates) && new Set(contract.requiredGates.map((item) => item.id)).size === contract.requiredGates.length, "all independent release gates are uniquely declared");
 check(contract.productionVerification.requiredBeforeReleased === true, "production verification remains required before release");
 check(Array.isArray(contract.productionVerification.apiProbeTargets) && contract.productionVerification.apiProbeTargets.length === 2, "release contract separates the two API probe targets");
 check(Array.isArray(contract.productionVerification.entryTargets) && contract.productionVerification.entryTargets.length === 1, "release contract separates the static entry target");

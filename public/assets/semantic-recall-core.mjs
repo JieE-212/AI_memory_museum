@@ -19,7 +19,7 @@ export const SEMANTIC_RECALL_TEXT_LIMITS = Object.freeze({
 const MEMORY_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/u;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 const DOCUMENT_KEYS = Object.freeze([
-  "confirmedTranscripts", "exhibitText", "memoryId", "rawContent", "tags", "title"
+  "confirmedTranscripts", "exhibitText", "memoryId", "rawContent", "sourceSha256", "tags", "title"
 ]);
 
 export function normalizeSemanticSnapshot(value) {
@@ -48,6 +48,7 @@ export function normalizeSemanticSnapshot(value) {
         typeof document.title !== "string" || typeof document.exhibitText !== "string" ||
         typeof document.rawContent !== "string" || !Array.isArray(document.tags) ||
         !Array.isArray(document.confirmedTranscripts) ||
+        !SHA256_PATTERN.test(String(document.sourceSha256 || "")) ||
         document.tags.some((item) => typeof item !== "string") ||
         document.confirmedTranscripts.some((item) => typeof item !== "string") ||
         !withinDocumentTextLimits(document)) {
@@ -59,6 +60,7 @@ export function normalizeSemanticSnapshot(value) {
       title: document.title,
       exhibitText: document.exhibitText,
       rawContent: document.rawContent,
+      sourceSha256: document.sourceSha256,
       tags: Object.freeze([...document.tags]),
       confirmedTranscripts: Object.freeze([...document.confirmedTranscripts])
     });

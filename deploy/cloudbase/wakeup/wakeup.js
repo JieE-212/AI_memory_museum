@@ -2,10 +2,10 @@
 
 (function initializeWakeupModule(scope) {
   const DEFAULT_CONFIG = Object.freeze({
-    primaryUrl: "https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com/#collection",
-    technicalUrl: "https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com/#data-technical",
-    fallbackUrl: "https://ai-memory-museum-demo.vercel.app/#collection",
-    probeUrl: "https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com/assets/time-isle-192.png",
+    primaryUrl: "https://time-isle-demo-284723-8-1456049152.sh.run.tcloudbase.com/#collection",
+    technicalUrl: "https://time-isle-demo-284723-8-1456049152.sh.run.tcloudbase.com/#data-technical",
+    fallbackUrl: "https://time-isle-demo-284723-8-1456049152.sh.run.tcloudbase.com/#collection",
+    probeUrl: "https://time-isle-demo-284723-8-1456049152.sh.run.tcloudbase.com/assets/time-isle-192.png",
     attemptDelaysMs: Object.freeze([0, 2200, 4800]),
     probeTimeoutMs: 7000,
     readyDelayMs: 650,

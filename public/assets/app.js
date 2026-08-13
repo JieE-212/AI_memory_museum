@@ -46,8 +46,10 @@ const state = {
   selectedMemory: null,
   detailOperation: null,
   detailOperationSequence: 0,
+  detailRequest: 0, detailController: null,
   dialogScrollY: 0,
-  dialogTrigger: null
+  dialogTrigger: null,
+  semanticIndex: null
 };
 const elements = {
   navButtons: [...document.querySelectorAll("[data-view]")],
@@ -133,6 +135,11 @@ const elements = {
   privacySummary: document.querySelector("#privacySummary"),
   dataLocationList: document.querySelector("#dataLocationList"),
   dataLocationDetails: document.querySelector("#dataLocationDetails"),
+  semanticIndexStatus: document.querySelector("#semanticIndexStatus"),
+  semanticIndexRefresh: document.querySelector("#semanticIndexRefresh"),
+  semanticIndexClear: document.querySelector("#semanticIndexClear"),
+  semanticRecallPrivacyTitle: document.querySelector("#semanticRecallPrivacyTitle"),
+  semanticRecallPrivacyCopy: document.querySelector("#semanticRecallPrivacyCopy"),
   exportButton: document.querySelector("#exportButton"),
   exportRedactedButton: document.querySelector("#exportRedactedButton"),
   exportJsonButton: document.querySelector("#exportJsonButton"),
@@ -169,6 +176,10 @@ const elements = {
   recallFieldButton: document.querySelector("#recallFieldButton"),
   recallSemanticButton: document.querySelector("#recallSemanticButton"),
   recallGuideButton: document.querySelector("#recallGuideButton"),
+  recallFieldForm: document.querySelector("#recallFieldForm"),
+  recallFieldQuery: document.querySelector("#recallFieldQuery"),
+  recallFieldStatus: document.querySelector("#recallFieldStatus"),
+  recallFieldResults: document.querySelector("#recallFieldResults"),
   connectionError: document.querySelector("#connectionError"),
   connectionErrorMessage: document.querySelector("#connectionErrorMessage"),
   reconnectButton: document.querySelector("#reconnectButton"),
@@ -254,7 +265,18 @@ function initializeControllers(options, demo) {
   cluesController = window.TimeIsleClues?.createEntityDialogController({ demo, onOpenMemory: openMemory, onDataChanged: reloadMemories }) || null;
   collectionHealthController = window.TimeIsleCollectionHealth?.createController({ demo }) || null;
   memoryInboxController = window.TimeIsleMemoryInbox?.createController({ demo, onCompose: composeInboxItem }) || null;
-  semanticRecallController = window.TimeIsleSemanticRecall?.createController({ onOpenMemory: openMemory, onFallback: (query) => { elements.searchInput.value = String(query || "").slice(0, 160); switchView("collection", { focusHeading: true }); if (elements.searchInput.value.trim()) performSearch(); else renderCollection(); } }) || null;
+  semanticRecallController = window.TimeIsleSemanticRecall?.createController({
+    onOpenMemory: openMemory,
+    demo,
+    onIndexChanged: () => loadSemanticIndexStatus(true),
+    getPersistentIndexStatus: () => loadSemanticIndexStatus(true),
+    onPersistentSearch: runHybridRecallSearch,
+    onFallback: (query) => {
+      setRecallMode("field");
+      return runRecallFieldSearch(query);
+    }
+  }) || null;
+  void loadSemanticIndexStatus();
   initializeTimeCalibrationController(options.voicePolicy, demo);
 }
 function initializeVoiceController(policy, demo) {
@@ -426,6 +448,7 @@ function bindEvents() {
     switchView(normalizeView(requestedHash), { updateHash: false });
     if (requestedHash === "data-technical") openTechnicalEvidence();
   });
+  window.addEventListener("beforeunload", (event) => { if (hasUnsavedComposerWork() && !state.composerOperation) { event.preventDefault(); event.returnValue = "当前记录页还有未保存的内容。"; } });
 
   elements.searchInput.addEventListener("input", scheduleSearch);
   elements.hallFilter.addEventListener("change", () => syncFilters("desktop"));
@@ -542,17 +565,17 @@ function bindEvents() {
     });
   });
   elements.recallFieldButton.addEventListener("click", () => {
-    switchView("collection");
-    requestAnimationFrame(() => elements.searchInput.focus());
+    setRecallMode("field", { focus: true });
   });
   elements.recallSemanticButton.addEventListener("click", () => {
-    document.querySelector("#semanticRecallDetails").open = true;
-    document.querySelector("#semanticRecallDetails").scrollIntoView({ behavior: "smooth", block: "start" });
+    setRecallMode("semantic", { focus: true });
   });
   elements.recallGuideButton.addEventListener("click", () => {
-    elements.guideQuestion.focus();
-    elements.guideQuestion.scrollIntoView({ behavior: "smooth", block: "center" });
+    setRecallMode("guide", { focus: true });
   });
+  elements.recallFieldForm.addEventListener("submit", (event) => { event.preventDefault(); void runRecallFieldSearch(elements.recallFieldQuery.value); });
+  elements.semanticIndexRefresh.addEventListener("click", () => { void loadSemanticIndexStatus(true); });
+  elements.semanticIndexClear.addEventListener("click", () => { void clearSemanticIndex(); });
   window.addEventListener("online", () => {
     if (!elements.connectionError.hidden) elements.connectionErrorMessage.textContent = "网络已恢复，可以重新连接馆藏。";
   });
@@ -586,12 +609,21 @@ function switchView(view, options = {}) {
   if (recordingNeedsDecision && options.skipRecordingGuard !== true) {
     pendingViewTransition = {
       target,
-      options: { ...options, updateHash: true, skipRecordingGuard: true }
+      // The recording dialog is the explicit leave decision for the captured clip.
+      // Avoid immediately reopening the generic composer guard after "keep and leave".
+      options: { ...options, updateHash: true, skipRecordingGuard: true, skipComposerGuard: true }
     };
     if (location.hash === `#${target}`) history.replaceState(null, "", `#${activeView}`);
     if (!elements.recordingLeaveDialog.open) elements.recordingLeaveDialog.showModal();
     elements.recordingLeaveKeep.focus();
     return false;
+  }
+  if (activeView === "compose" && target !== "compose" && options.skipComposerGuard !== true && hasUnsavedComposerWork()) {
+    if (location.hash === `#${target}`) history.replaceState(null, "", `#${activeView}`);
+    if (!window.confirm("当前记录页还有未保存的草稿、照片或声音。离开会放弃这些内容；已入馆的原文不会被删除。是否离开？")) {
+      if (location.hash !== `#${activeView}`) history.replaceState(null, "", `#${activeView}`);
+      requestAnimationFrame(() => elements.rawContent.focus({ preventScroll: true })); return false;
+    }
   }
   elements.navButtons.forEach((button) => {
     const active = button.dataset.view === target;
@@ -672,6 +704,13 @@ function renderDemoStatus() {
   elements.organizePanel.hidden = !demo && !state.pendingSaveMemoryId && !state.editingMemoryId;
   elements.postSaveTools.hidden = demo || (!state.pendingSaveMemoryId && !state.editingMemoryId);
   elements.originalSavedStatus.hidden = demo || !state.pendingSaveMemoryId;
+  elements.semanticIndexRefresh.disabled = demo;
+  elements.semanticIndexClear.disabled = demo;
+  elements.semanticIndexRefresh.hidden = demo;
+  elements.semanticIndexClear.hidden = demo;
+  const persistent = !demo && Boolean(state.semanticIndex?.cachedCount);
+  if (elements.semanticRecallPrivacyTitle) elements.semanticRecallPrivacyTitle.textContent = persistent ? "查询向量仅用于本机融合" : "文字与查询留在设备";
+  if (elements.semanticRecallPrivacyCopy) elements.semanticRecallPrivacyCopy.textContent = persistent ? "查询向量只发送给当前设备的同源本地服务，与 SQLite 派生索引融合；正文、照片和声音不会随查询上传，也不会发送给第三方。" : "会话模式下，标题、说明、正文片段、标签和确认文字稿只进入浏览器 Worker，不发送给服务端或第三方。";
 }
 
 function renderTrustStatus() {
@@ -694,6 +733,7 @@ function renderTrustStatus() {
   }
   const demo = trust.audience === "public-demo";
   const external = trust.externalAi || {};
+  const semanticTrust = trust.features?.semanticRecall || {};
   const trustLabels = {
     mode: demo ? ["公开 Demo", "公开只读 Demo"] : ["私人本地", "私人本地馆藏"],
     storage: demo ? ["临时样例", "虚构样例 · 临时实例"] : ["本机保存", "本机 SQLite + 媒体目录"],
@@ -713,6 +753,19 @@ function renderTrustStatus() {
     <div><strong>写入</strong><span>${demo ? "POST / PUT / PATCH / DELETE 均在读取正文前拒绝" : "仅当前本地服务可写；保存后进入本机馆藏"}</span></div>
     <div><strong>外部 AI</strong><span>${external.configured ? `${escapeHtml(external.providerLabel || "OpenAI-compatible provider")} · ${escapeHtml(external.model || "未标注模型")} · 每次操作前列出发送字段` : "未配置；整理与讲解使用本地规则，设备语义不上传"}</span></div>
     <div><strong>静态加密</strong><span>${escapeHtml(trust.encryptionAtRest?.boundary || "当前未做数据库与媒体静态加密")}</span></div>`;
+
+  const semanticDescription = demo
+    ? "会话内设备 embedding，不保存派生索引"
+    : semanticTrust.persistsOnFinalSave
+      ? "默认会话内；仅在你明确选择后保存本机派生索引，未静态加密且不进备份"
+      : "会话内设备 embedding，不保存派生索引";
+  const semanticLine = document.createElement("div");
+  const semanticTitle = document.createElement("strong");
+  const semanticValue = document.createElement("span");
+  semanticTitle.textContent = "设备语义";
+  semanticValue.textContent = semanticDescription;
+  semanticLine.append(semanticTitle, semanticValue);
+  elements.trustDetailBody.insertBefore(semanticLine, elements.trustDetailBody.lastElementChild);
 
   const organize = trust.features?.organize || {};
   const guide = trust.features?.guide || {};
@@ -797,6 +850,13 @@ async function performSearch(options = {}) {
     renderCollection();
   } catch (error) {
     if (requestId !== state.searchRequest || error?.name === "AbortError") return;
+    if (append && isCursorExpiredError(error)) {
+      state.searchNextCursor = "";
+      state.searchError = "";
+      showToast("馆藏刚刚变化，已从第一页重新加载搜索结果。");
+      await performSearch({ reloadAfterCursorExpiry: true });
+      return;
+    }
     state.searchResults = [];
     state.searchResponse = null;
     state.searchTotal = 0;
@@ -895,12 +955,23 @@ async function loadCollectionPage({ reset = false, cursor = "" } = {}) {
     renderStats();
     renderCollection();
   } catch (error) {
+    if (cursor && isCursorExpiredError(error)) {
+      state.collectionNextCursor = "";
+      state.searchError = "";
+      showToast("馆藏刚刚变化，已从第一页重新加载。");
+      await loadCollectionPage({ reset: true, reloadedAfterCursorExpiry: true });
+      return;
+    }
     state.searchError = humanRequestError(error, "馆藏加载失败，请稍后重试。");
     renderCollection();
   } finally {
     state.collectionLoadingMore = false;
     renderCollection();
   }
+}
+
+function isCursorExpiredError(error) {
+  return Number(error?.status) === 400 && ["", "CLUE_CURSOR_INVALID"].includes(String(error?.code || ""));
 }
 
 function loadMoreMemories() {
@@ -955,15 +1026,18 @@ function handleMemoryLinkClick(event) {
 }
 
 async function openMemory(id, trigger = null) {
+  const requestId = ++state.detailRequest, controller = new AbortController(); state.detailController?.abort(); state.detailController = controller;
   const requestedScrollY = window.scrollY;
   const updatingOpenDialog = elements.memoryDialog.open;
   let memory;
   try {
-    memory = (await requestJson(`/api/memories/${encodeURIComponent(id)}`)).memory;
+    memory = (await requestJson(`/api/memories/${encodeURIComponent(id)}`, { signal: controller.signal })).memory;
   } catch (error) {
+    if (error?.name === "AbortError" || requestId !== state.detailRequest) return false;
     showToast(humanRequestError(error, "暂时无法读取这件展品，请重试。"), true);
     return false;
   }
+  if (requestId !== state.detailRequest) return false;
   state.selectedMemoryId = memory.id;
   state.selectedMemory = memory;
   elements.dialogHall.textContent = hallName(memory.hall);
@@ -1424,12 +1498,15 @@ function markComposerBaseline() {
   state.composerBaselineRevision = state.composerRevision;
 }
 
-function hasComposerWork() {
+function hasUnsavedComposerWork() {
   if (state.composerRevision !== state.composerBaselineRevision) return true;
-  if (elements.rawContent.value.trim() || state.draft || state.editingMemoryId || state.pendingSaveMemoryId || state.inboxItem) return true;
-  if (mediaController?.getSnapshot?.().count) return true;
-  if (voiceController?.getState?.().count) return true;
-  return false;
+  const unsavedMemory = !state.pendingSaveMemoryId && !state.editingMemoryId;
+  const voice = voiceController?.getState?.();
+  return Boolean((unsavedMemory && (elements.rawContent.value.trim() || state.draft || state.inboxItem)) || mediaController?.getSnapshot?.().busy || voice?.recording || voice?.awaitingPermission);
+}
+
+function hasComposerWork() {
+  return hasUnsavedComposerWork();
 }
 
 function beginComposerOperation(kind) {
@@ -2088,6 +2165,138 @@ function renderPrivacy() {
     <div class="data-location-item"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.location)}</span></div>`).join("");
 }
 
+async function runRecallFieldSearch(query) {
+  const text = String(query || "").trim();
+  if (!text) { elements.recallFieldStatus.textContent = "请输入名字、地点或记得的原句。"; return; }
+  elements.recallFieldForm.hidden = false;
+  elements.recallFieldStatus.textContent = "正在按字段与线索查找…";
+  try {
+    const payload = await requestJson(`/api/search?q=${encodeURIComponent(text)}&limit=20`);
+    const results = payload.results || [];
+    elements.recallFieldResults.replaceChildren(...results.map((item) => createRecallResultCard(item.memory || item, "文字命中")));
+    elements.recallFieldResults.hidden = !results.length;
+    elements.recallFieldStatus.textContent = results.length ? `找到 ${results.length} 件可能相关的展品。` : "没有找到文字命中，可换一个词或尝试按意思找。";
+  } catch (error) {
+    elements.recallFieldStatus.textContent = humanRequestError(error, "字段检索暂时不可用。");
+  }
+}
+
+async function runHybridRecallSearch(query, vector) {
+  const normalized = String(query || "").trim();
+  if (!normalized || !(vector instanceof Float32Array) || vector.length !== 512) throw new Error("本机语义查询参数无效。");
+  const identity = {
+    modelId: "Xenova/bge-small-zh-v1.5",
+    modelSha256: "15b717c382bcb518ba457b93ea6850ede7f4f1cd8937454aa06972366cd19bcc",
+    projectionVersion: "v1"
+  };
+  const [fieldPayload, semanticPayload] = await Promise.all([
+    requestJson(`/api/search?q=${encodeURIComponent(normalized)}&limit=30`),
+    requestJson("/api/semantic-index/search", {
+      method: "POST",
+      body: JSON.stringify({ ...identity, limit: 30, vector: float32ToBase64(vector) })
+    })
+  ]);
+  const field = (fieldPayload.results || []).map((item) => item.memory || item);
+  const semantic = semanticPayload.results || [];
+  return rankHybridRecall(field, semantic);
+}
+
+function rankHybridRecall(field, semantic) {
+  const records = new Map();
+  const add = (item, index, source) => {
+    const memory = item?.memory || item;
+    const id = String(memory?.memoryId || memory?.id || "");
+    if (!id) return;
+    const current = records.get(id) || { memoryId: id, title: memory.title || "未命名展品", excerpt: String(memory.exhibitText || memory.rawContent || memory.excerpt || "").slice(0, 180), tags: Array.isArray(memory.tags) ? memory.tags : [], score: 0, field: false, semantic: false };
+    current.score += 1 / (60 + index + 1);
+    current[source] = true;
+    records.set(id, current);
+  };
+  field.slice(0, 30).forEach((item, index) => add(item, index, "field"));
+  semantic.slice(0, 30).forEach((item, index) => add(item, index, "semantic"));
+  return [...records.values()]
+    .sort((left, right) => right.score - left.score || left.memoryId.localeCompare(right.memoryId))
+    .slice(0, 20)
+    .map((item, index) => ({
+      rank: index + 1,
+      memoryId: item.memoryId,
+      title: item.title,
+      excerpt: item.excerpt,
+      tags: item.tags,
+      similarity: item.score,
+      matchLabel: item.field && item.semantic ? "两者都命中" : item.field ? "文字命中" : "意思相近"
+    }));
+}
+
+function float32ToBase64(vector) {
+  const bytes = new Uint8Array(vector.buffer, vector.byteOffset, vector.byteLength);
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 0x8000) binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+  return btoa(binary);
+}
+
+function setRecallMode(mode, options = {}) {
+  const normalized = ["field", "semantic", "guide"].includes(mode) ? mode : "field";
+  const semanticDetails = document.querySelector("#semanticRecallDetails");
+  const guideCard = elements.guideForm?.closest(".guide-card");
+  const buttons = [
+    [elements.recallFieldButton, "field"],
+    [elements.recallSemanticButton, "semantic"],
+    [elements.recallGuideButton, "guide"]
+  ];
+  buttons.forEach(([button, value]) => {
+    const selected = value === normalized;
+    button?.setAttribute("aria-pressed", String(selected));
+    button?.classList.toggle("is-active", selected);
+  });
+  elements.recallFieldForm.hidden = normalized !== "field";
+  if (semanticDetails) {
+    semanticDetails.hidden = normalized !== "semantic";
+    semanticDetails.open = normalized === "semantic";
+  }
+  if (guideCard) guideCard.hidden = normalized !== "guide";
+  if (!options.focus) return;
+  const target = normalized === "field" ? elements.recallFieldQuery
+    : normalized === "guide" ? elements.guideQuestion
+      : semanticDetails?.querySelector("summary");
+  target?.focus?.({ preventScroll: true });
+  target?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+}
+
+function createRecallResultCard(memory, label) {
+  const card = document.createElement("article");
+  card.className = "semantic-recall-result";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.addEventListener("click", () => openMemory(memory.id));
+  const meta = document.createElement("span"); meta.className = "semantic-recall-result-meta"; meta.textContent = label;
+  const title = document.createElement("strong"); title.textContent = memory.title || "未命名展品";
+  const excerpt = document.createElement("span"); excerpt.className = "semantic-recall-result-excerpt"; excerpt.textContent = String(memory.exhibitText || memory.rawContent || "").slice(0, 140);
+  button.append(meta, title, excerpt); card.append(button); return card;
+}
+
+async function loadSemanticIndexStatus(force = false) {
+  if (!elements.semanticIndexStatus) return null;
+  if (state.demo?.interviewDemo) { elements.semanticIndexStatus.textContent = "公开 Demo 只使用本页设备语义，不保存派生索引。"; return null; }
+  if (state.semanticIndex && !force) return state.semanticIndex;
+  elements.semanticIndexStatus.textContent = "正在读取本机派生索引状态…";
+  try {
+    const status = await requestJson("/api/semantic-index/status");
+    state.semanticIndex = status;
+    elements.semanticIndexStatus.textContent = `${status.cachedCount || 0} 件缓存 · 新鲜 ${status.fresh || 0} · 待更新 ${status.stale || 0} · ${status.modelId || "尚未建立"} · 本机 SQLite · 未静态加密`;
+    renderDemoStatus();
+    return status;
+  } catch (error) {
+    elements.semanticIndexStatus.textContent = humanRequestError(error, "设备索引状态暂时无法读取。"); return null;
+  }
+}
+
+async function clearSemanticIndex() {
+  if (state.demo?.interviewDemo || !window.confirm("只会删除本机派生索引，不会删除任何记忆、照片或声音。继续吗？")) return;
+  try { const result = await requestJson("/api/semantic-index", { method: "DELETE" }); state.semanticIndex = null; await loadSemanticIndexStatus(true); showToast(`已移除 ${result.deleted || 0} 条派生索引。`); }
+  catch (error) { showToast(humanRequestError(error, "无法移除派生索引。"), true); }
+}
+
 async function loadPrivacy() {
   if (state.privacy) {
     renderPrivacy();
@@ -2307,7 +2516,10 @@ async function deleteSelectedMemory() {
   if (!operation) return;
   elements.dialogDeleteButton.textContent = "正在删除…";
   try {
-    await requestJson(`/api/memories/${encodeURIComponent(memoryId)}`, { method: "DELETE" });
+    await requestJson(`/api/memories/${encodeURIComponent(memoryId)}`, {
+      method: "DELETE",
+      headers: { "If-Match": clientMemoryEtag(memory) }
+    });
     ensureDetailOperation(operation);
     if ([state.editingMemoryId, state.pendingSaveMemoryId].includes(memoryId)) resetComposer({ internal: true, silent: true });
     await reloadMemories();
@@ -2315,12 +2527,17 @@ async function deleteSelectedMemory() {
     finishDetailOperation(operation);
     elements.memoryDialog.close();
     state.selectedMemory = null;
+    state.selectedMemoryId = "";
     showToast("展品已删除。", false);
   } catch (error) {
     if (!isDetailOperationCancelled(error)) showToast(error.message, true);
   } finally {
     finishDetailOperation(operation);
   }
+}
+
+function clientMemoryEtag(memory) {
+  return `"memory-${window.btoa(String(memory?.updatedAt || memory?.createdAt || "")).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "")}"`;
 }
 
 function beginDetailOperation(kind, memoryId) {

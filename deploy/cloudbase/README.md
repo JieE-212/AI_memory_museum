@@ -6,7 +6,7 @@
 
 当前免费体验环境每月提供 3000 资源点，控制台“套餐用量”页会分别记录云托管 CPU、内存与外网出流量；“按量付费”必须始终保持关闭。本项目选择 0.5 核 / 1 GiB，计算消耗约为 59.5 点/实例小时，3000 点在不计流量时约覆盖 50 小时实例存活时间。服务已配置自动启停；2026-07-22 实际观察到空闲后首次请求返回 nginx 503、约 5 秒后恢复，确认存在缩零冷启动窗口。若平台要求升级套餐、开启超限按量或创建常驻实例，立即停止，不继续发布。
 
-## 当前发布记录（2026-07-22）
+## 当前发布记录
 
 - 环境 ID：`shiyu-memory-demo-d3di282387d5c7`。
 - 云托管应用直连（诊断备用）：`https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com`。
@@ -17,6 +17,7 @@
 - 已完成 V17 桌面公网验收：首页显示 `v17.0.0` 且控制台零错误；`/api/version`、`/api/health`、`/api/demo/status`、`/api/memories` 为 `17.0.0 / schema 19 / interview-demo / ephemeral-sqlite / mock-fallback / 4` 条播种记忆。设备语义快照为 4 件、`46979724` 字节、远程模型关闭、零持久化；多视角为合成只读、零外部模型、零持久化；隔离恢复探针返回 `403 / ISOLATED_RECOVERY_DEMO_READ_ONLY / bodyBytesRead: 0`，前后 stats 不变。资产清单、Worker 与 `24010842` 字节 ONNX 文件均可访问。
 - 静态入口已完成桌面 200 响应、无控制台错误、真实点击唤醒并自动进入 V17；页面加载后不会自动请求云托管探针，只有点击后才执行最多 3 次固定 PNG 探针。
 - 2026-07-22 用户已确认 V17 静态入口在手机 Wi-Fi 与蜂窝网络下均可达并能成功进入主应用；这是入口链路验收，不代表所有移动端功能逐项通过。V17.1 候选版改为全局零写入，不再以“临时内容最终消失”作为验收方式。
+- 2026-08-13：原 `tcloudbaseapp.com` 静态入口曾出现 `Upstream rejected the request`。重新发布 `time-isle-wakeup-003` 后，4/4 文件上传成功，原入口恢复为 200；同一静态应用的免费备用入口为 `https://time-isle-wakeup-shiyu-memory-demo-d3di282387d5c7.webapps.tcloudbase.com`。云托管版本 `003` 已正常承接 100% 流量，`ALLOWED_HOSTS` 保留旧 HTTP 网关并新增 `time-isle-demo-284723-8-1456049152.sh.run.tcloudbase.com`。从原静态入口点击后已进入该直接地址的 `#collection`，并显示 4 件固定展品。
 
 ## 本方案的边界
 

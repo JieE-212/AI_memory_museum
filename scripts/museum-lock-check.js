@@ -271,6 +271,12 @@ function checkPreBodyGate() {
   const drill = evaluateMuseumWriteGate({ method: "POST", pathname: "/api/recovery-drills/structural", lockState: locked });
   checkEqual(drill.allowed, true, "structural recovery drill remains available while locked");
   checkEqual(drill.code, "MUSEUM_LOCK_READ_ONLY_OPERATION_ALLOWED", "drill uses the explicit read-only gate result");
+  const semanticSearch = evaluateMuseumWriteGate({ method: "POST", pathname: "/api/semantic-index/search", lockState: locked });
+  checkEqual(semanticSearch.allowed, true, "semantic index search remains available while locked");
+  checkEqual(semanticSearch.mutation, false, "semantic index search remains explicitly read-only");
+  checkEqual(semanticSearch.bodyBytesRead, 0, "semantic index search gate remains pre-body");
+  checkEqual(evaluateMuseumWriteGate({ method: "POST", pathname: "/api/semantic-index/upsert", lockState: locked }).statusCode,
+    423, "semantic index writes remain blocked while locked");
   const unlock = evaluateMuseumWriteGate({ method: "POST", pathname: "/api/museum-lock/unlock", lockState: locked });
   checkEqual(unlock.allowed, true, "explicit unlock control remains available while locked");
   checkEqual(unlock.code, "MUSEUM_LOCK_CONTROL_ALLOWED", "unlock uses a dedicated control result");

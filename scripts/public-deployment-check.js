@@ -26,13 +26,13 @@ async function run() {
   try {
     server = await startServer();
     const health = await requestJson(server.port, { path: "/api/health" });
-    check("standalone public health is available through the exact host", health.status === 200 && health.payload.ok === true && health.payload.version === "17.1.2" && health.payload.schemaVersion === 19);
+    check("standalone public health is available through the exact host", health.status === 200 && health.payload.ok === true && health.payload.version === "17.2.2" && health.payload.schemaVersion === 20);
 
     const status = await requestJson(server.port, { path: "/api/demo/status" });
     check("standalone public runtime is the protected seeded Demo", status.status === 200 && status.payload.interviewDemo === true && status.payload.aiMode === "public-mock" && status.payload.seededExamples === 4 && status.payload.seededExhibitions === 1 && status.payload.seededTimeCalibrations === 1);
 
     const trust = await requestJson(server.port, { path: "/api/runtime/trust" });
-    check("standalone public runtime exposes one truthful read-only trust contract", trust.status === 200 && trust.payload.appVersion === "17.1.2" && trust.payload.schemaVersion === 19 && trust.payload.audience === "public-demo" && trust.payload.deployment?.kind === "public-container" && trust.payload.deployment?.public === true && trust.payload.deployment?.tenancy === "shared-anonymous-read-only" && trust.payload.storage?.visitorWritesAllowed === false && trust.payload.externalAi?.allowed === false && trust.payload.encryptionAtRest?.enabled === false);
+    check("standalone public runtime exposes one truthful read-only trust contract", trust.status === 200 && trust.payload.appVersion === "17.2.2" && trust.payload.schemaVersion === 20 && trust.payload.audience === "public-demo" && trust.payload.deployment?.kind === "public-container" && trust.payload.deployment?.public === true && trust.payload.deployment?.tenancy === "shared-anonymous-read-only" && trust.payload.storage?.visitorWritesAllowed === false && trust.payload.externalAi?.allowed === false && trust.payload.encryptionAtRest?.enabled === false);
 
     const unknownHost = await requestJson(server.port, { host: "attacker.example", path: "/api/health" });
     check("standalone public runtime rejects an unlisted host", unknownHost.status === 421 && unknownHost.payload.code === "HOST_NOT_ALLOWED");
@@ -61,6 +61,16 @@ async function run() {
       }
     });
     check("standalone public Demo rejects same-origin memory creation before reading its body", blockedCreate.status === 403 && blockedCreate.payload.code === "INTERVIEW_DEMO_READ_ONLY" && blockedCreate.payload.bodyBytesRead === 0 && blockedCreate.payload.persistence?.wrote === false);
+
+    const semanticIndexStatus = await requestJson(server.port, { path: "/api/semantic-index/status" });
+    check("standalone public Demo discloses session-only semantic retrieval without a persistent cache", semanticIndexStatus.status === 200 && semanticIndexStatus.payload.allowed === false && semanticIndexStatus.payload.boundary === "public-demo-memory-only" && semanticIndexStatus.payload.cachedCount === 0);
+    const semanticIndexProbe = await requestJson(server.port, {
+      method: "POST",
+      path: "/api/semantic-index/upsert",
+      origin: `https://${authority}`,
+      body: { entries: [], modelId: "ignored", modelSha256: "ignored", projectionVersion: "ignored" }
+    });
+    check("standalone public semantic-index writes are rejected before reading their body", semanticIndexProbe.status === 403 && semanticIndexProbe.payload.code === "INTERVIEW_DEMO_READ_ONLY" && semanticIndexProbe.payload.bodyBytesRead === 0 && semanticIndexProbe.payload.persistence?.wrote === false);
 
     const healthBefore = await requestJson(server.port, { path: "/api/health" });
     const lockBefore = await requestJson(server.port, { path: "/api/museum-lock" });

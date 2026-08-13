@@ -14,11 +14,12 @@ const {
   validateAgainstBaseline,
   writeReport
 } = require("../helpers/semantic-recall-eval.cjs");
+const { APP_VERSION, SCHEMA_VERSION } = require("../../../lib/release-identity");
 
 const fixturePath = path.resolve(__dirname, "../fixtures/semantic-recall-eval-v1.json");
 const assetManifestPath = path.resolve(__dirname, "../../../public/assets/semantic-recall-assets.json");
 
-test.describe("V17.1 semantic quality and performance evidence", () => {
+test.describe("V17.2.2 semantic quality and performance evidence", () => {
   test.describe.configure({ retries: 0 });
   test("measures real q8 embeddings against a frozen fictional Chinese set", async ({ page }, testInfo) => {
     test.skip(!testInfo.project.name.startsWith("desktop-"), "真实模型质量只在固定桌面 Chromium 运行一次；移动端不扩大性能结论。");
@@ -44,8 +45,8 @@ test.describe("V17.1 semantic quality and performance evidence", () => {
     expect(response?.status()).toBe(200);
     await expect(page.locator("#runtimeBadge")).toHaveClass(/is-ready/);
 
-    const workerResult = await page.evaluate(async ({ snapshot100: first, snapshot500: second, queries }) => {
-      const worker = new Worker("/assets/semantic-recall-worker.js?v=17.1.2", { type: "module" });
+    const workerResult = await page.evaluate(async ({ snapshot100: first, snapshot500: second, queries, appVersion }) => {
+      const worker = new Worker(`/assets/semantic-recall-worker.js?v=${encodeURIComponent(appVersion)}`, { type: "module" });
       const waitForMessage = (session, expectedType, timeoutMs) => new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
           cleanup();
@@ -121,7 +122,7 @@ test.describe("V17.1 semantic quality and performance evidence", () => {
       } finally {
         worker.terminate();
       }
-    }, { snapshot100, snapshot500, queries: allQueries });
+    }, { snapshot100, snapshot500, queries: allQueries, appVersion: APP_VERSION });
 
     expect(workerResult.ready100).toMatchObject({ documentCount: 100, dimensions: 512, modelMaximumTokens: 512 });
     expect(workerResult.ready500).toMatchObject({ documentCount: 500, dimensions: 512, modelMaximumTokens: 512 });
@@ -157,8 +158,8 @@ test.describe("V17.1 semantic quality and performance evidence", () => {
       format: "time-isle-semantic-recall-evidence-v1",
       generatedAt: new Date().toISOString(),
       syntheticDataOnly: true,
-      version: "17.1.2",
-      schemaVersion: 19,
+      version: APP_VERSION,
+      schemaVersion: SCHEMA_VERSION,
       model: { id: assetManifest.model.id, sha256: onnx.sha256, bytes: onnx.bytes, dtype: "q8", execution: "chromium-wasm-single-thread" },
       corpus: { qualityDocuments: 100, performanceDocuments: 500, positiveQueries: evaluation.queries.length, nullQueries: evaluation.nullQueries.length, fingerprint100: snapshot100.collectionFingerprint, fingerprint500: snapshot500.collectionFingerprint },
       runner: { platform: process.platform, arch: process.arch, node: process.version, chromium: page.context().browser().version(), project: testInfo.project.name },

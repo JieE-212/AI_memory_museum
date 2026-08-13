@@ -46,6 +46,7 @@ const { createCoMemoryResponseApi } = require("./lib/co-memory-response-api");
 const { createMemoryLensApi } = require("./lib/memory-lens-api");
 const { createMultiPerspectiveApi } = require("./lib/multi-perspective-api");
 const { createSemanticRecallApi } = require("./lib/semantic-recall-api");
+const { createSemanticIndexApi } = require("./lib/semantic-index-api");
 const { SEMANTIC_RECALL_LIMITS, SEMANTIC_RECALL_MODEL } = require("./lib/semantic-recall-service");
 const { createMuseumLockApi } = require("./lib/museum-lock-api");
 const { createRecoveryDrillApis } = require("./lib/recovery-drill-server");
@@ -134,6 +135,7 @@ const coMemoryResponseApi = createCoMemoryResponseApi({ store, interviewDemo: IN
 const memoryLensApi = createMemoryLensApi({ store, decorateMemory: decorateMemoryForLens, sendJson, httpError });
 const multiPerspectiveApi = createMultiPerspectiveApi({ store, interviewDemo: INTERVIEW_DEMO, sendJson, httpError });
 const semanticRecallApi = createSemanticRecallApi({ store, sendJson, httpError });
+const semanticIndexApi = createSemanticIndexApi({ store, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
 const museumLockApi = createMuseumLockApi({ store, interviewDemo: INTERVIEW_DEMO, sendJson, readJsonBody, httpError });
 const { structuralRecoveryApi, isolatedRecoveryApi } = createRecoveryDrillApis({
   mediaRoot: MEDIA_ROOT, temporaryRoot: os.tmpdir(), prepareMediaArchive, store,
@@ -275,12 +277,12 @@ async function handleRequest(request, response) {
           externalModelRequired: false
         },
         semanticRecall: {
-          mode: "device-worker-memory-only",
+          mode: INTERVIEW_DEMO ? "device-worker-memory-only" : "device-worker-with-optional-local-derived-cache",
           model: SEMANTIC_RECALL_MODEL.id,
           dimensions: SEMANTIC_RECALL_MODEL.dimensions,
           maximumDocuments: SEMANTIC_RECALL_LIMITS.memories,
           remoteModelsAllowed: false,
-          persisted: false
+          persisted: !INTERVIEW_DEMO
         },
         stats: store.getStats()
       });
@@ -341,6 +343,8 @@ async function handleRequest(request, response) {
     if (multiPerspectiveHandled !== false) return multiPerspectiveHandled;
     const semanticRecallHandled = await semanticRecallApi.handle(request, response, url);
     if (semanticRecallHandled !== false) return semanticRecallHandled;
+    const semanticIndexHandled = await semanticIndexApi.handle(request, response, url);
+    if (semanticIndexHandled !== false) return semanticIndexHandled;
 
     const mediaHandled = await mediaApi.handle(request, response, url);
     if (mediaHandled !== false) return mediaHandled;
@@ -461,18 +465,22 @@ async function handleRequest(request, response) {
       const sort = normalizeCollectionSort(url.searchParams.get("sort"));
       const limit = normalizeCollectionLimit(url.searchParams.get("limit"), 30, 100);
       const cursorContext = { hall, sort };
-      const offset = decodeCollectionCursor(url.searchParams.get("cursor"), cursorContext);
+      const cursor = decodeCollectionCursor(url.searchParams.get("cursor"), cursorContext);
       const filtered = sortCollectionMemories(
         memories.filter((memory) => !hall || memory.hall === hall),
         sort
       );
-      const page = filtered.slice(offset, offset + limit).map(toMemoryCard);
-      const nextOffset = offset + page.length;
+      const remaining = cursor
+        ? filtered.filter((memory) => compareCollectionCursorKey(collectionCursorKey(memory, sort), cursor, sort) > 0)
+        : filtered;
+      const pageMemories = remaining.slice(0, limit);
+      const page = pageMemories.map(toMemoryCard);
+      const lastMemory = pageMemories.at(-1);
       return sendJson(response, 200, {
         schemaVersion: SCHEMA_VERSION,
         view: "card",
         total: filtered.length,
-        nextCursor: nextOffset < filtered.length ? encodeCollectionCursor(nextOffset, cursorContext) : null,
+        nextCursor: lastMemory && remaining.length > pageMemories.length ? encodeCollectionCursor(lastMemory, cursorContext) : null,
         summary: summarizeCollection(memories),
         memories: page
       });
@@ -690,6 +698,7 @@ async function handleRequest(request, response) {
 
     if (request.method === "POST" && url.pathname === "/api/memories") {
       const body = await readJsonBody(request);
+      assertNonEmptyRawContent(body?.rawContent);
       const memory = normalizeMemory(body);
       if (memory.agentRunId && !store.getAgentRun(memory.agentRunId)) memory.agentRunId = "";
       const saved = store.saveMemory(memory, { requireNew: true });
@@ -724,6 +733,7 @@ async function handleRequest(request, response) {
 
       if (request.method === "PUT") {
         const body = await readJsonBody(request);
+        assertNonEmptyRawContent(body?.rawContent === undefined ? existing.rawContent : body.rawContent);
         const expectedUpdatedAt = requireMemoryPrecondition(request, body, existing, httpError);
         const organizeConfirmed = body.organizeReceipt?.confirmed === true;
         const memory = normalizeMemory({ ...existing, ...body, id, createdAt: existing.createdAt, updatedAt: new Date().toISOString() });
@@ -768,7 +778,8 @@ async function handleRequest(request, response) {
       }
 
       if (request.method === "DELETE") {
-        const deleted = store.deleteMemory(id);
+        const expectedUpdatedAt = requireMemoryPrecondition(request, null, existing, httpError);
+        const deleted = store.deleteMemory(id, { expectedUpdatedAt });
         let mediaCleanupPending = false;
         let voiceCleanupPending = false;
         if (deleted) {
@@ -1137,12 +1148,9 @@ function normalizeCollectionLimit(value, fallback = 30, maximum = 100) {
 }
 
 function sortCollectionMemories(memories, sort) {
-  return [...memories].sort((left, right) => {
-    if (sort === "oldest") return memorySortTimestamp(left) - memorySortTimestamp(right) || left.id.localeCompare(right.id);
-    if (sort === "importance") return Number(right.importance) - Number(left.importance) || memorySortTimestamp(right) - memorySortTimestamp(left) || left.id.localeCompare(right.id);
-    if (sort === "title") return String(left.title || "").localeCompare(String(right.title || ""), "zh-CN") || left.id.localeCompare(right.id);
-    return memorySortTimestamp(right) - memorySortTimestamp(left) || left.id.localeCompare(right.id);
-  });
+  return [...memories].sort((left, right) => (
+    compareCollectionCursorKey(collectionCursorKey(left, sort), collectionCursorKey(right, sort), sort)
+  ));
 }
 
 function memorySortTimestamp(memory) {
@@ -1150,23 +1158,58 @@ function memorySortTimestamp(memory) {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
-function encodeCollectionCursor(offset, context) {
-  return Buffer.from(JSON.stringify({ v: 1, view: "card", hall: context.hall, sort: context.sort, offset }), "utf8").toString("base64url");
+function collectionCursorKey(memory, sort) {
+  const base = { id: String(memory.id || "") };
+  if (sort === "importance") return { ...base, importance: finiteNumber(memory.importance), timestamp: memorySortTimestamp(memory) };
+  if (sort === "title") return { ...base, title: String(memory.title || "") };
+  return { ...base, timestamp: memorySortTimestamp(memory) };
+}
+
+function compareCollectionCursorKey(left, right, sort) {
+  if (sort === "oldest") return left.timestamp - right.timestamp || left.id.localeCompare(right.id);
+  if (sort === "importance") return right.importance - left.importance || right.timestamp - left.timestamp || left.id.localeCompare(right.id);
+  if (sort === "title") return left.title.localeCompare(right.title, "zh-CN") || left.id.localeCompare(right.id);
+  return right.timestamp - left.timestamp || left.id.localeCompare(right.id);
+}
+
+function encodeCollectionCursor(memory, context) {
+  return Buffer.from(JSON.stringify({
+    v: 2,
+    view: "card",
+    hall: context.hall,
+    sort: context.sort,
+    key: collectionCursorKey(memory, context.sort)
+  }), "utf8").toString("base64url");
 }
 
 function decodeCollectionCursor(value, context) {
-  if (!value) return 0;
+  if (!value) return null;
   try {
-    if (String(value).length > 512) throw new Error("cursor too long");
+    if (String(value).length > 1024) throw new Error("cursor too long");
     const payload = JSON.parse(Buffer.from(String(value), "base64url").toString("utf8"));
-    if (payload?.v !== 1 || payload.view !== "card" || payload.hall !== context.hall || payload.sort !== context.sort) {
+    if (payload?.v !== 2 || payload.view !== "card" || payload.hall !== context.hall || payload.sort !== context.sort || !isValidCollectionCursorKey(payload.key, context.sort)) {
       throw new Error("cursor context mismatch");
     }
-    if (!Number.isSafeInteger(payload.offset) || payload.offset < 0) throw new Error("invalid cursor");
-    return payload.offset;
+    return payload.key;
   } catch {
     throw httpError(400, "cursor 无效、已经过期或不属于当前筛选条件。");
   }
+}
+
+function isValidCollectionCursorKey(key, sort) {
+  if (!key || typeof key !== "object" || Array.isArray(key) || !isValidCursorMemoryId(key.id)) return false;
+  if (sort === "title") return typeof key.title === "string" && key.title.length <= 512;
+  if (!Number.isSafeInteger(key.timestamp)) return false;
+  return sort !== "importance" || Number.isFinite(key.importance);
+}
+
+function isValidCursorMemoryId(value) {
+  return typeof value === "string" && /^[A-Za-z0-9_-]{1,120}$/u.test(value);
+}
+
+function finiteNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
 }
 
 function decorateMemoryForLens(memory) {
@@ -1257,6 +1300,13 @@ function normalizeMemory(input = {}) {
     createdAt: normalizeDateTime(input.createdAt, now),
     updatedAt: input.updatedAt ? normalizeDateTime(input.updatedAt, now) : ""
   };
+}
+
+function assertNonEmptyRawContent(value) {
+  if (limitText(value, MAX_RAW_LENGTH)) return;
+  const error = httpError(400, "请先写下一段记忆正文。");
+  error.code = "MEMORY_RAW_CONTENT_REQUIRED";
+  throw error;
 }
 
 function normalizeAnalysis(value, rawContent, fallback = mockAnalyzeMemory(rawContent)) {

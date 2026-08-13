@@ -8,7 +8,7 @@ const { test, expect } = require("@playwright/test");
 const root = path.resolve(__dirname, "../../..");
 const wakeupUrl = pathToFileURL(path.join(root, "deploy", "cloudbase", "wakeup", "index.html")).href;
 const probePng = fs.readFileSync(path.join(root, "public", "assets", "time-isle-192.png"));
-const primaryOrigin = "https://shiyu-memory-demo-d3di282387d5c7-1456049152.ap-shanghai.app.tcloudbase.com";
+const primaryOrigin = "https://time-isle-demo-284723-8-1456049152.sh.run.tcloudbase.com";
 
 test("CloudBase 唤醒入口保持有限尝试、明确兜底与四档响应式", async ({ page }) => {
   const errors = [];
@@ -60,7 +60,7 @@ test("CloudBase 唤醒入口保持有限尝试、明确兜底与四档响应式"
   await page.waitForTimeout(500);
   expect(probeRequests).toHaveLength(3);
   await expect(page.getByRole("button", { name: "再次唤醒" })).toBeEnabled();
-  await expect(page.getByRole("link", { name: "打开 Vercel 备用入口" })).toHaveAttribute("href", "https://ai-memory-museum-demo.vercel.app/#collection");
+  await expect(page.getByRole("link", { name: "直接进入国内备用入口" })).toHaveAttribute("href", `${primaryOrigin}/#collection`);
 
   probeReady = true;
   await page.getByRole("button", { name: "再次唤醒" }).click();

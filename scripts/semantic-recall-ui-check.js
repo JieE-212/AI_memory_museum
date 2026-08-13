@@ -11,8 +11,40 @@ async function run() {
   await checkPrepareQueryAndClear();
   await checkPendingFetchCancellation();
   await checkFailureAndInvalidation();
+  await checkPartialPersistentIndexReceipt();
   checkStaticUiBoundary();
   console.log(`Semantic recall UI checks passed (${assertions} assertions).`);
+}
+
+async function checkPartialPersistentIndexReceipt() {
+  FakeWorker.instances = [];
+  const harness = createHarness({
+    fetch: async (url) => {
+      if (url === ui.SNAPSHOT_PATH) return jsonResponse(snapshotFixture());
+      return { ok: true, json: async () => ({ requested: 1, stored: 0, stale: 1 }) };
+    }
+  });
+  let indexChanged = 0;
+  harness.controller.destroy();
+  harness.controller = ui.createController({
+    document: harness.document,
+    fetch: harness.fetch,
+    Worker: FakeWorker,
+    AbortController,
+    onOpenMemory: (id) => harness.opened.push(id),
+    onFallback: (query) => harness.fallbacks.push(query),
+    onIndexChanged: () => { indexChanged += 1; }
+  });
+  harness.elements.prepare.click();
+  await settle();
+  const worker = FakeWorker.instances.at(-1);
+  worker.emit("message", readyMessage(worker.messages[0].session));
+  harness.elements.persist.click();
+  await settle();
+  await settle();
+  ok(harness.elements.status.textContent.includes("馆藏内容已变化，请重新准备索引"), "partial or stale persistent-index receipt never presents a misleading success");
+  ok(!harness.elements.status.textContent.includes("已保存"), "partial persistent-index receipt does not claim the index was saved");
+  equal(indexChanged, 1, "partial persistent-index receipt refreshes index status exactly once");
 }
 
 async function checkPrepareQueryAndClear() {
@@ -32,7 +64,7 @@ async function checkPrepareQueryAndClear() {
   equal(worker.messages[0].type, "prepare", "worker receives a prepare command");
   equal(worker.messages[0].snapshot.documentCount, 1, "complete bounded snapshot enters the worker");
   const session = worker.messages[0].session;
-  worker.emit("message", { session, type: "ready", documentCount: 1, collectionFingerprint: "a".repeat(64), maximumInputTokens: 451, modelMaximumTokens: 512 });
+  worker.emit("message", readyMessage(session));
   equal(harness.controller.getPhase(), "ready", "valid worker receipt enables semantic query");
   equal(harness.elements.query.disabled, false, "query field becomes available only after indexing");
 
@@ -101,7 +133,7 @@ async function checkFailureAndInvalidation() {
   await settle();
   const worker = FakeWorker.instances[0];
   const session = worker.messages[0].session;
-  worker.emit("message", { session, type: "ready", documentCount: 1, collectionFingerprint: "a".repeat(64), maximumInputTokens: 451, modelMaximumTokens: 512 });
+  worker.emit("message", readyMessage(session));
   harness.controller.invalidate();
   ok(worker.terminated, "collection changes terminate a ready worker");
   ok(harness.elements.status.textContent.includes("馆藏文字已变化"), "invalidation tells a beginner why preparation is needed again");
@@ -112,7 +144,7 @@ async function checkFailureAndInvalidation() {
   worker.emit("error", {});
   ok(!replacement.terminated, "queued error from a terminated worker cannot kill its replacement");
   equal(harness.controller.getPhase(), "loading", "stale worker error cannot alter the replacement phase");
-  replacement.emit("message", { session: replacement.messages[0].session, type: "ready", documentCount: 1, collectionFingerprint: "a".repeat(64), maximumInputTokens: 451, modelMaximumTokens: 512 });
+  replacement.emit("message", readyMessage(replacement.messages[0].session));
   equal(harness.controller.getPhase(), "ready", "replacement worker can still complete after stale error");
 
   const failing = createHarness({ fetch: async () => ({ ok: false, json: async () => ({ error: "容量超出", code: "SEMANTIC_RECALL_CAPACITY_EXCEEDED" }) }) });
@@ -129,15 +161,15 @@ function checkStaticUiBoundary() {
   const worker = read("public/assets/semantic-recall-worker.js");
   const css = read("public/semantic-recall.css");
   const panel = html.slice(html.indexOf('id="semanticRecallDetails"'), html.indexOf('<section class="guide-card"'));
-  ok(panel.includes("按意思找回") && panel.includes("约 47 MB") && panel.includes("文字与查询不上传"), "collapsed summary and body explain purpose, size and privacy");
+  ok(panel.includes("按意思找回") && panel.includes("约 47 MB") && panel.includes("浏览器 Worker") && panel.includes("正文、照片和声音不会随语义查询上传"), "collapsed summary and body explain purpose, size and privacy");
   ok(!/<details[^>]*id="semanticRecallDetails"[^>]*\sopen(?:\s|>)/u.test(html), "semantic feature is closed by default");
   ok(panel.includes("相似不等于事实、人物关系、情绪、真实性或概率判断"), "result boundary is beginner-readable");
-  ok(!/localStorage|sessionStorage|indexedDB|caches\.open/u.test(source + worker), "query, vectors and index have no persistence API");
+  ok(!/localStorage|sessionStorage|indexedDB|caches\.open/u.test(source + worker), "query and vectors have no browser persistence API");
   ok(source.includes("AbortController") && source.includes("prepareEpoch") && source.includes("epoch !== prepareEpoch"), "pending fetch and stale completion are permanently guarded");
   ok(source.includes("sourceWorker !== worker") && source.includes("handleWorkerCrash(event, candidate)"), "stale worker messages and errors are instance-bound");
   ok(source.includes("textContent = result.title") && source.includes("textContent = result.excerpt") && !/\.innerHTML\b|insertAdjacentHTML|document\.write/u.test(source), "untrusted results use only text nodes");
-  ok(source.includes("fetchImpl(SNAPSHOT_PATH") && !source.includes("fetchImpl(`") && !source.includes("fetchImpl(query"), "host fetches only the fixed snapshot path");
-  ok(!/method:\s*["'](?:POST|PUT|PATCH|DELETE)/u.test(source), "host has no write request");
+  ok(source.includes("fetchImpl(SNAPSHOT_PATH") && source.includes("INDEX_PATH") && !source.includes("fetchImpl(query"), "host fetches only fixed same-origin semantic endpoints");
+  ok(source.includes("method: \"POST\"") && source.includes("sourceSha256") && source.includes("vectorToBase64"), "explicit action may save only derived vectors with their source hash");
   ok(!/gradient\s*\(/iu.test(css), "semantic panel preserves the clean no-gradient visual language");
   ok(css.includes("@media (max-width: 390px)") && css.includes("@media (max-width: 320px)") && css.includes("min-height: 44px"), "narrow mobile and touch targets are permanent");
   ok(css.includes("min-width: 0") && css.includes("overflow-wrap: anywhere"), "long unbroken result text cannot force horizontal overflow");
@@ -150,11 +182,12 @@ function createHarness(options = {}) {
   const opened = [];
   const fallbacks = [];
   const fetchImpl = options.fetch || (async () => jsonResponse(snapshotFixture()));
-  const harness = { elements, document, requests, opened, fallbacks, controller: null };
+  const harness = { elements, document, requests, opened, fallbacks, controller: null, fetch: null };
   const trackedFetch = options.recordFetch === false ? fetchImpl : async (url, fetchOptions) => {
     requests.push({ url, options: fetchOptions });
     return fetchImpl(url, fetchOptions);
   };
+  harness.fetch = trackedFetch;
   harness.controller = ui.createController({
     document,
     fetch: trackedFetch,
@@ -170,7 +203,7 @@ function createElements() {
   const elements = Object.fromEntries([
     "semanticRecallDetails", "semanticRecallPrepare", "semanticRecallStop", "semanticRecallClear",
     "semanticRecallStatus", "semanticRecallProgress", "semanticRecallForm", "semanticRecallQuery",
-    "semanticRecallSubmit", "semanticRecallFallback", "semanticRecallResults"
+    "semanticRecallSubmit", "semanticRecallFallback", "semanticRecallPersist", "semanticRecallResults"
   ].map((id) => [id, new FakeElement(id)]));
   return Object.assign(elements, {
     details: elements.semanticRecallDetails,
@@ -183,6 +216,7 @@ function createElements() {
     query: elements.semanticRecallQuery,
     submit: elements.semanticRecallSubmit,
     fallback: elements.semanticRecallFallback,
+    persist: elements.semanticRecallPersist,
     results: elements.semanticRecallResults
   });
 }
@@ -197,6 +231,18 @@ function snapshotFixture() {
     documentUtf8Bytes: new TextEncoder().encode(JSON.stringify(documents)).byteLength,
     model: { id: "Xenova/bge-small-zh-v1.5", dimensions: 512, dtype: "q8", localModelPath: "/assets/models/v17/", remoteModelsAllowed: false },
     boundary: { execution: "browser-worker-memory-only", persisted: false, externalRequests: false }
+  };
+}
+
+function readyMessage(session) {
+  return {
+    session,
+    type: "ready",
+    documentCount: 1,
+    collectionFingerprint: "a".repeat(64),
+    maximumInputTokens: 451,
+    modelMaximumTokens: 512,
+    entries: [{ memoryId: "memory-a", sourceSha256: "b".repeat(64), vector: Float32Array.from({ length: 512 }, (_, index) => index === 0 ? 1 : 0) }]
   };
 }
 

@@ -6,8 +6,8 @@ const { createAiTrustService, digestInput } = require("../lib/ai-trust");
 
 let clock = 1_800_000_000_000;
 const runtimeTrust = createRuntimeTrust({
-  appVersion: "17.1.2",
-  schemaVersion: 19,
+  appVersion: "17.2.2",
+  schemaVersion: 20,
   interviewDemo: false,
   aiEnabled: true,
   environment: { AI_BASE_URL: "https://example.invalid/v1", AI_MODEL: "fixture-model", AI_PROVIDER_LABEL: "Fixture" },
@@ -56,8 +56,8 @@ assert.throws(
 );
 
 const publicDemoTrust = createRuntimeTrust({
-  appVersion: "17.1.2",
-  schemaVersion: 19,
+  appVersion: "17.2.2",
+  schemaVersion: 20,
   interviewDemo: true,
   aiEnabled: true,
   environment: { AI_BASE_URL: "https://example.invalid/v1", AI_MODEL: "fixture-model" },

@@ -129,6 +129,39 @@
 .semantic-recall-explanation summary { cursor: pointer; color: var(--accent-dark); font-weight: 700; }
 .semantic-recall-explanation p { max-width: 780px; line-height: 1.7; }
 
+.recall-field-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.recall-field-form > div {
+  display: flex;
+  gap: 10px;
+}
+
+.recall-field-form input { margin: 0; }
+.recall-field-form input { flex: 1; }
+
+.recall-method-grid button.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.device-intelligence-card {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+}
+
+.device-intelligence-card h3,
+.device-intelligence-card p { margin: 0; }
+.device-intelligence-card > .data-actions { margin: 0; }
+
 @media (max-width: 650px) {
   .semantic-recall-card { border-radius: var(--radius); }
   .semantic-recall-card > summary { min-height: 70px; padding: 17px 18px; }
@@ -136,7 +169,8 @@
   .semantic-recall-boundary,
   .semantic-recall-results { grid-template-columns: minmax(0, 1fr); }
   .semantic-recall-actions,
-  .semantic-recall-form { align-items: stretch; flex-direction: column; }
+  .semantic-recall-form,
+  .recall-field-form > div { align-items: stretch; flex-direction: column; }
   .semantic-recall-actions .button,
   .semantic-recall-form .button { width: 100%; }
 }

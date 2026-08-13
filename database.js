@@ -19,6 +19,7 @@ const { createStoredCatalogSourceResolver } = require("./lib/provenance-runtime"
 const { CO_MEMORY_RESPONSE_MIGRATION, initializeCoMemoryResponseDatabase } = require("./lib/co-memory-response-database");
 const { PROVENANCE_CO_MEMORY_MIGRATION } = require("./lib/provenance-co-memory-migration");
 const { MUSEUM_LOCK_MIGRATION, initializeMuseumLockDatabase } = require("./lib/museum-lock-database");
+const { SEMANTIC_INDEX_MIGRATION, initializeSemanticIndexDatabase } = require("./lib/semantic-index-database");
 const { applyMigrations } = require("./lib/migrations");
 const { createDatabaseHealthReader } = require("./lib/database-health");
 
@@ -239,6 +240,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
   let provenanceSourceCatalog = null;
   let coMemoryResponseDatabase = null;
   let museumLockDatabase = null;
+  let semanticIndexDatabase = null;
   const mediaDatabase = initializeMediaDatabase({
     db,
     withTransaction,
@@ -271,7 +273,10 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     schemaVersion,
     now: () => new Date().toISOString(),
     createId,
-    onConfirmedTranscriptChanged: (memoryId) => clueDatabase.syncMemoryClues(memoryId),
+    onConfirmedTranscriptChanged: (memoryId) => {
+      clueDatabase.syncMemoryClues(memoryId);
+      semanticIndexDatabase?.invalidateSemanticEmbedding(memoryId);
+    },
     getAdditionalAssetUsage: (assetId) => oralHistoryDatabase?.getOralVoiceAssetUsage(assetId) || 0
   });
   const capsuleDatabase = initializeCapsuleDatabase({
@@ -407,7 +412,8 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     PROVENANCE_MIGRATION,
     CO_MEMORY_RESPONSE_MIGRATION,
     PROVENANCE_CO_MEMORY_MIGRATION,
-    MUSEUM_LOCK_MIGRATION
+    MUSEUM_LOCK_MIGRATION,
+    SEMANTIC_INDEX_MIGRATION
   ].filter((migration) => migration.version <= Number(schemaVersion));
   if (postInboxMigrations.length) {
     applyMigrations({
@@ -454,6 +460,15 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
         withTransaction,
         schemaVersion,
         applyMigrations: false,
+        now: () => new Date().toISOString()
+      })
+    : null;
+  semanticIndexDatabase = Number(schemaVersion) >= 20
+    ? initializeSemanticIndexDatabase({
+        db,
+        withTransaction,
+        getMemory,
+        listVoiceForMemory: voiceDatabase.listVoiceForMemory,
         now: () => new Date().toISOString()
       })
     : null;
@@ -550,6 +565,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     updateAgentRunMemory: db.prepare("UPDATE agent_runs SET memory_id = ?, updated_at = ? WHERE id = ?"),
     updateMemoryAgentRun: db.prepare("UPDATE memories SET agent_run_id = ? WHERE id = ?"),
     deleteAgentRun: db.prepare("DELETE FROM agent_runs WHERE id = ?"),
+    deleteAgentRunsForMemory: db.prepare("DELETE FROM agent_runs WHERE memory_id = ?"),
     deleteAgentSteps: db.prepare("DELETE FROM agent_steps WHERE run_id = ?"),
     deleteAgentEvents: db.prepare("DELETE FROM agent_events WHERE run_id = ?"),
     insertAgentStep: db.prepare(`
@@ -729,7 +745,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
       if (!existing) {
         const timestamp = normalizeStoredTimestamp(memory.updatedAt || memory.createdAt);
         const created = { ...memory, updatedAt: timestamp };
-        saveMemoryRow(created, options);
+      saveMemoryRow(created, options);
         const saved = getMemory(created.id);
         revisionDatabase?.recordMemoryCreation(saved, {
           changeKind: options.changeKind === "imported" ? "imported" : "created",
@@ -837,15 +853,17 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     });
   }
 
-  function deleteMemory(id) {
+  function deleteMemory(id, options = {}) {
     const memory = getMemory(id);
     if (!memory) return false;
     return withTransaction(() => {
+      if (options.expectedUpdatedAt !== undefined) assertExpectedMemoryVersion(memory, options.expectedUpdatedAt);
+      semanticIndexDatabase?.invalidateSemanticEmbedding(id);
       curatorAgentDatabase?.purgeCuratorAgentRunsForMemory?.(id);
       memoryInboxDatabase?.detachMemoryInboxAdmission?.(id);
       clueDatabase.removeMemoryClues(id);
       const result = statements.deleteMemory.run(id);
-      if (memory.agentRunId) statements.deleteAgentRun.run(memory.agentRunId);
+      statements.deleteAgentRunsForMemory.run(id);
       const now = new Date().toISOString();
       statements.listSmallMemoryEvents.all().forEach((event) => (
         statements.detachSurvivingEventQuestions.run(now, event.id)
@@ -868,6 +886,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     const agentRunsDeleted = Number(statements.countAgentRuns.get()?.count) || 0;
     const memoryEventsDeleted = Number(statements.countMemoryEvents.get()?.count) || 0;
     return withTransaction(() => {
+      const semanticIndexCleanup = semanticIndexDatabase?.clearSemanticEmbeddings() || { deleted: 0 };
       const curatorAgentCleanup = curatorAgentDatabase?.clearCuratorAgentRuns() || {
         runsDeleted: 0
       };
@@ -912,7 +931,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
         DELETE FROM agent_runs;
         DELETE FROM memories;
       `);
-      return { memoriesDeleted, agentRunsDeleted, memoryEventsDeleted, exhibitionsDeleted, revisitStatesDeleted, revisitIntentsDeleted, timeCalibrationsDeleted, ...memoryInboxCleanup, ...provenanceCleanup, ...coMemoryCleanup, ...curatorAgentCleanup, ...capsuleCleanup, ...oralHistoryCleanup, ...clueCleanup, ...voiceCleanup };
+      return { memoriesDeleted, agentRunsDeleted, memoryEventsDeleted, exhibitionsDeleted, revisitStatesDeleted, revisitIntentsDeleted, timeCalibrationsDeleted, semanticEmbeddingsDeleted: semanticIndexCleanup.deleted, ...memoryInboxCleanup, ...provenanceCleanup, ...coMemoryCleanup, ...curatorAgentCleanup, ...capsuleCleanup, ...oralHistoryCleanup, ...clueCleanup, ...voiceCleanup };
     });
   }
 
@@ -1480,6 +1499,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     replaceRelated(memory.id, statements.deletePeople, statements.insertPerson, memory.people || []);
     replaceRelated(memory.id, statements.deleteTags, statements.insertTag, memory.tags || []);
     replaceRelated(memory.id, statements.deleteEmotions, statements.insertEmotion, memory.emotions || []);
+    semanticIndexDatabase?.invalidateSemanticEmbeddingIfStale(memory);
     revalidateMemoryClaims(memory.id);
     exhibitionDatabase.revalidateCitationsForMemory(memory.id);
     if (!['defer', 'none'].includes(options.clueMode)) clueDatabase.syncMemoryClues(memory.id);
@@ -1528,6 +1548,9 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
       coverImage: row.cover_image || "",
       mediaNote: row.media_note || "",
       attachments: parseJson(row.attachments_json, []),
+      confirmedTranscripts: voiceDatabase?.listVoiceForMemory(row.id)
+        .map((voice) => voice.transcript?.status === "confirmed" ? voice.transcript.text : "")
+        .filter(Boolean) || [],
       agentRunId: row.agent_run_id || "",
       createdAt: row.created_at,
       updatedAt: row.updated_at || ""
@@ -1925,6 +1948,7 @@ function createMemoryStore({ dbPath, halls, schemaVersion }) {
     ...(provenanceDatabase || {}),
     ...(coMemoryResponseDatabase || {}),
     ...(museumLockDatabase || {}),
+    ...(semanticIndexDatabase || {}),
     ...(provenanceSourceCatalog ? {
       listProvenanceSources: provenanceSourceCatalog.listSources,
       resolveProvenanceSource: provenanceSourceCatalog.resolveSource

@@ -2107,10 +2107,10 @@ label:has(+ .sr-only[type="file"]:focus-visible),
   .collection-filter-dialog[open] {
     position: fixed;
     inset: auto 0 0;
-    display: block;
+    display: grid;
     width: 100%;
     max-width: none;
-    max-height: min(78vh, 560px);
+    max-height: calc(100dvh - env(safe-area-inset-top));
     margin: 0;
     padding: 0;
     border: 0;
@@ -2121,7 +2121,10 @@ label:has(+ .sr-only[type="file"]:focus-visible),
 
   .collection-filter-sheet {
     display: grid;
+    grid-template-rows: repeat(4, auto);
     gap: 14px;
+    min-height: 0;
+    overflow: auto;
     padding: 18px 18px calc(18px + env(safe-area-inset-bottom));
   }
 
@@ -2140,6 +2143,13 @@ label:has(+ .sr-only[type="file"]:focus-visible),
 
   .collection-filter-actions > * {
     flex: 1;
+  }
+
+  .collection-filter-actions {
+    position: sticky;
+    bottom: calc(env(safe-area-inset-bottom) * -1);
+    padding-bottom: env(safe-area-inset-bottom);
+    background: var(--surface);
   }
 
   .compose-card,
@@ -2306,6 +2316,14 @@ label:has(+ .sr-only[type="file"]:focus-visible),
 }
 
 @media (max-width: 360px) {
+  .memory-grid {
+    padding-bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom) + 12px);
+  }
+
+  .memory-excerpt {
+    -webkit-line-clamp: 3;
+  }
+
   .main-nav {
     gap: 2px;
     padding-left: max(6px, env(safe-area-inset-left));
